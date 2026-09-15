@@ -1,5 +1,6 @@
 .tools/
 .git.codex/
+.vercel/
 .env
 .env.*
 !.env.example
