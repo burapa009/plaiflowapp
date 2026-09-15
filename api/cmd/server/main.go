@@ -23,7 +23,13 @@ func main() {
 		os.Exit(1)
 	}
 	callback := auth.CallbackConfig{WebBaseURL: settings.WebBaseURL, AllowedOrigins: settings.AllowedWebOrigins}
-	if _, err := callback.CallbackURL("line"); err != nil {
+	lineCallback, err := callback.CallbackURL("line")
+	if err != nil {
+		logger.Error("callback_configuration_invalid")
+		os.Exit(1)
+	}
+	googleCallback, err := callback.CallbackURL("google")
+	if err != nil {
 		logger.Error("callback_configuration_invalid")
 		os.Exit(1)
 	}
@@ -35,9 +41,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+	authService, err := auth.NewService(auth.ServiceConfig{WebOrigin: settings.WebBaseURL, Providers: []auth.Provider{
+		auth.NewLINEProvider(auth.ProviderConfig{ClientID: settings.LineLoginChannel, ClientSecret: settings.LineLoginSecret, RedirectURI: lineCallback}),
+		auth.NewGoogleProvider(auth.ProviderConfig{ClientID: settings.GoogleClientID, ClientSecret: settings.GoogleClientSecret, RedirectURI: googleCallback}),
+	}}, store)
+	if err != nil {
+		logger.Error("authentication_initialization_failed")
+		os.Exit(1)
+	}
 	server := &http.Server{
 		Addr:              ":" + settings.Port,
-		Handler:           httpapi.New(httpapi.Config{LineSecret: settings.LineSecret, LineChannel: settings.LineChannel, DashboardTokens: settings.DashboardTokens, Logger: logger}, store),
+		Handler:           httpapi.New(httpapi.Config{LineSecret: settings.LineSecret, LineChannel: settings.LineChannel, DashboardTokens: settings.DashboardTokens, Logger: logger, Auth: authService, Tenants: store, Work: store}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
 	}
 	go func() {

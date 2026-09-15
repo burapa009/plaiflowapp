@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS export_jobs;
+DROP TABLE IF EXISTS notification_deliveries;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS notification_preferences;
+DROP TABLE IF EXISTS reminders;
+DROP TABLE IF EXISTS domain_events;
+DROP TABLE IF EXISTS task_watchers;
+DROP FUNCTION IF EXISTS prevent_assignee_watcher_overlap();
+DROP TRIGGER IF EXISTS memberships_phase2_cleanup ON memberships;
+DROP FUNCTION IF EXISTS phase2_membership_cleanup();
+DROP TABLE IF EXISTS tasks;
+ALTER TABLE organizations DROP COLUMN IF EXISTS timezone;

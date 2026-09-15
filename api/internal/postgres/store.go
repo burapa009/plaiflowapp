@@ -56,10 +56,14 @@ func (s *Store) InsertEvents(ctx context.Context, events []inbound.Event) error 
 	defer tx.Rollback(ctx)
 	for _, event := range events {
 		_, err = tx.Exec(ctx, `INSERT INTO inbound_events
-            (provider, channel, provider_event_id, event_type, payload, occurred_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (provider, channel, provider_event_id) DO NOTHING`,
-			event.Provider, event.Channel, event.ProviderEventID, event.Type, event.Payload, event.OccurredAt)
+            (provider, channel, provider_event_id, event_type, payload, occurred_at,source_type,source_group_id,source_user_id,link_code_hash)
+			SELECT $1,$2,$3,$4,$5,$6,$7,nullif($8,''),nullif($9,''),$10
+			WHERE $7<>'group' OR $10 IS NOT NULL OR EXISTS (
+				SELECT 1 FROM line_group_connections WHERE messaging_channel=$2 AND group_id=$8 AND status='connected'
+			)
+			ON CONFLICT (provider, channel, provider_event_id) DO NOTHING`,
+			event.Provider, event.Channel, event.ProviderEventID, event.Type, event.Payload, event.OccurredAt,
+			event.SourceType, event.SourceGroupID, event.SourceUserID, emptyBytesToNil(event.LinkCodeHash))
 		if err != nil {
 			return err
 		}
@@ -107,17 +111,26 @@ func (s *Store) Claim(ctx context.Context, limit int, lease time.Duration) ([]in
 	UPDATE inbound_events e SET status = 'Processing', lease_expires_at = now() + $2 * interval '1 second'
     FROM eligible WHERE e.id = eligible.id
 		RETURNING e.id, e.provider, e.channel, e.provider_event_id, e.event_type, e.payload,
-		          e.occurred_at, e.attempt_count`, limit, int(lease.Seconds()))
+		          coalesce(e.source_type,''),coalesce(e.source_group_id,''),coalesce(e.source_user_id,''),e.link_code_hash,
+		          e.occurred_at,e.attempt_count`, limit, int(lease.Seconds()))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (inbound.Event, error) {
 		var event inbound.Event
-		err := row.Scan(&event.ID, &event.Provider, &event.Channel, &event.ProviderEventID, &event.Type, &event.Payload, &event.OccurredAt, &event.AttemptCount)
+		err := row.Scan(&event.ID, &event.Provider, &event.Channel, &event.ProviderEventID, &event.Type, &event.Payload,
+			&event.SourceType, &event.SourceGroupID, &event.SourceUserID, &event.LinkCodeHash, &event.OccurredAt, &event.AttemptCount)
 		return event, err
 	})
 	return events, err
+}
+
+func emptyBytesToNil(value []byte) any {
+	if len(value) == 0 {
+		return nil
+	}
+	return value
 }
 
 func (s *Store) Complete(ctx context.Context, id int64, status inbound.Status, reason string) error {

@@ -23,6 +23,10 @@ type Event struct {
 	ProviderEventID string
 	Type            string
 	Payload         json.RawMessage
+	SourceType      string
+	SourceGroupID   string
+	SourceUserID    string
+	LinkCodeHash    []byte
 	OccurredAt      time.Time
 	AttemptCount    int
 }

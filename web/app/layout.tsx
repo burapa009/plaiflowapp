@@ -5,7 +5,7 @@ import { NavLinks } from "./nav-links";
 
 export const metadata: Metadata = { title: "PlaiFlow", description: "ศูนย์ดูแลเวิร์กโฟลว์ธุรกิจ" };
 
-const Brand = () => <Link className="brand" href="/"><span className="brand-mark" aria-hidden="true">P</span><span>PlaiFlow</span></Link>;
+const Brand = () => <Link className="brand" href="/">PlaiFlow</Link>;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

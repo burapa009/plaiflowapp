@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getAPIConfig } from "../lib/api-config.ts";
+import { getAPIBaseURL, getAPIConfig } from "../lib/api-config.ts";
 
 test("staging API requires HTTPS and a server token", () => {
+  assert.throws(() => getAPIBaseURL({ NODE_ENV: "test" }));
   assert.throws(() => getAPIConfig({ NODE_ENV: "production", API_BASE_URL: "http://api.example", DASHBOARD_API_TOKEN: "token" }));
   assert.deepEqual(
     getAPIConfig({ NODE_ENV: "production", API_BASE_URL: "https://api.example/path", DASHBOARD_API_TOKEN: "token" }),

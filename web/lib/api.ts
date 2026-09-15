@@ -1,4 +1,5 @@
-import { getAPIConfig } from "./api-config";
+import { getAPIConfig } from "./api-config.ts";
+import { randomUUID } from "node:crypto";
 
 export type Snapshot = {
   counts: { received: number; processed: number; ignored: number; retryable: number; failed: number };
@@ -10,7 +11,7 @@ export type Snapshot = {
 export async function getSnapshot(): Promise<Snapshot> {
   const { baseURL, token } = getAPIConfig(process.env);
   const response = await fetch(`${baseURL}/v1/dashboard`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, "X-Request-ID": randomUUID() },
     cache: "no-store",
     signal: AbortSignal.timeout(5000),
   });

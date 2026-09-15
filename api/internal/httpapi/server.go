@@ -15,8 +15,11 @@ import (
 	"sync"
 	"time"
 
+	"plaiflow/api/internal/auth"
 	"plaiflow/api/internal/inbound"
 	lineadapter "plaiflow/api/internal/line"
+	"plaiflow/api/internal/tenant"
+	"plaiflow/api/internal/work"
 )
 
 const maxBody = 1 << 20
@@ -32,6 +35,11 @@ type Config struct {
 	LineChannel     string
 	DashboardTokens []string
 	Logger          *slog.Logger
+	Auth            *auth.Service
+	Tenants         tenant.Store
+	Work            work.Store
+	Gate            work.Gate
+	Now             func() time.Time
 }
 
 type server struct {
@@ -46,12 +54,46 @@ func New(config Config, store Store) http.Handler {
 		config.Logger = slog.Default()
 	}
 	s := &server{config: config, store: store, webhookSlots: make(chan struct{}, 32)}
+	if s.config.Now == nil {
+		s.config.Now = time.Now
+	}
+	if s.config.Gate == nil {
+		s.config.Gate = work.UnlimitedGate{}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("POST /webhooks/line", s.webhook)
 	mux.HandleFunc("GET /v1/dashboard", s.dashboard)
-	mux.HandleFunc("GET /v1/auth/{provider}/callback", s.authDisabled)
+	if config.Auth == nil {
+		mux.HandleFunc("GET /v1/auth/{provider}/callback", s.authDisabled)
+		mux.HandleFunc("GET /v1/auth/{provider}/start", s.authDisabled)
+	} else {
+		mux.Handle("/v1/auth/", config.Auth)
+		mux.Handle("/v1/session", config.Auth)
+		mux.Handle("/v1/logout", config.Auth)
+		mux.Handle("/v1/logout-all", config.Auth)
+	}
+	if config.Auth != nil && config.Tenants != nil {
+		mux.HandleFunc("GET /v1/organizations", s.listOrganizations)
+		mux.HandleFunc("POST /v1/organizations", s.createOrganization)
+		mux.HandleFunc("GET /v1/o/{organization}", s.organization)
+		mux.HandleFunc("GET /v1/o/{organization}/memberships", s.listMemberships)
+		mux.HandleFunc("POST /v1/o/{organization}/invitations", s.createInvitation)
+		mux.HandleFunc("POST /v1/o/{organization}/invitations/{invitation}/revoke", s.revokeInvitation)
+		mux.HandleFunc("POST /v1/invitations/claim", s.claimInvitation)
+		mux.HandleFunc("POST /v1/invitations/accept", s.acceptInvitation)
+		mux.HandleFunc("POST /v1/o/{organization}/memberships/{user}/role", s.changeRole)
+		mux.HandleFunc("POST /v1/o/{organization}/memberships/{user}/remove", s.removeMembership)
+		mux.HandleFunc("POST /v1/o/{organization}/ownership", s.transferOwnership)
+		mux.HandleFunc("POST /v1/o/{organization}/leave", s.leaveOrganization)
+		mux.HandleFunc("GET /v1/o/{organization}/line-connections", s.listLineConnections)
+		mux.HandleFunc("POST /v1/o/{organization}/line-link-codes", s.createLineLinkCode)
+		mux.HandleFunc("POST /v1/o/{organization}/line-connections/{connection}/disconnect", s.disconnectLineConnection)
+		if config.Work != nil {
+			s.registerWorkRoutes(mux)
+		}
+	}
 	return s.observe(mux)
 }
 
@@ -106,13 +148,7 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusTooManyRequests, "rate_limited", "Too many requests")
 		return
 	}
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	valid := 0
-	for _, candidate := range s.config.DashboardTokens {
-		providedHash, candidateHash := sha256.Sum256([]byte(token)), sha256.Sum256([]byte(candidate))
-		valid |= subtle.ConstantTimeCompare(providedHash[:], candidateHash[:])
-	}
-	if valid != 1 {
+	if !dashboardAuthorized(r, s.config.DashboardTokens) {
 		writeError(w, r, http.StatusUnauthorized, "unauthorized", "Dashboard access is unauthorized")
 		return
 	}
@@ -122,6 +158,16 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func dashboardAuthorized(r *http.Request, candidates []string) bool {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	valid := 0
+	for _, candidate := range candidates {
+		providedHash, candidateHash := sha256.Sum256([]byte(token)), sha256.Sum256([]byte(candidate))
+		valid |= subtle.ConstantTimeCompare(providedHash[:], candidateHash[:])
+	}
+	return valid == 1
 }
 
 func (s *server) authDisabled(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +190,9 @@ func (s *server) observe(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		requestID := newRequestID()
+		if r.URL.Path == "/v1/dashboard" && dashboardAuthorized(r, s.config.DashboardTokens) && validRequestID(r.Header.Get("X-Request-ID")) {
+			requestID = r.Header.Get("X-Request-ID")
+		}
 		w.Header().Set("X-Request-ID", requestID)
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID))
 		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
@@ -171,6 +220,19 @@ func newRequestID() string {
 	}
 	return hex.EncodeToString(value[:])
 }
+
+func validRequestID(value string) bool {
+	if len(value) < 8 || len(value) > 64 {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '-' && char != '_' {
+			return false
+		}
+	}
+	return true
+}
+
 type requestLimit struct {
 	sync.Mutex
 	started time.Time
