@@ -1,0 +1,3 @@
+# บันทึก Inbound Event ใน PostgreSQL ก่อนประมวลผลแบบ asynchronous
+
+LINE webhook จะตรวจสอบ HMAC-SHA256 signature จาก raw body ก่อน parse จำกัด body ที่ 1 MiB และบันทึก Inbound Event ทั้ง Webhook Delivery ใน transaction เดียว โดยใช้ `(provider, channel, webhook_event_id)` เป็น unique key ระบบตอบ `200` เฉพาะเมื่อบันทึกถาวรแล้ว และให้ worker แยกต่างหาก claim งานครั้งละไม่เกิน 25 รายการด้วย `FOR UPDATE SKIP LOCKED` และ lease 60 วินาที ระบบไม่รับประกัน global ordering งานที่ล้มเหลวชั่วคราว retry สูงสุดห้าครั้งก่อนเป็น Failed ใน Phase 0 เฉพาะ LINE `message` event จะผ่าน record-only handler เป็น Processed ส่วนชนิดอื่นเป็น Ignored และ PlaiFlow จะเพิ่ม message broker ต่อเมื่อ throughput ที่วัดได้เกินขีดจำกัดของ queue บนฐานข้อมูล
