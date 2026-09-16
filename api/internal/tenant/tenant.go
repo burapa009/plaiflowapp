@@ -50,11 +50,12 @@ type Organization struct {
 }
 
 type Membership struct {
-	OrganizationID string    `json:"organization_id"`
-	UserID         string    `json:"user_id"`
-	DisplayName    string    `json:"display_name,omitempty"`
-	Role           Role      `json:"role"`
-	CreatedAt      time.Time `json:"created_at"`
+	OrganizationID   string    `json:"organization_id"`
+	OrganizationName string    `json:"organization_name,omitempty"`
+	UserID           string    `json:"user_id"`
+	DisplayName      string    `json:"display_name,omitempty"`
+	Role             Role      `json:"role"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type Invitation struct {

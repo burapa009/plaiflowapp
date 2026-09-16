@@ -159,6 +159,7 @@ const (
 type EntitlementDecision struct {
 	Allowed   bool       `json:"allowed"`
 	Reason    string     `json:"reason"`
+	Plan      string     `json:"plan,omitempty"`
 	Limit     int64      `json:"limit,omitempty"`
 	Used      int64      `json:"used,omitempty"`
 	Remaining int64      `json:"remaining,omitempty"`

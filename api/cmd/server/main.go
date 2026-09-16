@@ -11,7 +11,9 @@ import (
 
 	"plaiflow/api/internal/auth"
 	"plaiflow/api/internal/config"
+	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/httpapi"
+	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/postgres"
 )
 
@@ -49,9 +51,29 @@ func main() {
 		logger.Error("authentication_initialization_failed")
 		os.Exit(1)
 	}
+	var driveService *drive.Service
+	if settings.GoogleDriveClientID != "" {
+		provider, providerErr := drive.NewGoogleProvider(drive.GoogleConfig{
+			ClientID: settings.GoogleDriveClientID, ClientSecret: settings.GoogleDriveSecret,
+			RedirectURI: settings.WebBaseURL + "/api/drive/callback",
+		})
+		if providerErr != nil {
+			logger.Error("drive_provider_initialization_failed")
+			os.Exit(1)
+		}
+		driveService, err = drive.New(drive.Config{Provider: provider, Store: store, EncryptionKey: settings.GoogleDriveTokenKey})
+		if err != nil {
+			logger.Error("drive_initialization_failed")
+			os.Exit(1)
+		}
+	}
 	server := &http.Server{
-		Addr:              ":" + settings.Port,
-		Handler:           httpapi.New(httpapi.Config{LineSecret: settings.LineSecret, LineChannel: settings.LineChannel, DashboardTokens: settings.DashboardTokens, Logger: logger, Auth: authService, Tenants: store, Work: store}, store),
+		Addr: ":" + settings.Port,
+		Handler: httpapi.New(httpapi.Config{
+			LineSecret: settings.LineSecret, LineChannel: settings.LineChannel, DashboardTokens: settings.DashboardTokens,
+			Logger: logger, Auth: authService, Tenants: store, Work: store, Business: store, PlanStore: store,
+			Gate: plan.Gate{Store: store}, Drive: driveService,
+		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
 	}
 	go func() {

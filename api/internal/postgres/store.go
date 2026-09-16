@@ -17,6 +17,8 @@ type Store struct {
 	logger *slog.Logger
 }
 
+const requiredMigrationVersion = 5
+
 func New(ctx context.Context, databaseURL string, maxConnections int32, logger *slog.Logger) (*Store, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -40,7 +42,7 @@ func (s *Store) Ready(ctx context.Context) error {
 	defer s.slow(started, "ready")
 	var version int
 	var dirty bool
-	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < 1 {
+	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < requiredMigrationVersion {
 		return errors.New("database migration is not ready")
 	}
 	return nil

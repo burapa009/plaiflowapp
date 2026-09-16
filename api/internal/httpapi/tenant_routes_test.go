@@ -39,6 +39,7 @@ func (*sessionStore) ListIdentities(context.Context, string) ([]auth.IdentitySta
 type tenantStore struct {
 	created tenant.Organization
 	allowed string
+	role    tenant.Role
 }
 
 func (s *tenantStore) CreateOrganization(_ context.Context, _, id, name string, _ time.Time) (tenant.Organization, error) {
@@ -52,7 +53,11 @@ func (s *tenantStore) ResolveMembership(_ context.Context, userID, organizationI
 	if organizationID != s.allowed {
 		return tenant.Membership{}, tenant.ErrNotFound
 	}
-	return tenant.Membership{OrganizationID: organizationID, UserID: userID, Role: tenant.Owner}, nil
+	role := s.role
+	if role == "" {
+		role = tenant.Owner
+	}
+	return tenant.Membership{OrganizationID: organizationID, OrganizationName: "Acme", UserID: userID, Role: role}, nil
 }
 func (*tenantStore) ListMemberships(context.Context, string, string) ([]tenant.Membership, error) {
 	return nil, nil

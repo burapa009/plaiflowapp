@@ -16,8 +16,11 @@ import (
 	"time"
 
 	"plaiflow/api/internal/auth"
+	"plaiflow/api/internal/business"
+	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/inbound"
 	lineadapter "plaiflow/api/internal/line"
+	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
 	"plaiflow/api/internal/work"
 )
@@ -38,6 +41,9 @@ type Config struct {
 	Auth            *auth.Service
 	Tenants         tenant.Store
 	Work            work.Store
+	Business        business.Store
+	PlanStore       plan.Store
+	Drive           *drive.Service
 	Gate            work.Gate
 	Now             func() time.Time
 }
@@ -65,6 +71,7 @@ func New(config Config, store Store) http.Handler {
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("POST /webhooks/line", s.webhook)
 	mux.HandleFunc("GET /v1/dashboard", s.dashboard)
+	mux.HandleFunc("GET /v1/plans", s.listPlans)
 	if config.Auth == nil {
 		mux.HandleFunc("GET /v1/auth/{provider}/callback", s.authDisabled)
 		mux.HandleFunc("GET /v1/auth/{provider}/start", s.authDisabled)
@@ -75,6 +82,7 @@ func New(config Config, store Store) http.Handler {
 		mux.Handle("/v1/logout-all", config.Auth)
 	}
 	if config.Auth != nil && config.Tenants != nil {
+		s.registerDriveRoutes(mux)
 		mux.HandleFunc("GET /v1/organizations", s.listOrganizations)
 		mux.HandleFunc("POST /v1/organizations", s.createOrganization)
 		mux.HandleFunc("GET /v1/o/{organization}", s.organization)
@@ -92,6 +100,9 @@ func New(config Config, store Store) http.Handler {
 		mux.HandleFunc("POST /v1/o/{organization}/line-connections/{connection}/disconnect", s.disconnectLineConnection)
 		if config.Work != nil {
 			s.registerWorkRoutes(mux)
+		}
+		if config.Business != nil && config.PlanStore != nil {
+			s.registerBusinessRoutes(mux)
 		}
 	}
 	return s.observe(mux)

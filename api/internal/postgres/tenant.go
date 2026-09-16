@@ -377,9 +377,9 @@ func setUserContext(ctx context.Context, tx pgx.Tx, userID string) error {
 
 func membershipFor(ctx context.Context, tx pgx.Tx, userID, organizationID string) (tenant.Membership, error) {
 	var membership tenant.Membership
-	err := tx.QueryRow(ctx, `SELECT organization_id,user_id,role,created_at FROM memberships
-        WHERE user_id=$1 AND organization_id=$2`, userID, organizationID).Scan(
-		&membership.OrganizationID, &membership.UserID, &membership.Role, &membership.CreatedAt)
+	err := tx.QueryRow(ctx, `SELECT m.organization_id,o.name,m.user_id,m.role,m.created_at FROM memberships m
+        JOIN organizations o ON o.id=m.organization_id WHERE m.user_id=$1 AND m.organization_id=$2`, userID, organizationID).Scan(
+		&membership.OrganizationID, &membership.OrganizationName, &membership.UserID, &membership.Role, &membership.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return tenant.Membership{}, tenant.ErrNotFound
 	}

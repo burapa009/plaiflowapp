@@ -65,7 +65,7 @@ export default async function TasksPage({ params, searchParams }: {
     <section>
       <div className="work-header">
         <div><p className="eyebrow">Organization workspace</p><h1>งานของทีม</h1><p className="intro">สร้าง มอบหมาย และติดตามงานในพื้นที่เดียวกัน</p></div>
-        <Link className="secondary-button" href="/organizations">เปลี่ยน Organization</Link>
+        <div className="card-actions"><Link className="secondary-button" href={`/o/${encodeURIComponent(organization)}/vendors`}>คู่ค้า</Link><Link className="secondary-button" href={`/o/${encodeURIComponent(organization)}/connections`}>Connections</Link><Link className="secondary-button" href="/pricing">แพ็กเกจ</Link><Link className="text-button" href="/organizations">เปลี่ยน Organization</Link></div>
       </div>
       {query.error && <p className="form-error" role="alert">{errorMessage(query.error)}</p>}
       {query.read && <p className="success-message" role="status">ทำเครื่องหมายว่าอ่านแล้ว</p>}

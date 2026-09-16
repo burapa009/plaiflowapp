@@ -101,7 +101,7 @@ _Avoid_: Operations Dashboard, system status
 _Avoid_: Autonomous agent, Task command
 
 **CSV Export**:
-การส่งออก Task ที่ผ่าน authorization แล้วจาก Organization เดียวตามตัวกรองของคำขอ โดยไม่รวม raw event, Notification history, LINE identifier หรือข้อมูล Membership
+การส่งออก Task หรือ Business Master Data ที่ผ่าน authorization แล้วจาก Organization เดียวตาม Export Template และตัวกรองของคำขอ โดยไม่รวม raw event, Notification history, LINE identifier หรือข้อมูล Membership
 _Avoid_: Database dump, audit export
 
 **Entitlement**:
@@ -111,6 +111,82 @@ _Avoid_: Role, permission, frontend plan state
 **Usage**:
 ปริมาณการใช้ capability ที่วัดเพื่อเทียบกับ Entitlement โดยค่า Usage ไม่สามารถให้สิทธิ์เข้าถึงข้อมูลได้
 _Avoid_: Permission, authorization
+
+**Usage Reservation**:
+การจอง Usage แบบ atomic ก่อนเริ่มงานที่มี hard quota โดย Complete หรือ Release ด้วย idempotency key เดิมเพื่อไม่ให้คำขอพร้อมกันหรือ retry ใช้เกินหรือนับซ้ำ
+_Avoid_: Authorization, completed Usage, client-side counter
+
+**Plan**:
+แพ็กเกจเชิงพาณิชย์ของ Organization จาก catalog ที่ระบบฝั่ง server เชื่อถือ ซึ่งจัดกลุ่ม Entitlement และ Usage Limit โดยชุดเริ่มต้นคือ Free, Starter และ Business
+_Avoid_: Role, client-selected price, Trial
+
+**Trial**:
+สถานะชั่วคราวที่ Owner เปิดให้ Organization ได้รับ capability แบบ Business พร้อม Usage Limit เฉพาะ Trial เป็นเวลา 14 วันหนึ่งครั้งโดยไม่ต้องใช้บัตร เมื่อสิ้นสุด Organization กลับสู่ Free โดยยังอ่านข้อมูลเดิมและใช้การควบคุมความปลอดภัยได้
+_Avoid_: Trial Plan, free subscription
+
+**Upgrade Request**:
+คำขอของ Owner หรือ Admin ที่แจ้งความสนใจเปลี่ยน Plan โดยไม่ให้ Entitlement หรือเปลี่ยน Plan จนกว่า operator ที่เชื่อถือได้จะดำเนินการ
+_Avoid_: Subscription, checkout, plan assignment
+
+**Plan Over Limit**:
+สถานะของ Organization หลัง Trial หรือ Plan สิ้นสุดเมื่อจำนวนทรัพยากรที่มีอยู่เกิน Usage Limit ของ Plan ปัจจุบัน โดยยังอ่าน ใช้ CSV Export ตาม role และจัดการความปลอดภัยได้แต่หยุด mutation ปกติจนกว่าจะลดจำนวนหรืออัปเกรด
+_Avoid_: Account suspension, data deletion, automatic member removal
+
+**Document**:
+เอกสารธุรกิจต้นฉบับหนึ่งฉบับที่ PlaiFlow รับเข้า โดยไม่นับ Task, แถวจากการนำเข้า, แถวจากการส่งออก หรือจำนวนครั้งที่ OCR/AI ประมวลผลเป็น Document
+_Avoid_: Import row, Task, OCR Usage
+
+**Business Contact**:
+บุคคลหรือนิติบุคคลหนึ่งสาขาภายใน Organization ที่มีบทบาท Customer, Vendor หรือทั้งสองบทบาท โดยประเทศ Tax ID และ canonical branch identity เดียวกันใช้ข้อมูลระบุตัวตนทางธุรกิจชุดเดียวร่วมกัน
+_Avoid_: Customer record, Vendor record, accounting-firm client
+
+**Customer**:
+บทบาทของ Business Contact ที่ Organization ขายสินค้าหรือให้บริการแก่ฝ่ายนั้น ไม่ใช่ entity แยกจาก Vendor
+_Avoid_: Customer entity, client organization
+
+**Vendor**:
+บทบาทของ Business Contact ที่ขายสินค้าหรือให้บริการแก่ Organization ไม่ใช่ entity แยกจาก Customer
+_Avoid_: Vendor entity, supplier record
+
+**Business Reference Data**:
+รายการอ้างอิงที่ Organization เป็นเจ้าของ เช่น Expense Category และ Payment Channel โดยไม่ใช่รายการบัญชี สมุดรายวัน หรือธุรกรรมทางการเงิน
+_Avoid_: Ledger, journal entry, transaction
+
+**Archived**:
+สถานะของ Business Contact หรือ Business Reference Data ที่ไม่ให้เลือกใช้กับงานใหม่ แต่ยังคงข้อมูลอ้างอิงและประวัติเดิมไว้และสามารถ Restore ได้
+_Avoid_: Deleted, inactive Membership
+
+**Import Job**:
+คำขอนำเข้า Business Contact จากไฟล์ CSV หรือ XLSX ของ Organization เดียว ซึ่งตรวจทั้งไฟล์ก่อนสร้างรายการแบบ all-or-nothing และไม่แก้หรือ merge Business Contact เดิม
+_Avoid_: Upsert, partial import, cross-Organization import
+
+**Validation Preview**:
+ผลตรวจ Import Job ก่อนสร้างข้อมูลที่แยกรายการพร้อมสร้าง รายการซ้ำ คำเตือน และข้อผิดพลาด โดยไม่มีการเปลี่ยน Business Contact
+_Avoid_: Import result, partial commit
+
+**Undo Import**:
+การ Archive Business Contact ที่ Import Job หนึ่งสร้างขึ้นภายใน 24 ชั่วโมง โดยไม่ hard-delete หรือย้อนการแก้ข้อมูลเดิม
+_Avoid_: Database rollback, delete import
+
+**Export Template**:
+ชุดคอลัมน์แบบคงที่และมี version สำหรับส่งออกข้อมูลชนิดหนึ่งจาก Organization โดย Phase 3 ไม่มี custom columns หรือ template ที่ผู้ใช้สร้างเอง
+_Avoid_: Saved view, custom report, database dump
+
+**Organization Drive Connection**:
+การอนุญาต Google Drive แยกจาก Google Login ซึ่ง Owner หรือ Admin ของลูกค้าให้แก่ Organization โดยมีได้หนึ่ง active connection เพื่อเขียนไฟล์ส่งออกลงโฟลเดอร์ PlaiFlow ใน My Drive ของลูกค้า บัญชี Google ของลูกค้าเป็นเจ้าของพื้นที่และ PlaiFlow ไม่ได้จัดสรร Drive หรือโควตาพื้นที่ให้
+_Avoid_: PlaiFlow-owned Drive, included storage, Google Login, whole-Drive access
+
+**Reauthorization Required**:
+สถานะของ Organization Drive Connection เมื่อ credential หมดอายุ ถูกถอน หรือใช้ต่อไม่ได้ โดยหยุดการส่งออกไป Drive จนกว่า Owner หรือ Admin จะให้ consent ใหม่
+_Avoid_: Retryable provider error, disconnected
+
+**Folder Action Required**:
+สถานะของ Organization Drive Connection เมื่อโฟลเดอร์ปลายทางถูกลบหรือเข้าถึงไม่ได้ โดยต้องให้ Owner หรือ Admin ยืนยันการสร้างโฟลเดอร์ใหม่
+_Avoid_: Automatic replacement, Reauthorization Required
+
+**LINE Rich Menu**:
+เมนูนำทางแบบคงที่ใน LINE ที่เปิดหน้าของ PlaiFlow โดยไม่ให้สิทธิ์เข้าถึงข้อมูล และให้ server ตรวจ Organization Context, Membership และ role ทุกครั้ง
+_Avoid_: Authorization menu, role grant
 
 **LINE Group Connection**:
 ความสัมพันธ์ที่ PlaiFlow บันทึกไว้ระหว่าง LINE group จาก Messaging API กับ Organization

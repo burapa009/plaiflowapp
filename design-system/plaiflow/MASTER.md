@@ -45,8 +45,8 @@ Minimal, friendly, slightly cute, professional และ trustworthy โดย�
 
 ## Brand และ Theme
 
-- ใช้ข้อความ `PlaiFlow` น้ำหนัก 600 เป็น wordmark ชั่วคราว
-- ยังไม่สร้าง logo, mascot หรือ brand mark ถาวร
+- ใช้โลโก้หลักจาก `web/public/plaiflow-logo.png` โดยรักษาสัดส่วน สี และพื้นที่ว่างของไฟล์ต้นฉบับ
+- เมื่อใช้บน dark mode ให้วางโลโก้บนพื้นสว่างแทนการเปลี่ยนสี asset
 - เลือก light/dark mode จาก `prefers-color-scheme` โดยไม่มี theme toggle ใน Phase 0
 
 ## Components และสถานะ

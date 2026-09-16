@@ -17,7 +17,7 @@ export async function sessionGET(path: string) {
   }
 }
 
-export async function sessionPOST(path: string, body: URLSearchParams) {
+export async function sessionPOST(path: string, body: URLSearchParams, redirectMode: RequestRedirect = "follow") {
   const cookieStore = await cookies();
   const csrf = cookieStore.get(csrfCookieName)?.value;
   const origin = (await headers()).get("origin");
@@ -32,8 +32,27 @@ export async function sessionPOST(path: string, body: URLSearchParams) {
         "X-CSRF-Token": csrf,
       },
       body,
+      redirect: redirectMode,
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function sessionMultipartPOST(path: string, body: FormData) {
+  const cookieStore = await cookies();
+  const csrf = cookieStore.get(csrfCookieName)?.value;
+  const origin = (await headers()).get("origin");
+  if (!csrf || !origin) return null;
+  try {
+    return await fetch(`${getAPIBaseURL(process.env)}${path}`, {
+      method: "POST",
+      headers: { Cookie: cookieStore.toString(), Origin: origin, "X-CSRF-Token": csrf },
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
     });
   } catch {
     return null;

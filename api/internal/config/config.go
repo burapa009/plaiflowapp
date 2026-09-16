@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"strconv"
@@ -8,19 +9,22 @@ import (
 )
 
 type Server struct {
-	Environment        string
-	Port               string
-	DatabaseURL        string
-	LineChannel        string
-	LineSecret         string
-	LineLoginChannel   string
-	LineLoginSecret    string
-	GoogleClientID     string
-	GoogleClientSecret string
-	DashboardTokens    []string
-	WebBaseURL         string
-	AllowedWebOrigins  []string
-	PoolMax            int32
+	Environment         string
+	Port                string
+	DatabaseURL         string
+	LineChannel         string
+	LineSecret          string
+	LineLoginChannel    string
+	LineLoginSecret     string
+	GoogleClientID      string
+	GoogleClientSecret  string
+	GoogleDriveClientID string
+	GoogleDriveSecret   string
+	GoogleDriveTokenKey []byte
+	DashboardTokens     []string
+	WebBaseURL          string
+	AllowedWebOrigins   []string
+	PoolMax             int32
 }
 
 type Worker struct {
@@ -37,11 +41,21 @@ func LoadServer() (Server, error) {
 		LineChannel: os.Getenv("LINE_CHANNEL_ID"), LineSecret: os.Getenv("LINE_CHANNEL_SECRET"),
 		LineLoginChannel: os.Getenv("LINE_LOGIN_CHANNEL_ID"), LineLoginSecret: os.Getenv("LINE_LOGIN_CHANNEL_SECRET"),
 		GoogleClientID: os.Getenv("GOOGLE_LOGIN_CLIENT_ID"), GoogleClientSecret: os.Getenv("GOOGLE_LOGIN_CLIENT_SECRET"),
+		GoogleDriveClientID: os.Getenv("GOOGLE_DRIVE_CLIENT_ID"), GoogleDriveSecret: os.Getenv("GOOGLE_DRIVE_CLIENT_SECRET"),
 		DashboardTokens: split(os.Getenv("DASHBOARD_API_TOKEN")), WebBaseURL: os.Getenv("WEB_BASE_URL"),
 		AllowedWebOrigins: split(os.Getenv("ALLOWED_WEB_ORIGINS")), PoolMax: int32(number("API_DB_POOL_MAX", 10)),
 	}
 	if config.Environment == "" || config.DatabaseURL == "" || config.LineChannel == "" || config.LineSecret == "" || config.LineLoginChannel == "" || config.LineLoginSecret == "" || config.GoogleClientID == "" || config.GoogleClientSecret == "" || len(config.DashboardTokens) == 0 || config.WebBaseURL == "" || len(config.AllowedWebOrigins) == 0 {
 		return Server{}, errors.New("missing required server configuration")
+	}
+	driveKey := os.Getenv("GOOGLE_DRIVE_TOKEN_KEY")
+	driveConfigured := config.GoogleDriveClientID != "" || config.GoogleDriveSecret != "" || driveKey != ""
+	if driveConfigured {
+		decoded, err := base64.StdEncoding.DecodeString(driveKey)
+		if config.GoogleDriveClientID == "" || config.GoogleDriveSecret == "" || err != nil || len(decoded) != 32 {
+			return Server{}, errors.New("invalid Google Drive configuration")
+		}
+		config.GoogleDriveTokenKey = decoded
 	}
 	return config, nil
 }

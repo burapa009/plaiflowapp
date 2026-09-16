@@ -30,3 +30,35 @@ func TestLoadWorkerRequiresLineDeliveryConfiguration(t *testing.T) {
 		t.Fatalf("config=%+v err=%v", config, err)
 	}
 }
+
+func TestLoadServerRequiresCompleteSeparateDriveConfiguration(t *testing.T) {
+	setValidServerEnvironment(t)
+	t.Setenv("GOOGLE_DRIVE_CLIENT_ID", "drive-client")
+	if _, err := LoadServer(); err == nil {
+		t.Fatal("partial Drive configuration accepted")
+	}
+	t.Setenv("GOOGLE_DRIVE_CLIENT_SECRET", "drive-secret")
+	t.Setenv("GOOGLE_DRIVE_TOKEN_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+	config, err := LoadServer()
+	if err != nil || config.GoogleDriveClientID != "drive-client" || len(config.GoogleDriveTokenKey) != 32 {
+		t.Fatalf("config=%+v err=%v", config, err)
+	}
+}
+
+func setValidServerEnvironment(t *testing.T) {
+	t.Helper()
+	t.Setenv("APP_ENV", "test")
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("LINE_CHANNEL_ID", "line-channel")
+	t.Setenv("LINE_CHANNEL_SECRET", "line-secret")
+	t.Setenv("LINE_LOGIN_CHANNEL_ID", "line-login")
+	t.Setenv("LINE_LOGIN_CHANNEL_SECRET", "line-login-secret")
+	t.Setenv("GOOGLE_LOGIN_CLIENT_ID", "google-login")
+	t.Setenv("GOOGLE_LOGIN_CLIENT_SECRET", "google-login-secret")
+	t.Setenv("DASHBOARD_API_TOKEN", "dashboard")
+	t.Setenv("WEB_BASE_URL", "https://app.example")
+	t.Setenv("ALLOWED_WEB_ORIGINS", "https://app.example")
+	t.Setenv("GOOGLE_DRIVE_CLIENT_ID", "")
+	t.Setenv("GOOGLE_DRIVE_CLIENT_SECRET", "")
+	t.Setenv("GOOGLE_DRIVE_TOKEN_KEY", "")
+}
