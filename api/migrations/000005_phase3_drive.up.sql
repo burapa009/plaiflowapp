@@ -42,7 +42,7 @@ CREATE TABLE drive_reconnect_tasks (
     FOREIGN KEY (organization_id,task_id) REFERENCES tasks(organization_id,id)
 );
 
-CREATE FUNCTION consume_drive_oauth_attempt(candidate_state_hash bytea, current_time timestamptz)
+CREATE FUNCTION consume_drive_oauth_attempt(candidate_state_hash bytea, at_time timestamptz)
 RETURNS SETOF drive_oauth_attempts
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -50,13 +50,13 @@ SET search_path = public, pg_temp
 AS $$
 BEGIN
     RETURN QUERY
-    UPDATE drive_oauth_attempts SET consumed_at=current_time
-    WHERE state_hash=candidate_state_hash AND consumed_at IS NULL AND expires_at>current_time
+    UPDATE drive_oauth_attempts SET consumed_at=at_time
+    WHERE state_hash=candidate_state_hash AND consumed_at IS NULL AND expires_at>at_time
     RETURNING *;
 END
 $$;
 
-CREATE FUNCTION mark_drive_reconnect_required(candidate_organization_id uuid, expected_generation bigint, current_time timestamptz, new_task_id uuid)
+CREATE FUNCTION mark_drive_reconnect_required(candidate_organization_id uuid, expected_generation bigint, at_time timestamptz, new_task_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -65,7 +65,7 @@ AS $$
 DECLARE
     owner_id uuid;
 BEGIN
-    UPDATE drive_connections SET status='Reauthorization Required',encrypted_refresh_token=NULL,token_nonce=NULL,updated_at=current_time
+    UPDATE drive_connections SET status='Reauthorization Required',encrypted_refresh_token=NULL,token_nonce=NULL,updated_at=at_time
     WHERE organization_id=candidate_organization_id AND credential_generation=expected_generation AND status='Connected';
     IF NOT FOUND THEN RETURN false; END IF;
 
@@ -74,12 +74,12 @@ BEGIN
         INSERT INTO tasks
             (id,organization_id,title,description,creator_user_id,assignee_user_id,status,priority,created_at,updated_at,status_changed_at)
         VALUES
-            (new_task_id,candidate_organization_id,'เชื่อมต่อ Google Drive ใหม่','Google ขอการยืนยันสิทธิ์ใหม่ กรุณาเปิด Connections และเชื่อมต่ออีกครั้ง',owner_id,owner_id,'Open','High',current_time,current_time,current_time);
+            (new_task_id,candidate_organization_id,'เชื่อมต่อ Google Drive ใหม่','Google ขอการยืนยันสิทธิ์ใหม่ กรุณาเปิด Connections และเชื่อมต่ออีกครั้ง',owner_id,owner_id,'Open','High',at_time,at_time,at_time);
         INSERT INTO drive_reconnect_tasks (organization_id,credential_generation,task_id,created_at)
-        VALUES (candidate_organization_id,expected_generation,new_task_id,current_time);
+        VALUES (candidate_organization_id,expected_generation,new_task_id,at_time);
     END IF;
     INSERT INTO audit_events (organization_id,event_type,target_type,target_id,outcome,reason_code,occurred_at)
-    VALUES (candidate_organization_id,'drive.reconnect_required','drive_connection',candidate_organization_id::text,'success','invalid_grant',current_time);
+    VALUES (candidate_organization_id,'drive.reconnect_required','drive_connection',candidate_organization_id::text,'success','invalid_grant',at_time);
     RETURN true;
 END
 $$;

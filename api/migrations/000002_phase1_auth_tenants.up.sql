@@ -280,7 +280,7 @@ END
 $$;
 
 CREATE FUNCTION claim_member_invitation(candidate_token_hash bytea, new_handoff_hash bytea, new_handoff_id uuid,
-    safe_return_to text, current_time timestamptz, handoff_expiry timestamptz)
+    safe_return_to text, at_time timestamptz, handoff_expiry timestamptz)
 RETURNS TABLE (invitation_id uuid, organization_id uuid, organization_name text, inviter_name text, role text, expires_at timestamptz)
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, pg_temp
@@ -289,21 +289,21 @@ DECLARE
     selected invitations%ROWTYPE;
 BEGIN
     SELECT i.* INTO selected FROM invitations i
-    WHERE i.token_hash=candidate_token_hash AND i.revoked_at IS NULL AND i.accepted_at IS NULL AND i.expires_at>current_time
+    WHERE i.token_hash=candidate_token_hash AND i.revoked_at IS NULL AND i.accepted_at IS NULL AND i.expires_at>at_time
       AND organization_role(i.inviter_user_id,i.organization_id) IN ('Owner','Admin')
     FOR UPDATE;
-    IF NOT FOUND OR handoff_expiry>current_time+interval '5 minutes' THEN
+    IF NOT FOUND OR handoff_expiry>at_time+interval '5 minutes' THEN
         RETURN;
     END IF;
     INSERT INTO invite_handoffs (token_hash,invitation_id,return_to,created_at,expires_at)
-        VALUES (new_handoff_hash,selected.id,safe_return_to,current_time,handoff_expiry);
+        VALUES (new_handoff_hash,selected.id,safe_return_to,at_time,handoff_expiry);
     RETURN QUERY
         SELECT selected.id,o.id,o.name,coalesce(u.display_name,'สมาชิก PlaiFlow'),selected.role,selected.expires_at
         FROM organizations o JOIN users u ON u.id=selected.inviter_user_id WHERE o.id=selected.organization_id;
 END
 $$;
 
-CREATE FUNCTION accept_member_invitation(candidate_handoff_hash bytea, candidate_user_id uuid, current_time timestamptz)
+CREATE FUNCTION accept_member_invitation(candidate_handoff_hash bytea, candidate_user_id uuid, at_time timestamptz)
 RETURNS TABLE (id uuid, name text, role text)
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, pg_temp
@@ -316,26 +316,26 @@ BEGIN
         RAISE EXCEPTION 'user context mismatch';
     END IF;
     SELECT h.* INTO selected_handoff FROM invite_handoffs h
-    WHERE h.token_hash=candidate_handoff_hash AND h.consumed_at IS NULL AND h.expires_at>current_time
+    WHERE h.token_hash=candidate_handoff_hash AND h.consumed_at IS NULL AND h.expires_at>at_time
     FOR UPDATE;
     IF NOT FOUND THEN RETURN; END IF;
     SELECT i.* INTO selected_invitation FROM invitations i
-    WHERE i.id=selected_handoff.invitation_id AND i.revoked_at IS NULL AND i.accepted_at IS NULL AND i.expires_at>current_time
+    WHERE i.id=selected_handoff.invitation_id AND i.revoked_at IS NULL AND i.accepted_at IS NULL AND i.expires_at>at_time
       AND organization_role(i.inviter_user_id,i.organization_id) IN ('Owner','Admin')
     FOR UPDATE;
     IF NOT FOUND THEN RETURN; END IF;
     INSERT INTO memberships (organization_id,user_id,role,created_at,updated_at)
-        VALUES (selected_invitation.organization_id,candidate_user_id,'Member',current_time,current_time)
+        VALUES (selected_invitation.organization_id,candidate_user_id,'Member',at_time,at_time)
         ON CONFLICT (organization_id,user_id) DO NOTHING;
-    UPDATE invitations SET accepted_by_user_id=candidate_user_id,accepted_at=current_time WHERE invitations.id=selected_invitation.id;
-    UPDATE invite_handoffs SET consumed_at=current_time WHERE token_hash=candidate_handoff_hash;
+    UPDATE invitations SET accepted_by_user_id=candidate_user_id,accepted_at=at_time WHERE invitations.id=selected_invitation.id;
+    UPDATE invite_handoffs SET consumed_at=at_time WHERE token_hash=candidate_handoff_hash;
     INSERT INTO audit_events (organization_id,actor_user_id,event_type,target_type,target_id,outcome,occurred_at)
-        VALUES (selected_invitation.organization_id,candidate_user_id,'invitation.redeem','invitation',selected_invitation.id::text,'success',current_time);
+        VALUES (selected_invitation.organization_id,candidate_user_id,'invitation.redeem','invitation',selected_invitation.id::text,'success',at_time);
     RETURN QUERY SELECT o.id,o.name,'Member'::text FROM organizations o WHERE o.id=selected_invitation.organization_id;
 END
 $$;
 
-CREATE FUNCTION transfer_organization_ownership(candidate_organization_id uuid, actor_user_id uuid, target_user_id uuid, current_time timestamptz)
+CREATE FUNCTION transfer_organization_ownership(candidate_organization_id uuid, actor_user_id uuid, target_user_id uuid, at_time timestamptz)
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, pg_temp
@@ -350,9 +350,9 @@ BEGIN
        OR actor_user_id=target_user_id THEN
         RAISE EXCEPTION 'ownership transfer is unavailable';
     END IF;
-    UPDATE memberships SET role='Admin',updated_at=current_time
+    UPDATE memberships SET role='Admin',updated_at=at_time
         WHERE organization_id=candidate_organization_id AND user_id=actor_user_id;
-    UPDATE memberships SET role='Owner',updated_at=current_time
+    UPDATE memberships SET role='Owner',updated_at=at_time
         WHERE organization_id=candidate_organization_id AND user_id=target_user_id;
 END
 $$;
