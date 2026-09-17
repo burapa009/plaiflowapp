@@ -2,13 +2,26 @@ param(
     [Parameter(Mandatory)] [string] $ApiUrl,
     [Parameter(Mandatory)] [string] $WebUrl,
     [Parameter(Mandatory)] [string] $LineChannelSecret,
-    [Parameter(Mandatory)] [string] $DashboardToken
+    [Parameter(Mandatory)] [string] $DashboardToken,
+    [string] $VercelDeployment
 )
 
 $ErrorActionPreference = 'Stop'
 function Get-LineSignature([byte[]] $Value) {
     $hmac = [Security.Cryptography.HMACSHA256]::new([Text.Encoding]::UTF8.GetBytes($LineChannelSecret))
     try { return [Convert]::ToBase64String($hmac.ComputeHash($Value)) } finally { $hmac.Dispose() }
+}
+
+function Invoke-WebSmokeRequest([string] $Path) {
+    if (-not $VercelDeployment) { return Invoke-WebRequest "$WebUrl$Path" -UseBasicParsing }
+    $tempPath = Join-Path ([IO.Path]::GetTempPath()) ("plaiflow-smoke-" + [guid]::NewGuid().ToString('N') + '.html')
+    try {
+        & npx --yes vercel curl $Path --deployment $VercelDeployment -- --silent --output $tempPath
+        if ($LASTEXITCODE -ne 0) { throw "Authenticated Web request failed: $Path" }
+        return [pscustomobject]@{ StatusCode = 200; Content = Get-Content -LiteralPath $tempPath -Raw }
+    } finally {
+        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $body = '{"events":[{"webhookEventId":"synthetic-' + [guid]::NewGuid().ToString('N') + '","type":"message","timestamp":' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + '}]}';
@@ -46,10 +59,10 @@ for ($attempt = 0; $attempt -lt 15; $attempt++) {
     if ($snapshot.counts.processed -eq ($baseline.counts.processed + 1)) { break }
 }
 if ($snapshot.counts.processed -ne ($baseline.counts.processed + 1) -or $snapshot.worker -ne 'ok') { throw 'Idempotency, worker, or dashboard state failed' }
-$web = Invoke-WebRequest $WebUrl -UseBasicParsing
+$web = Invoke-WebSmokeRequest '/'
 if ($web.StatusCode -ne 200 -or $web.Content -notmatch 'PlaiFlow') { throw 'Web shell failed' }
 $pricingTimer = [Diagnostics.Stopwatch]::StartNew()
-$pricing = Invoke-WebRequest "$WebUrl/pricing?interval=six_months" -UseBasicParsing
+$pricing = Invoke-WebSmokeRequest '/pricing?interval=six_months'
 $pricingTimer.Stop()
 if ($pricing.StatusCode -ne 200 -or $pricing.Content -notmatch 'Starter' -or $pricing.Content -notmatch '1,098.48') { throw 'Pricing presentation failed' }
 if ($pricingTimer.ElapsedMilliseconds -gt 10000) { throw 'Pricing response exceeded 10 seconds' }
