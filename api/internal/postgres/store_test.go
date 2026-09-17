@@ -52,6 +52,27 @@ func TestIdempotentInsertAndWorkerLifecycle(t *testing.T) {
 	}
 }
 
+func TestInsertEventAcceptsEmptyOptionalSourceFields(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	store, err := New(ctx, databaseURL, 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	event := inbound.Event{Provider: "line", Channel: "test", ProviderEventID: "empty-source-fields", Type: "message", Payload: json.RawMessage(`{}`), OccurredAt: time.Now().UTC()}
+	if err := store.InsertEvents(ctx, []inbound.Event{event}); err != nil {
+		t.Fatal(err)
+	}
+	var exists bool
+	if err := store.pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM inbound_events WHERE provider='line' AND channel='test' AND provider_event_id='empty-source-fields')").Scan(&exists); err != nil || !exists {
+		t.Fatalf("exists=%v err=%v", exists, err)
+	}
+}
+
 func TestCleanupKeepsIdempotencyAndActiveWork(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {

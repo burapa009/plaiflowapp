@@ -59,8 +59,8 @@ func (s *Store) InsertEvents(ctx context.Context, events []inbound.Event) error 
 	for _, event := range events {
 		_, err = tx.Exec(ctx, `INSERT INTO inbound_events
             (provider, channel, provider_event_id, event_type, payload, occurred_at,source_type,source_group_id,source_user_id,link_code_hash)
-			SELECT $1,$2,$3,$4,$5,$6,$7,nullif($8,''),nullif($9,''),$10
-			WHERE $7<>'group' OR $10 IS NOT NULL OR EXISTS (
+			SELECT $1,$2,$3,$4,$5,$6,$7,nullif($8,''),nullif($9,''),$10::bytea
+			WHERE $7<>'group' OR $10::bytea IS NOT NULL OR EXISTS (
 				SELECT 1 FROM line_group_connections WHERE messaging_channel=$2 AND group_id=$8 AND status='connected'
 			)
 			ON CONFLICT (provider, channel, provider_event_id) DO NOTHING`,
