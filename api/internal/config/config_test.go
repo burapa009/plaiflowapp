@@ -50,13 +50,21 @@ func TestLoadServerRequiresCompleteSeparateDriveConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadServerRejectsNonNumericLineLoginChannelID(t *testing.T) {
+	setValidServerEnvironment(t)
+	t.Setenv("LINE_LOGIN_CHANNEL_ID", "staging-not-configured")
+	if _, err := LoadServer(); err == nil {
+		t.Fatal("non-numeric LINE Login channel ID accepted")
+	}
+}
+
 func setValidServerEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("LINE_CHANNEL_ID", "line-channel")
 	t.Setenv("LINE_CHANNEL_SECRET", "line-secret")
-	t.Setenv("LINE_LOGIN_CHANNEL_ID", "line-login")
+	t.Setenv("LINE_LOGIN_CHANNEL_ID", "1234567890")
 	t.Setenv("LINE_LOGIN_CHANNEL_SECRET", "line-login-secret")
 	t.Setenv("GOOGLE_LOGIN_CLIENT_ID", "google-login")
 	t.Setenv("GOOGLE_LOGIN_CLIENT_SECRET", "google-login-secret")

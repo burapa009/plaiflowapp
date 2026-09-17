@@ -48,6 +48,9 @@ func LoadServer() (Server, error) {
 	if config.Environment == "" || config.DatabaseURL == "" || config.LineChannel == "" || config.LineSecret == "" || config.LineLoginChannel == "" || config.LineLoginSecret == "" || config.GoogleClientID == "" || config.GoogleClientSecret == "" || len(config.DashboardTokens) == 0 || config.WebBaseURL == "" || len(config.AllowedWebOrigins) == 0 {
 		return Server{}, errors.New("missing required server configuration")
 	}
+	if strings.Trim(config.LineLoginChannel, "0123456789") != "" {
+		return Server{}, errors.New("invalid LINE Login configuration")
+	}
 	driveKey := os.Getenv("GOOGLE_DRIVE_TOKEN_KEY")
 	driveConfigured := config.GoogleDriveClientID != "" || config.GoogleDriveSecret != "" || driveKey != ""
 	if driveConfigured {
