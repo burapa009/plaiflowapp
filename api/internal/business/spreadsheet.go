@@ -157,7 +157,7 @@ func parseCSV(data []byte) ([]Contact, error) {
 		}
 		copyRecord := append([]string(nil), record...)
 		for _, value := range copyRecord {
-			if utf8.RuneCountInString(value) > maxCellRunes || spreadsheetFormula(value) {
+			if utf8.RuneCountInString(value) > maxCellRunes || strings.ContainsRune(value, '\x00') || spreadsheetFormula(value) {
 				return nil, ErrInvalid
 			}
 		}
@@ -301,7 +301,7 @@ func readSheet(file *zip.File, shared []string) ([][]string, error) {
 					}
 					cellValue = shared[index]
 				}
-				if utf8.RuneCountInString(cellValue) > maxCellRunes {
+				if utf8.RuneCountInString(cellValue) > maxCellRunes || strings.ContainsRune(cellValue, '\x00') {
 					return nil, ErrInvalid
 				}
 				row[column] = cellValue
@@ -346,19 +346,36 @@ func importRows(rows [][]string) ([]Contact, error) {
 		return nil, ErrInvalid
 	}
 	columns := map[string]int{}
+	setColumn := func(name string, index int) error {
+		if _, duplicate := columns[name]; duplicate {
+			return ErrInvalid
+		}
+		columns[name] = index
+		return nil
+	}
 	for index, header := range rows[0] {
 		key := strings.ToLower(strings.TrimSpace(header))
 		switch key {
 		case "display_name", "name", "ชื่อ", "ชื่อที่แสดง":
-			columns["display_name"] = index
+			if err := setColumn("display_name", index); err != nil {
+				return nil, err
+			}
 		case "contact_code", "รหัสคู่ค้า":
-			columns["contact_code"] = index
+			if err := setColumn("contact_code", index); err != nil {
+				return nil, err
+			}
 		case "country", "ประเทศ":
-			columns["country"] = index
+			if err := setColumn("country", index); err != nil {
+				return nil, err
+			}
 		case "tax_id", "เลขประจำตัวผู้เสียภาษี":
-			columns["tax_id"] = index
+			if err := setColumn("tax_id", index); err != nil {
+				return nil, err
+			}
 		case "branch_code", "รหัสสาขา":
-			columns["branch_code"] = index
+			if err := setColumn("branch_code", index); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if _, ok := columns["display_name"]; !ok {

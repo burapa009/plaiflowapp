@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/csv"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -20,12 +22,22 @@ func TestNormalizeVendorRejectsInvalidAndCanonicalizesThaiTaxIdentity(t *testing
 	if _, err := NormalizeVendor(VendorInput{DisplayName: "Bad", Country: "TH", TaxID: "0105552117719"}); err == nil {
 		t.Fatal("invalid checksum accepted")
 	}
+	if _, err := NormalizeVendor(VendorInput{DisplayName: "Bad\x00Name"}); err == nil {
+		t.Fatal("NUL accepted")
+	}
 }
 
 func TestCSVImportRejectsFormulaLikeInput(t *testing.T) {
 	_, err := ParseImport("vendors.csv", "text/csv", []byte("display_name,tax_id\r\n=HYPERLINK(\"https://evil\"),0105552117718\r\n"))
 	if err == nil {
 		t.Fatal("formula-like CSV value accepted")
+	}
+}
+
+func TestCSVImportRejectsTwoColumnsForTheSameField(t *testing.T) {
+	_, err := ParseImport("vendors.csv", "text/csv", []byte("display_name,name\r\nAcme,Other\r\n"))
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("err=%v", err)
 	}
 }
 
@@ -82,5 +94,20 @@ func TestCSVExportProtectsFormulaInjection(t *testing.T) {
 	}
 	if records[1][1] != "'=cmd" {
 		t.Fatalf("display_name=%q", records[1][1])
+	}
+}
+
+func BenchmarkCSVImport10000Rows(b *testing.B) {
+	var input strings.Builder
+	input.WriteString("display_name,contact_code\r\n")
+	for index := 0; index < 10000; index++ {
+		_, _ = fmt.Fprintf(&input, "Vendor %d,V-%d\r\n", index, index)
+	}
+	data := []byte(input.String())
+	b.ResetTimer()
+	for range b.N {
+		if _, err := ParseImport("vendors.csv", "text/csv", data); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

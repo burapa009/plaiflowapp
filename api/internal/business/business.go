@@ -42,6 +42,9 @@ type VendorInput struct {
 }
 
 func NormalizeVendor(input VendorInput) (Contact, error) {
+	if strings.ContainsRune(input.DisplayName+input.ContactCode+input.Country+input.TaxID+input.BranchCode, '\x00') {
+		return Contact{}, ErrInvalid
+	}
 	displayName := strings.TrimSpace(input.DisplayName)
 	if utf8.RuneCountInString(displayName) < 1 || utf8.RuneCountInString(displayName) > 240 {
 		return Contact{}, ErrInvalid

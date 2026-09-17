@@ -140,20 +140,24 @@ func (s *Store) CreateImportPreview(ctx context.Context, actorUserID, organizati
 		return business.Preview{}, business.ErrForbidden
 	}
 	preview := business.Preview{ID: previewID, OrganizationID: organizationID, ExpiresAt: now.Add(24 * time.Hour)}
+	existing, err := existingContactKeys(ctx, tx, organizationID, contacts)
+	if err != nil {
+		return business.Preview{}, err
+	}
 	seen := map[string]bool{}
 	for index, contact := range contacts {
 		row := business.PreviewRow{Row: index + 2, Status: "ready", Contact: contact}
-		key := duplicateKey(contact)
-		duplicate, err := contactExists(ctx, tx, organizationID, contact)
-		if err != nil {
-			return business.Preview{}, err
+		keys := duplicateKeys(contact)
+		duplicate := false
+		for _, key := range keys {
+			duplicate = duplicate || existing[key] || seen[key]
 		}
-		if duplicate || key != "" && seen[key] {
+		if duplicate {
 			row.Status, row.Reason = "duplicate", "strong_duplicate"
 			preview.Duplicates++
 		} else {
 			preview.Ready++
-			if key != "" {
+			for _, key := range keys {
 				seen[key] = true
 			}
 		}
@@ -228,26 +232,36 @@ func (s *Store) CommitImport(ctx context.Context, actorUserID, organizationID, p
 		return business.ImportResult{}, err
 	}
 	result := business.ImportResult{}
+	var ids, names, normalizedNames, codes, countries, taxIDs, branches []string
+	var customers []bool
 	for _, row := range rows {
 		if row.Status != "ready" {
 			result.Skipped++
 			continue
 		}
-		contact := row.Contact
-		contact.ID = postgresUUID()
+		contact, err := business.NormalizeVendor(business.VendorInput{
+			DisplayName: row.Contact.DisplayName, ContactCode: row.Contact.ContactCode, Country: row.Contact.Country,
+			TaxID: row.Contact.TaxID, BranchCode: row.Contact.BranchCode, Customer: row.Contact.Customer,
+		})
+		if err != nil {
+			return business.ImportResult{}, business.ErrInvalid
+		}
+		ids, names, normalizedNames = append(ids, postgresUUID()), append(names, contact.DisplayName), append(normalizedNames, contact.NormalizedName)
+		codes, countries, taxIDs, branches = append(codes, contact.ContactCode), append(countries, contact.Country), append(taxIDs, contact.TaxID), append(branches, contact.BranchCode)
+		customers = append(customers, contact.Customer)
+	}
+	if len(ids) > 0 {
 		command, err := tx.Exec(ctx, `INSERT INTO business_contacts
             (id,organization_id,display_name,normalized_name,contact_code,country,tax_id,branch_code,is_customer,is_vendor,import_preview_id,created_at,updated_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10,$11,$11) ON CONFLICT DO NOTHING`,
-			contact.ID, organizationID, contact.DisplayName, contact.NormalizedName, contact.ContactCode, contact.Country,
-			contact.TaxID, contact.BranchCode, contact.Customer, previewID, now)
+            SELECT input.id::uuid,$1,input.display_name,input.normalized_name,input.contact_code,input.country,input.tax_id,input.branch_code,input.is_customer,true,$2,$3,$3
+            FROM unnest($4::text[],$5::text[],$6::text[],$7::text[],$8::text[],$9::text[],$10::text[],$11::boolean[])
+              AS input(id,display_name,normalized_name,contact_code,country,tax_id,branch_code,is_customer)
+            ON CONFLICT DO NOTHING`, organizationID, previewID, now, ids, names, normalizedNames, codes, countries, taxIDs, branches, customers)
 		if err != nil {
 			return business.ImportResult{}, err
 		}
-		if command.RowsAffected() == 0 {
-			result.Skipped++
-		} else {
-			result.Created++
-		}
+		result.Created = int(command.RowsAffected())
+		result.Skipped += len(ids) - result.Created
 	}
 	if _, err := tx.Exec(ctx, `UPDATE business_import_previews SET status='Committed',committed_at=$3
         WHERE id=$1 AND organization_id=$2`, previewID, organizationID, now); err != nil {
@@ -259,22 +273,41 @@ func (s *Store) CommitImport(ctx context.Context, actorUserID, organizationID, p
 	return result, tx.Commit(ctx)
 }
 
-func contactExists(ctx context.Context, tx pgx.Tx, organizationID string, contact business.Contact) (bool, error) {
-	var exists bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM business_contacts WHERE organization_id=$1 AND
-        (($2<>'' AND country=$3 AND tax_id=$2 AND branch_code=$4) OR ($5<>'' AND lower(contact_code)=lower($5))))`,
-		organizationID, contact.TaxID, contact.Country, contact.BranchCode, contact.ContactCode).Scan(&exists)
-	return exists, err
+func existingContactKeys(ctx context.Context, tx pgx.Tx, organizationID string, contacts []business.Contact) (map[string]bool, error) {
+	countries, taxIDs, branches, codes := make([]string, len(contacts)), make([]string, len(contacts)), make([]string, len(contacts)), make([]string, len(contacts))
+	for index, contact := range contacts {
+		countries[index], taxIDs[index], branches[index], codes[index] = contact.Country, contact.TaxID, contact.BranchCode, strings.ToLower(contact.ContactCode)
+	}
+	rows, err := tx.Query(ctx, `SELECT country,tax_id,branch_code,contact_code FROM business_contacts
+		WHERE organization_id=$1 AND (
+          (tax_id<>'' AND (country,tax_id,branch_code) IN (SELECT * FROM unnest($2::text[],$3::text[],$4::text[])))
+          OR (contact_code<>'' AND lower(contact_code)=ANY($5::text[])))`, organizationID, countries, taxIDs, branches, codes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	existing := map[string]bool{}
+	for rows.Next() {
+		var contact business.Contact
+		if err := rows.Scan(&contact.Country, &contact.TaxID, &contact.BranchCode, &contact.ContactCode); err != nil {
+			return nil, err
+		}
+		for _, key := range duplicateKeys(contact) {
+			existing[key] = true
+		}
+	}
+	return existing, rows.Err()
 }
 
-func duplicateKey(contact business.Contact) string {
+func duplicateKeys(contact business.Contact) []string {
+	var keys []string
 	if contact.TaxID != "" {
-		return "tax:" + contact.Country + ":" + contact.TaxID + ":" + contact.BranchCode
+		keys = append(keys, "tax:"+contact.Country+":"+contact.TaxID+":"+contact.BranchCode)
 	}
 	if contact.ContactCode != "" {
-		return "code:" + strings.ToLower(contact.ContactCode)
+		keys = append(keys, "code:"+strings.ToLower(contact.ContactCode))
 	}
-	return ""
+	return keys
 }
 
 func duplicateDatabaseError(err error) bool {

@@ -1,8 +1,11 @@
 package line
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -32,13 +35,28 @@ func TestRichMenuPublishesSixAuthorizedWebDestinations(t *testing.T) {
 	}))
 	defer server.Close()
 
+	var imageData bytes.Buffer
+	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2500, 1686))); err != nil {
+		t.Fatal(err)
+	}
 	publisher := RichMenuPublisher{Client: server.Client(), BaseURL: server.URL}
-	id, err := publisher.Publish(context.Background(), "test-token", "https://staging.plaiflow.app", []byte("png"))
+	id, err := publisher.Publish(context.Background(), "test-token", "https://staging.plaiflow.app", imageData.Bytes())
 	if err != nil || id != "rich-1" {
 		t.Fatalf("id=%q err=%v", id, err)
 	}
 	want := []string{"/v2/bot/richmenu", "/v2/bot/richmenu/rich-1/content", "/v2/bot/user/all/richmenu/rich-1"}
 	if !reflect.DeepEqual(paths, want) {
 		t.Fatalf("paths=%v", paths)
+	}
+}
+
+func TestRichMenuRejectsWrongImageDimensionsBeforeCallingLINE(t *testing.T) {
+	var imageData bytes.Buffer
+	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	_, err := (RichMenuPublisher{}).Publish(context.Background(), "test-token", "https://staging.plaiflow.app", imageData.Bytes())
+	if err == nil {
+		t.Fatal("expected image validation error")
 	}
 }

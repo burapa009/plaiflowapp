@@ -18,7 +18,10 @@ func (s *Store) SaveAttempt(ctx context.Context, attempt drive.Attempt) error {
 	}
 	defer tx.Rollback(ctx)
 	role, err := currentRole(ctx, tx, attempt.UserID, attempt.OrganizationID)
-	if err != nil || role != tenant.Owner {
+	if err != nil {
+		return err
+	}
+	if role != tenant.Owner {
 		return drive.ErrInvalidAttempt
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO drive_oauth_attempts
@@ -50,7 +53,10 @@ func (s *Store) SaveConnection(ctx context.Context, connection drive.Connection)
 	}
 	defer tx.Rollback(ctx)
 	role, err := currentRole(ctx, tx, connection.AuthorizerUserID, connection.OrganizationID)
-	if err != nil || role != tenant.Owner {
+	if err != nil {
+		return err
+	}
+	if role != tenant.Owner {
 		return drive.ErrInvalidAttempt
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO drive_connections
@@ -67,6 +73,17 @@ func (s *Store) SaveConnection(ctx context.Context, connection drive.Connection)
 	if err != nil {
 		return err
 	}
+	if _, err := tx.Exec(ctx, `UPDATE tasks SET status='Done',updated_at=$3,status_changed_at=$3
+        WHERE organization_id=$1 AND status NOT IN ('Done','Cancelled') AND id IN (
+          SELECT task_id FROM drive_reconnect_tasks WHERE organization_id=$1 AND resolved_at IS NULL AND credential_generation<$2
+        )`, connection.OrganizationID, connection.CredentialGeneration, connection.ConnectedAt); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE drive_reconnect_tasks SET resolved_at=$3
+        WHERE organization_id=$1 AND resolved_at IS NULL AND credential_generation<$2`,
+		connection.OrganizationID, connection.CredentialGeneration, connection.ConnectedAt); err != nil {
+		return err
+	}
 	if err := auditTenant(ctx, tx, connection.OrganizationID, connection.AuthorizerUserID, "drive.connect", "drive_connection", connection.OrganizationID, connection.ConnectedAt); err != nil {
 		return err
 	}
@@ -76,19 +93,22 @@ func (s *Store) SaveConnection(ctx context.Context, connection drive.Connection)
 func (s *Store) GetConnection(ctx context.Context, actorUserID, organizationID string) (drive.Connection, error) {
 	tx, err := s.organizationTx(ctx, actorUserID, organizationID)
 	if err != nil {
-		return drive.Connection{}, drive.ErrNotConnected
+		return drive.Connection{}, err
 	}
 	defer tx.Rollback(ctx)
 	role, err := currentRole(ctx, tx, actorUserID, organizationID)
 	if err != nil {
-		return drive.Connection{}, drive.ErrNotConnected
+		return drive.Connection{}, err
 	}
 	var connection drive.Connection
 	err = tx.QueryRow(ctx, `SELECT organization_id,status,
-        CASE WHEN $2='Owner' THEN coalesce(google_email,'') ELSE '' END,coalesce(google_subject,''),coalesce(folder_id,''),
-        coalesce(authorizer_user_id::text,''),coalesce(encrypted_refresh_token,''::bytea),coalesce(token_nonce,''::bytea),
+		CASE WHEN $2='Owner' THEN coalesce(google_email,'') ELSE '' END,coalesce(google_subject,''),
+		CASE WHEN $2='Owner' THEN coalesce(folder_id,'') ELSE '' END,
+        CASE WHEN $2='Owner' THEN coalesce(authorizer_user_id::text,'') ELSE '' END,
+		CASE WHEN $2='Owner' THEN coalesce(encrypted_refresh_token,''::bytea) ELSE ''::bytea END,
+		CASE WHEN $2='Owner' THEN coalesce(token_nonce,''::bytea) ELSE ''::bytea END,
         credential_generation,coalesce(connected_at,'epoch'::timestamptz),updated_at
-        FROM drive_connections WHERE organization_id=$1`, organizationID, role).Scan(&connection.OrganizationID, &connection.Status,
+		FROM drive_connections WHERE organization_id=$1`, organizationID, role).Scan(&connection.OrganizationID, &connection.Status,
 		&connection.GoogleEmail, &connection.GoogleSubject, &connection.FolderID, &connection.AuthorizerUserID,
 		&connection.EncryptedRefreshToken, &connection.TokenNonce, &connection.CredentialGeneration, &connection.ConnectedAt, &connection.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -103,11 +123,14 @@ func (s *Store) GetConnection(ctx context.Context, actorUserID, organizationID s
 func (s *Store) Disconnect(ctx context.Context, actorUserID, organizationID string, now time.Time) (drive.Connection, error) {
 	tx, err := s.organizationTx(ctx, actorUserID, organizationID)
 	if err != nil {
-		return drive.Connection{}, drive.ErrNotConnected
+		return drive.Connection{}, err
 	}
 	defer tx.Rollback(ctx)
 	role, err := currentRole(ctx, tx, actorUserID, organizationID)
-	if err != nil || role != tenant.Owner {
+	if err != nil {
+		return drive.Connection{}, err
+	}
+	if role != tenant.Owner {
 		return drive.Connection{}, tenant.ErrForbidden
 	}
 	var connection drive.Connection

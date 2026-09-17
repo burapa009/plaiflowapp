@@ -56,7 +56,7 @@ CREATE INDEX business_contacts_vendor_search_idx
 CREATE TABLE business_import_previews (
     id uuid PRIMARY KEY,
     organization_id uuid NOT NULL REFERENCES organizations(id),
-    requester_user_id uuid NOT NULL,
+    requester_user_id uuid NOT NULL REFERENCES users(id),
     rows jsonb NOT NULL CHECK (jsonb_typeof(rows)='array'),
     ready_count integer NOT NULL CHECK (ready_count >= 0),
     duplicate_count integer NOT NULL CHECK (duplicate_count >= 0),
@@ -66,8 +66,7 @@ CREATE TABLE business_import_previews (
     created_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
     committed_at timestamptz,
-    UNIQUE (organization_id,id),
-    FOREIGN KEY (organization_id,requester_user_id) REFERENCES memberships(organization_id,user_id)
+    UNIQUE (organization_id,id)
 );
 
 ALTER TABLE business_contacts

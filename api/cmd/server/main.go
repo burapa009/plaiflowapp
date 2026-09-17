@@ -74,7 +74,7 @@ func main() {
 			Logger: logger, Auth: authService, Tenants: store, Work: store, Business: store, PlanStore: store,
 			Gate: plan.Gate{Store: store}, Drive: driveService,
 		}, store),
-		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
 	go func() {
 		logger.Info("server_started", "port", settings.Port, "environment", settings.Environment)

@@ -150,9 +150,17 @@ func (s *Service) Complete(ctx context.Context, state, browserSecret, userID, se
 	if err != nil || credential.RefreshToken == "" || credential.Subject == "" {
 		return Connection{}, ErrInvalidGrant
 	}
-	folderID, err := s.provider.CreateFolder(ctx, credential.AccessToken, "PlaiFlow - "+attempt.OrganizationName)
-	if err != nil {
-		return Connection{}, err
+	folderID := ""
+	if existing, existingErr := s.store.GetConnection(ctx, userID, attempt.OrganizationID); existingErr == nil {
+		folderID = existing.FolderID
+	} else {
+		return Connection{}, existingErr
+	}
+	if folderID == "" {
+		folderID, err = s.provider.CreateFolder(ctx, credential.AccessToken, "PlaiFlow - "+attempt.OrganizationName)
+		if err != nil {
+			return Connection{}, err
+		}
 	}
 	ciphertext, nonce, err := s.encrypt(credential.RefreshToken, attempt.OrganizationID)
 	if err != nil {

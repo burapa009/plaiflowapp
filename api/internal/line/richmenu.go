@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -45,6 +46,13 @@ func RichMenuDefinition(webBaseURL string) ([]byte, error) {
 func (p RichMenuPublisher) Publish(ctx context.Context, token, webBaseURL string, image []byte) (string, error) {
 	if token == "" || len(image) == 0 {
 		return "", errors.New("rich menu token and image are required")
+	}
+	if len(image) > 1<<20 {
+		return "", errors.New("rich menu image must be a PNG no larger than 1 MB")
+	}
+	configuration, err := png.DecodeConfig(bytes.NewReader(image))
+	if err != nil || configuration.Width != 2500 || configuration.Height != 1686 {
+		return "", errors.New("rich menu image must be a 2500x1686 PNG")
 	}
 	definition, err := RichMenuDefinition(webBaseURL)
 	if err != nil {

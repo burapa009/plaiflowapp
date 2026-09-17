@@ -39,6 +39,11 @@ func TestLoadServerRequiresCompleteSeparateDriveConfiguration(t *testing.T) {
 	}
 	t.Setenv("GOOGLE_DRIVE_CLIENT_SECRET", "drive-secret")
 	t.Setenv("GOOGLE_DRIVE_TOKEN_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+	t.Setenv("GOOGLE_DRIVE_CLIENT_ID", "google-login")
+	if _, err := LoadServer(); err == nil {
+		t.Fatal("Google Login client reused for Drive")
+	}
+	t.Setenv("GOOGLE_DRIVE_CLIENT_ID", "drive-client")
 	config, err := LoadServer()
 	if err != nil || config.GoogleDriveClientID != "drive-client" || len(config.GoogleDriveTokenKey) != 32 {
 		t.Fatalf("config=%+v err=%v", config, err)

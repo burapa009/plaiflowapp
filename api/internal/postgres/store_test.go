@@ -7,8 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"plaiflow/api/internal/business"
 	"plaiflow/api/internal/inbound"
 )
+
+func TestBusinessDuplicateKeysUseTaxAndContactCode(t *testing.T) {
+	keys := duplicateKeys(business.Contact{Country: "TH", TaxID: "0105552117718", BranchCode: "00000", ContactCode: "Vendor-1"})
+	if len(keys) != 2 || keys[0] != "tax:TH:0105552117718:00000" || keys[1] != "code:vendor-1" {
+		t.Fatalf("keys=%v", keys)
+	}
+}
 
 func TestIdempotentInsertAndWorkerLifecycle(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")

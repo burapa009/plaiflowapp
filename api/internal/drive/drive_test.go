@@ -42,7 +42,10 @@ func (s *memoryStore) RequireReconnect(context.Context, string, int64, time.Time
 	return nil
 }
 
-type providerDouble struct{ refreshErr error }
+type providerDouble struct {
+	refreshErr  error
+	folderCalls int
+}
 
 func (*providerDouble) AuthorizationURL(attempt OAuthAttempt) string {
 	return "https://accounts.example/auth?" + url.Values{
@@ -52,7 +55,9 @@ func (*providerDouble) AuthorizationURL(attempt OAuthAttempt) string {
 func (*providerDouble) Exchange(context.Context, string, string) (Credential, error) {
 	return Credential{AccessToken: "access", RefreshToken: "refresh", Subject: "google-user", Email: "owner@example.com"}, nil
 }
-func (*providerDouble) CreateFolder(context.Context, string, string) (string, error) {
+
+func (p *providerDouble) CreateFolder(context.Context, string, string) (string, error) {
+	p.folderCalls++
 	return "folder-1", nil
 }
 func (p *providerDouble) Refresh(context.Context, string) (string, error) { return "", p.refreshErr }
@@ -108,5 +113,18 @@ func TestDisconnectStopsLocallyEvenWhenProviderRevocationFails(t *testing.T) {
 	_, _ = service.Complete(context.Background(), start.State, start.BrowserSecret, "user-1", "session-1", "code")
 	if err := service.Disconnect(context.Background(), "user-1", "org-1"); err != nil || !store.disconnected || len(store.connection.EncryptedRefreshToken) != 0 {
 		t.Fatalf("disconnected=%v connection=%+v err=%v", store.disconnected, store.connection, err)
+	}
+}
+
+func TestReconnectPreservesCanonicalFolder(t *testing.T) {
+	store := &memoryStore{}
+	provider := &providerDouble{}
+	service, _ := New(Config{Provider: provider, Store: store, EncryptionKey: make([]byte, 32), Now: time.Now})
+	start, _ := service.Begin(context.Background(), "org-1", "user-1", "session-1", "Acme")
+	first, _ := service.Complete(context.Background(), start.State, start.BrowserSecret, "user-1", "session-1", "code")
+	start, _ = service.Begin(context.Background(), "org-1", "user-1", "session-1", "Acme")
+	second, err := service.Complete(context.Background(), start.State, start.BrowserSecret, "user-1", "session-1", "code")
+	if err != nil || first.FolderID != second.FolderID || provider.folderCalls != 1 {
+		t.Fatalf("first=%+v second=%+v folder_calls=%d err=%v", first, second, provider.folderCalls, err)
 	}
 }

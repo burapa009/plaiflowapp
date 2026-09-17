@@ -37,6 +37,7 @@ CREATE TABLE drive_reconnect_tasks (
     credential_generation bigint NOT NULL,
     task_id uuid NOT NULL,
     created_at timestamptz NOT NULL,
+    resolved_at timestamptz,
     PRIMARY KEY (organization_id,credential_generation),
     FOREIGN KEY (organization_id,task_id) REFERENCES tasks(organization_id,id)
 );

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"plaiflow/api/internal/business"
 	"plaiflow/api/internal/plan"
@@ -99,7 +100,12 @@ func (s *server) listVendors(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "invalid_cursor", "Pagination is invalid")
 		return
 	}
-	page, err := s.config.Business.ListVendors(r.Context(), session.UserID, membership.OrganizationID, strings.TrimSpace(r.URL.Query().Get("q")), r.URL.Query().Get("cursor"), limit)
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	if utf8.RuneCountInString(search) > 240 {
+		writeError(w, r, http.StatusBadRequest, "invalid_search", "Search is invalid")
+		return
+	}
+	page, err := s.config.Business.ListVendors(r.Context(), session.UserID, membership.OrganizationID, search, r.URL.Query().Get("cursor"), limit)
 	if err != nil {
 		writeBusinessError(w, r, err)
 		return
@@ -123,7 +129,7 @@ func (s *server) exportVendors(w http.ResponseWriter, r *http.Request) {
 	}
 	decision, err := s.config.Gate.Check(r.Context(), membership.OrganizationID, capability, 1)
 	if err != nil || !decision.Allowed {
-		writeError(w, r, http.StatusPaymentRequired, "feature_unavailable", "XLSX export is unavailable")
+		writeError(w, r, http.StatusPaymentRequired, "feature_unavailable", "Export is unavailable")
 		return
 	}
 	contacts, err := s.config.Business.ExportVendors(r.Context(), session.UserID, membership.OrganizationID, 5000)
@@ -148,9 +154,8 @@ func (s *server) exportVendors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) previewVendorImport(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 11<<20)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		writeError(w, r, http.StatusRequestEntityTooLarge, "invalid_import", "Import file is invalid")
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
+		writeError(w, r, http.StatusUnsupportedMediaType, "invalid_content_type", "Request content type is invalid")
 		return
 	}
 	session, ok := s.authenticatedMutation(w, r)
@@ -170,6 +175,14 @@ func (s *server) previewVendorImport(w http.ResponseWriter, r *http.Request) {
 	if err != nil || !decision.Allowed {
 		writeError(w, r, http.StatusPaymentRequired, "feature_unavailable", "Import is unavailable")
 		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 11<<20)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		writeError(w, r, http.StatusRequestEntityTooLarge, "invalid_import", "Import file is invalid")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
 	}
 	file, header, err := r.FormFile("file")
 	if err != nil {

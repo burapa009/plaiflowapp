@@ -60,7 +60,7 @@ async function createOrganization(formData: FormData) {
   redirect("/organizations?created=1");
 }
 
-export default async function Organizations({ searchParams }: { searchParams: Promise<{ created?: string; error?: string }> }) {
+export default async function Organizations({ searchParams }: { searchParams: Promise<{ created?: string; error?: string; drive?: string }> }) {
   const params = await searchParams;
   const response = await apiGET("/v1/organizations");
   if (response?.status === 401) redirect("/");
@@ -97,6 +97,7 @@ export default async function Organizations({ searchParams }: { searchParams: Pr
             <h1>{organizations[0].name}</h1>
             <p className="intro">Organization และ Owner Membership ถูกสร้างเรียบร้อยแล้ว</p>
             {params.created && <p className="success-message" role="status">สร้างพื้นที่ทำงานสำเร็จ</p>}
+            {params.drive && <p className="form-error" role="alert">{params.drive === "access_denied" ? "ยกเลิกการอนุญาต Google Drive แล้ว ยังไม่มีการเชื่อมต่อใหม่" : "เชื่อมต่อ Google Drive ไม่สำเร็จ กรุณาเปิด Connections แล้วลองใหม่"}</p>}
             <Card className="organization-card">
               <span>สิทธิ์ของคุณ</span>
               <strong>{membership?.role}</strong>

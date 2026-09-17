@@ -52,7 +52,7 @@ func LoadServer() (Server, error) {
 	driveConfigured := config.GoogleDriveClientID != "" || config.GoogleDriveSecret != "" || driveKey != ""
 	if driveConfigured {
 		decoded, err := base64.StdEncoding.DecodeString(driveKey)
-		if config.GoogleDriveClientID == "" || config.GoogleDriveSecret == "" || err != nil || len(decoded) != 32 {
+		if config.GoogleDriveClientID == "" || config.GoogleDriveSecret == "" || config.GoogleDriveClientID == config.GoogleClientID || err != nil || len(decoded) != 32 {
 			return Server{}, errors.New("invalid Google Drive configuration")
 		}
 		config.GoogleDriveTokenKey = decoded
