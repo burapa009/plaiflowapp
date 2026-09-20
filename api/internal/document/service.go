@@ -8,9 +8,10 @@ import (
 )
 
 var (
-	ErrQuota         = errors.New("document quota exhausted")
-	ErrTrashed       = errors.New("matching document is in trash")
-	ErrInvalidCursor = errors.New("document cursor is invalid")
+	ErrQuota          = errors.New("document quota exhausted")
+	ErrTrashed        = errors.New("matching document is in trash")
+	ErrInvalidCursor  = errors.New("document cursor is invalid")
+	ErrStatusConflict = errors.New("document status transition is unavailable")
 )
 
 type Document struct {
@@ -62,6 +63,10 @@ type Exporter interface {
 	ExportDocuments(context.Context, string, string, Filter, string, io.Writer) (int64, error)
 }
 
+type ExportCounter interface {
+	CountDocumentsForExport(context.Context, string, string, Filter) (int64, error)
+}
+
 type Reader interface {
 	ListDocuments(context.Context, string, string, string, int) (Page, error)
 	GetDocument(context.Context, string, string, string) (Document, error)
@@ -73,6 +78,10 @@ type FilterReader interface {
 
 type SummaryReader interface {
 	DocumentSummary(context.Context, string, string) (Summary, error)
+}
+
+type StatusUpdater interface {
+	ChangeDocumentStatus(context.Context, string, string, string, string, time.Time) (Document, error)
 }
 
 type AcceptInput struct {
@@ -173,11 +182,25 @@ func (s Service) Summary(ctx context.Context, userID, organizationID string) (Su
 	return Summary{}, errors.New("document summary is not configured")
 }
 
+func (s Service) ChangeStatus(ctx context.Context, userID, organizationID, documentID, action string, now time.Time) (Document, error) {
+	if updater, ok := s.Reader.(StatusUpdater); ok {
+		return updater.ChangeDocumentStatus(ctx, userID, organizationID, documentID, action, now)
+	}
+	return Document{}, errors.New("document status is not configured")
+}
+
 func (s Service) Export(ctx context.Context, userID, organizationID string, filter Filter, format string, output io.Writer) (int64, error) {
 	if exporter, ok := s.Reader.(Exporter); ok {
 		return exporter.ExportDocuments(ctx, userID, organizationID, filter, format, output)
 	}
 	return 0, errors.New("document exporter is not configured")
+}
+
+func (s Service) ExportCount(ctx context.Context, userID, organizationID string, filter Filter) (int64, error) {
+	if counter, ok := s.Reader.(ExportCounter); ok {
+		return counter.CountDocumentsForExport(ctx, userID, organizationID, filter)
+	}
+	return 0, errors.New("document export preview is not configured")
 }
 
 func (s Service) Open(ctx context.Context, userID, organizationID, documentID string) (Document, io.ReadCloser, error) {

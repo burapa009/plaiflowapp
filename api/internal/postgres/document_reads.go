@@ -15,6 +15,40 @@ import (
 	"plaiflow/api/internal/tenant"
 )
 
+const documentExportScope = ` FROM documents d
+    LEFT JOIN users submitter ON submitter.id=d.submitted_by_user_id
+    LEFT JOIN users assignee ON assignee.id=d.assignee_user_id
+    WHERE d.organization_id=$1 AND d.status<>'Purged'
+      AND ($2<>'' OR d.status<>'Trash') AND ($2='' OR d.status=$2)
+      AND ($3='' OR EXISTS (SELECT 1 FROM document_sources ds2 WHERE ds2.organization_id=d.organization_id AND ds2.document_id=d.id AND ds2.channel=$3))
+      AND ($4='' OR d.display_filename ILIKE '%'||$4||'%')
+      AND ($5='' OR coalesce(d.submitted_by_user_id::text,'')=$5)
+      AND ($6='' OR coalesce(d.assignee_user_id::text,'')=$6)
+      AND ($7::timestamptz IS NULL OR d.accepted_at >= $7)
+      AND ($8::timestamptz IS NULL OR d.accepted_at < $8)`
+
+func (s *Store) CountDocumentsForExport(ctx context.Context, userID, organizationID string, filter document.Filter) (int64, error) {
+	tx, err := s.organizationTx(ctx, userID, organizationID)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	role, err := currentRole(ctx, tx, userID, organizationID)
+	if err != nil || (role != tenant.Owner && role != tenant.Admin) {
+		return 0, tenant.ErrForbidden
+	}
+	var count int64
+	err = tx.QueryRow(ctx, `SELECT count(*)`+documentExportScope, organizationID, filter.Status, filter.Channel, filter.Filename,
+		filter.Submitter, filter.Assignee, filter.From, filter.To).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	if err := auditTenant(ctx, tx, organizationID, userID, "document.export.preview", "organization", organizationID, time.Now().UTC()); err != nil {
+		return 0, err
+	}
+	return count, tx.Commit(ctx)
+}
+
 func (s *Store) ExportDocuments(ctx context.Context, userID, organizationID string, filter document.Filter, format string, output io.Writer) (int64, error) {
 	if format != "csv" && format != "xlsx" {
 		return 0, errors.New("unsupported document export format")
@@ -32,13 +66,7 @@ func (s *Store) ExportDocuments(ctx context.Context, userID, organizationID stri
 	    coalesce((SELECT ds.channel FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id ORDER BY ds.created_at,ds.id LIMIT 1),''),
 	    (SELECT count(*) FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id),
 	    coalesce(submitter.display_name,''),coalesce(assignee.display_name,''),d.accepted_at,d.updated_at
-	    FROM documents d LEFT JOIN users submitter ON submitter.id=d.submitted_by_user_id LEFT JOIN users assignee ON assignee.id=d.assignee_user_id
-	    WHERE d.organization_id=$1 AND d.status<>'Purged'
-	      AND ($2<>'' OR d.status<>'Trash') AND ($2='' OR d.status=$2) AND ($3='' OR EXISTS (SELECT 1 FROM document_sources ds2 WHERE ds2.organization_id=d.organization_id AND ds2.document_id=d.id AND ds2.channel=$3))
-	      AND ($4='' OR d.display_filename ILIKE '%'||$4||'%')
-	      AND ($5='' OR coalesce(d.submitted_by_user_id::text,'')=$5) AND ($6='' OR coalesce(d.assignee_user_id::text,'')=$6)
-	      AND ($7::timestamptz IS NULL OR d.accepted_at >= $7) AND ($8::timestamptz IS NULL OR d.accepted_at < $8)
-	    ORDER BY d.accepted_at DESC,d.id DESC`, organizationID, filter.Status, filter.Channel, filter.Filename, filter.Submitter, filter.Assignee, filter.From, filter.To)
+	    `+documentExportScope+` ORDER BY d.accepted_at DESC,d.id DESC`, organizationID, filter.Status, filter.Channel, filter.Filename, filter.Submitter, filter.Assignee, filter.From, filter.To)
 	if err != nil {
 		return 0, err
 	}
@@ -240,6 +268,49 @@ func (s *Store) GetDocument(ctx context.Context, userID, organizationID, documen
 		return document.Document{}, err
 	}
 	if err := auditTenant(ctx, tx, organizationID, userID, "document.retrieve", "document", documentID, time.Now().UTC()); err != nil {
+		return document.Document{}, err
+	}
+	return doc, tx.Commit(ctx)
+}
+
+func (s *Store) ChangeDocumentStatus(ctx context.Context, userID, organizationID, documentID, action string, now time.Time) (document.Document, error) {
+	if !documentUUID.MatchString(documentID) || (action != "archive" && action != "trash" && action != "restore") {
+		return document.Document{}, tenant.ErrNotFound
+	}
+	tx, err := s.organizationTx(ctx, userID, organizationID)
+	if err != nil {
+		return document.Document{}, err
+	}
+	defer tx.Rollback(ctx)
+	role, err := currentRole(ctx, tx, userID, organizationID)
+	if err != nil || (role != tenant.Owner && role != tenant.Admin) {
+		return document.Document{}, tenant.ErrForbidden
+	}
+	var doc document.Document
+	err = tx.QueryRow(ctx, `UPDATE documents SET
+	    status=CASE $3 WHEN 'archive' THEN 'Archived' WHEN 'trash' THEN 'Trash' ELSE 'Available' END,
+	    trashed_at=CASE WHEN $3='trash' THEN $4::timestamptz ELSE NULL END,
+	    updated_at=$4
+	    WHERE organization_id=$1 AND id=$2 AND
+	      (($3='archive' AND status='Available') OR
+	       ($3='trash' AND status IN ('Available','Archived')) OR
+	       ($3='restore' AND status='Trash' AND trashed_at > $4::timestamptz-interval '30 days'))
+	    RETURNING id,organization_id,display_filename,detected_mime,byte_size,status,storage_key,accepted_at`,
+		organizationID, documentID, action, now).Scan(&doc.ID, &doc.OrganizationID, &doc.Filename, &doc.MIME, &doc.Size, &doc.Status, &doc.StorageKey, &doc.AcceptedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM documents WHERE organization_id=$1 AND id=$2)`, organizationID, documentID).Scan(&exists); err != nil {
+			return document.Document{}, err
+		}
+		if !exists {
+			return document.Document{}, tenant.ErrNotFound
+		}
+		return document.Document{}, document.ErrStatusConflict
+	}
+	if err != nil {
+		return document.Document{}, err
+	}
+	if err := auditTenant(ctx, tx, organizationID, userID, "document."+action, "document", documentID, now); err != nil {
 		return document.Document{}, err
 	}
 	return doc, tx.Commit(ctx)

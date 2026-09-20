@@ -2,6 +2,7 @@ package line
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,5 +32,20 @@ func TestContentClientUsesServerTokenAndRejectsInvalidID(t *testing.T) {
 	}
 	if _, err := client.Download(context.Background(), "../bad"); err == nil {
 		t.Fatal("invalid content id accepted")
+	}
+}
+
+func TestContentClientDoesNotRetryExpiredContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "expired", http.StatusNotFound)
+	}))
+	defer server.Close()
+	client, err := NewContentClient(server.Client(), server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Download(context.Background(), "msg-1")
+	if !errors.Is(err, ErrContentUnavailable) {
+		t.Fatalf("expired content err=%v", err)
 	}
 }

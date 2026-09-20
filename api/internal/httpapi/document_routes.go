@@ -24,10 +24,59 @@ func (s *server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/o/{organization}/documents", s.uploadDocument)
 	mux.HandleFunc("GET /v1/o/{organization}/documents", s.listDocuments)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/summary", s.documentSummary)
+	mux.HandleFunc("GET /v1/o/{organization}/documents/export/count", s.documentExportCount)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/export.csv", s.exportDocuments)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/export.xlsx", s.exportDocuments)
 	mux.HandleFunc("POST /v1/o/{organization}/documents/drive", s.importDriveDocument)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/{document}/original", s.openDocument)
+	mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/archive", s.changeDocumentStatus)
+	mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/trash", s.changeDocumentStatus)
+	mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/restore", s.changeDocumentStatus)
+}
+
+func (s *server) documentExportCount(w http.ResponseWriter, r *http.Request) {
+	session, membership, ok := s.workContext(w, r, false)
+	if !ok {
+		return
+	}
+	if membership.Role != tenant.Owner && membership.Role != tenant.Admin {
+		writeError(w, r, http.StatusForbidden, "forbidden", "Only an organization owner or admin can preview exports")
+		return
+	}
+	filter, err := documentFilter(r)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid_document_filter", "Document filters are invalid")
+		return
+	}
+	count, err := s.config.Documents.ExportCount(r.Context(), session.UserID, membership.OrganizationID, filter)
+	if err != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "document_unavailable", "Export preview is unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"count": count})
+}
+
+func (s *server) changeDocumentStatus(w http.ResponseWriter, r *http.Request) {
+	session, membership, ok := s.workContext(w, r, true)
+	if !ok {
+		return
+	}
+	if membership.Role != tenant.Owner && membership.Role != tenant.Admin {
+		writeError(w, r, http.StatusForbidden, "forbidden", "Only an organization owner or admin can manage documents")
+		return
+	}
+	action := strings.TrimPrefix(path.Base(r.URL.Path), "/")
+	doc, err := s.config.Documents.ChangeStatus(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"), action, s.config.Now().UTC())
+	switch {
+	case errors.Is(err, tenant.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "Resource was not found")
+	case errors.Is(err, document.ErrStatusConflict):
+		writeError(w, r, http.StatusConflict, "document_status_conflict", "Document status has changed or restoration has expired")
+	case err != nil:
+		writeError(w, r, http.StatusServiceUnavailable, "document_unavailable", "Document status could not be updated")
+	default:
+		writeJSON(w, http.StatusOK, doc)
+	}
 }
 
 func (s *server) documentSummary(w http.ResponseWriter, r *http.Request) {

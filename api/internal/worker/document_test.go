@@ -10,6 +10,7 @@ import (
 
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/inbound"
+	lineadapter "plaiflow/api/internal/line"
 )
 
 type lineMemory struct {
@@ -50,10 +51,24 @@ func (lineDownload) Download(context.Context, string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader([]byte("%PDF-1.7"))), nil
 }
 
+type expiredLineDownload struct{}
+
+func (expiredLineDownload) Download(context.Context, string) (io.ReadCloser, error) {
+	return nil, lineadapter.ErrContentUnavailable
+}
+
+func TestLINEDocumentProcessorEndsExpiredMessage(t *testing.T) {
+	process := NewLINEDocumentProcessor(&document.Service{}, lineResolve{}, expiredLineDownload{})
+	status, _, err := process(context.Background(), inbound.Event{Provider: "line", Channel: "channel", ProviderEventID: "event-1", SourceType: "user", SourceUserID: "line-user", Payload: []byte(`{"type":"message","message":{"type":"file","id":"message-1","fileName":"invoice.pdf"}}`)})
+	if err != nil || status != inbound.Ignored {
+		t.Fatalf("status=%s err=%v", status, err)
+	}
+}
+
 func TestLINEDocumentProcessorUsesSharedDocumentPipeline(t *testing.T) {
 	storage := &lineMemory{objects: map[string][]byte{}}
 	service := &document.Service{Intake: document.Intake{Temporary: storage, Scanner: scannerFunc(func(context.Context, io.Reader) error { return nil })}, Committer: commitFunc(func(_ context.Context, input document.CommitInput) (document.CommitResult, error) {
-		if input.Channel != "LINE" || input.OriginKey == "" || input.OrganizationID != "org-1" {
+		if input.Channel != "LINE" || input.OriginKey != "line:line:channel:message-1" || input.OrganizationID != "org-1" {
 			t.Fatalf("input=%+v", input)
 		}
 		return document.CommitResult{Accepted: true}, nil

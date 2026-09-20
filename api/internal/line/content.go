@@ -14,6 +14,8 @@ type ContentDownloader interface {
 	Download(context.Context, string) (io.ReadCloser, error)
 }
 
+var ErrContentUnavailable = errors.New("LINE message content is unavailable")
+
 type ContentClient struct {
 	client  *http.Client
 	baseURL string
@@ -47,6 +49,10 @@ func (c *ContentClient) Download(ctx context.Context, messageID string) (io.Read
 	response, err := c.client.Do(request)
 	if err != nil {
 		return nil, err
+	}
+	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusGone {
+		response.Body.Close()
+		return nil, ErrContentUnavailable
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		response.Body.Close()

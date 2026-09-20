@@ -8,6 +8,7 @@ import (
 	"io"
 	"path"
 	"strings"
+	"time"
 
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/inbound"
@@ -32,6 +33,9 @@ func NewLINEDocumentProcessor(service *document.Service, resolver LINEDocumentRe
 			return inbound.Ignored, "LINE sender is not mapped to one organization", nil
 		}
 		body, err := downloader.Download(ctx, message.ID)
+		if errors.Is(err, lineadapter.ErrContentUnavailable) {
+			return inbound.Ignored, "LINE message content is unavailable; sender must resend", nil
+		}
 		if err != nil {
 			return inbound.Retryable, "LINE content download failed", err
 		}
@@ -43,8 +47,8 @@ func NewLINEDocumentProcessor(service *document.Service, resolver LINEDocumentRe
 		}
 		result, err := service.Accept(ctx, document.AcceptInput{
 			OrganizationID: organizationID, ActorUserID: userID, AttemptID: attemptID,
-			OriginKey: "line:" + event.Provider + ":" + event.Channel + ":" + event.ProviderEventID,
-			Filename:  filename, Channel: "LINE", Now: event.OccurredAt,
+			OriginKey: "line:" + event.Provider + ":" + event.Channel + ":" + message.ID,
+			Filename:  filename, Channel: "LINE", Now: time.Now().UTC(),
 		}, body)
 		if errors.Is(err, document.ErrQuota) || errors.Is(err, document.ErrTrashed) || errors.Is(err, document.ErrUnsupportedType) || errors.Is(err, document.ErrTooLarge) || errors.Is(err, document.ErrMalware) {
 			return inbound.Ignored, "LINE document was rejected", nil
