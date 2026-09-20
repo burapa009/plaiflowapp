@@ -131,14 +131,14 @@ func (s *Store) DocumentSummary(ctx context.Context, userID, organizationID stri
 	var summary document.Summary
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM document_usage_charges c JOIN documents d ON d.organization_id=c.organization_id AND d.id=c.document_id
 	    WHERE c.organization_id=$1 AND c.accepted_at >= $3 AND c.accepted_at < $4
-	      AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR d.submitted_by_user_id=$2 OR d.assignee_user_id=$2
-	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$2))`, organizationID, userID, usedFrom, usedTo).Scan(&summary.Used); err != nil {
+	      AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR (d.submitted_by_user_id=$2 AND NOT d.group_restricted) OR d.assignee_user_id=$2
+	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$2 AND NOT ds.group_source))`, organizationID, userID, usedFrom, usedTo).Scan(&summary.Used); err != nil {
 		return document.Summary{}, err
 	}
 	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE d.status='Available'),count(*) FILTER (WHERE d.status='Archived'),count(*) FILTER (WHERE d.status='Trash')
 	    FROM documents d WHERE d.organization_id=$1
-	      AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR d.submitted_by_user_id=$2 OR d.assignee_user_id=$2
-	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$2))`, organizationID, userID).Scan(&summary.Available, &summary.Archived, &summary.Trash); err != nil {
+	      AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR (d.submitted_by_user_id=$2 AND NOT d.group_restricted) OR d.assignee_user_id=$2
+	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$2 AND NOT ds.group_source))`, organizationID, userID).Scan(&summary.Available, &summary.Archived, &summary.Trash); err != nil {
 		return document.Summary{}, err
 	}
 	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE a.status='Checking'),count(*) FILTER (WHERE a.status='Rejected')
@@ -206,13 +206,15 @@ func (s *Store) ListDocumentsFiltered(ctx context.Context, userID, organizationI
 		cursorID = cursor.ID
 	}
 	rows, err := tx.Query(ctx, `SELECT d.id,d.organization_id,d.display_filename,d.detected_mime,d.byte_size,d.status,d.storage_key,d.accepted_at,
-	    coalesce((SELECT ds0.channel FROM document_sources ds0 WHERE ds0.organization_id=d.organization_id AND ds0.document_id=d.id ORDER BY ds0.created_at,ds0.id LIMIT 1),''),
+	    coalesce((SELECT ds0.channel FROM document_sources ds0 WHERE ds0.organization_id=d.organization_id AND ds0.document_id=d.id
+	        AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR (ds0.submitted_by_user_id=$2::uuid AND NOT ds0.group_source))
+	        ORDER BY ds0.created_at,ds0.id LIMIT 1),''),
 	    (SELECT count(*) FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id
-	        AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR ds.submitted_by_user_id=$2::uuid))
+	        AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR (ds.submitted_by_user_id=$2::uuid AND NOT ds.group_source)))
 	    FROM documents d WHERE d.organization_id=$1 AND d.status<>'Purged'
-	    AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR d.submitted_by_user_id=$2::uuid
+	    AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR (d.submitted_by_user_id=$2::uuid AND NOT d.group_restricted)
 	        OR d.assignee_user_id=$2::uuid OR EXISTS (SELECT 1 FROM document_sources ds
-	            WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$2::uuid))
+	            WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$2::uuid AND NOT ds.group_source))
 	    AND ($7<>'' OR d.status<>'Trash') AND ($7='' OR d.status=$7) AND ($8='' OR EXISTS (SELECT 1 FROM document_sources ds2 WHERE ds2.organization_id=d.organization_id AND ds2.document_id=d.id AND ds2.channel=$8))
 	    AND ($9='' OR d.display_filename ILIKE '%'||$9||'%') AND ($10='' OR coalesce(d.submitted_by_user_id::text,'')=$10) AND ($11='' OR coalesce(d.assignee_user_id::text,'')=$11)
 	    AND ($12::timestamptz IS NULL OR d.accepted_at >= $12) AND ($13::timestamptz IS NULL OR d.accepted_at < $13)
@@ -255,11 +257,13 @@ func (s *Store) GetDocument(ctx context.Context, userID, organizationID, documen
 	}
 	var doc document.Document
 	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.display_filename,d.detected_mime,d.byte_size,d.status,d.storage_key,d.accepted_at,
-	    coalesce((SELECT ds.channel FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id ORDER BY ds.created_at,ds.id LIMIT 1),'')
+	    coalesce((SELECT ds.channel FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id
+	        AND (organization_role($3::uuid,$1::uuid) IN ('Owner','Admin') OR (ds.submitted_by_user_id=$3::uuid AND NOT ds.group_source))
+	        ORDER BY ds.created_at,ds.id LIMIT 1),'')
 	    FROM documents d WHERE d.organization_id=$1 AND d.id=$2 AND d.status IN ('Available','Archived')
-	    AND (organization_role($3::uuid,$1::uuid) IN ('Owner','Admin') OR d.submitted_by_user_id=$3::uuid
+	    AND (organization_role($3::uuid,$1::uuid) IN ('Owner','Admin') OR (d.submitted_by_user_id=$3::uuid AND NOT d.group_restricted)
 	        OR d.assignee_user_id=$3::uuid OR EXISTS (SELECT 1 FROM document_sources ds
-	            WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$3::uuid))`, organizationID, documentID, userID).Scan(
+	            WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$3::uuid AND NOT ds.group_source))`, organizationID, documentID, userID).Scan(
 		&doc.ID, &doc.OrganizationID, &doc.Filename, &doc.MIME, &doc.Size, &doc.Status, &doc.StorageKey, &doc.AcceptedAt, &doc.SourceChannel)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return document.Document{}, tenant.ErrNotFound
@@ -291,8 +295,8 @@ func (s *Store) DocumentDetail(ctx context.Context, userID, organizationID, docu
 	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.display_filename,d.detected_mime,d.byte_size,d.status,d.accepted_at
 	    FROM documents d WHERE d.organization_id=$1 AND d.id=$2 AND d.status<>'Purged'
 	      AND (d.status<>'Trash' OR $4::boolean)
-	      AND ($4::boolean OR d.submitted_by_user_id=$3 OR d.assignee_user_id=$3
-	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$3))`,
+	      AND ($4::boolean OR (d.submitted_by_user_id=$3 AND NOT d.group_restricted) OR d.assignee_user_id=$3
+	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$3 AND NOT ds.group_source))`,
 		organizationID, documentID, userID, manager).Scan(&detail.Document.ID, &detail.Document.OrganizationID,
 		&detail.Document.Filename, &detail.Document.MIME, &detail.Document.Size, &detail.Document.Status, &detail.Document.AcceptedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -306,7 +310,7 @@ func (s *Store) DocumentDetail(ctx context.Context, userID, organizationID, docu
 	    CASE WHEN $4::boolean THEN ds.drive_revision ELSE NULL END
 	    FROM document_sources ds LEFT JOIN users u ON u.id=ds.submitted_by_user_id
 	    WHERE ds.organization_id=$1 AND ds.document_id=$2
-	      AND ($4::boolean OR ds.submitted_by_user_id=$3)
+	      AND ($4::boolean OR (ds.submitted_by_user_id=$3 AND NOT ds.group_source))
 	    ORDER BY ds.created_at,ds.id`, organizationID, documentID, userID, manager)
 	if err != nil {
 		return document.Detail{}, err
