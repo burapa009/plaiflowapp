@@ -1,0 +1,3 @@
+# Keep accepted document originals in PlaiFlow
+
+Phase 4 accepts documents from Web, LINE and explicitly selected Google Drive files, while the existing customer-owned Drive export remains available. Every accepted original is copied into PlaiFlow private object storage and that copy is the canonical original; depending on an external source would let a later Drive move, deletion or expired LINE content make an accepted Document unavailable. The first Drive intake does not continuously sync a folder, preserving the narrow per-file consent boundary while the product learns which files customers actually need to import.

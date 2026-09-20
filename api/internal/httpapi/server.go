@@ -17,6 +17,7 @@ import (
 
 	"plaiflow/api/internal/auth"
 	"plaiflow/api/internal/business"
+	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/inbound"
 	lineadapter "plaiflow/api/internal/line"
@@ -44,6 +45,7 @@ type Config struct {
 	Business        business.Store
 	PlanStore       plan.Store
 	Drive           *drive.Service
+	Documents       *document.Service
 	Gate            work.Gate
 	Now             func() time.Time
 }
@@ -100,6 +102,9 @@ func New(config Config, store Store) http.Handler {
 		mux.HandleFunc("POST /v1/o/{organization}/line-connections/{connection}/disconnect", s.disconnectLineConnection)
 		if config.Work != nil {
 			s.registerWorkRoutes(mux)
+		}
+		if config.Documents != nil {
+			s.registerDocumentRoutes(mux)
 		}
 		if config.Business != nil && config.PlanStore != nil {
 			s.registerBusinessRoutes(mux)

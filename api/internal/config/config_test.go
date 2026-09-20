@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"encoding/base64"
+	"strings"
+	"testing"
+)
 
 func TestLoadServerRejectsMissingSecrets(t *testing.T) {
 	t.Setenv("APP_ENV", "staging")
@@ -55,6 +59,24 @@ func TestLoadServerRejectsNonNumericLineLoginChannelID(t *testing.T) {
 	t.Setenv("LINE_LOGIN_CHANNEL_ID", "staging-not-configured")
 	if _, err := LoadServer(); err == nil {
 		t.Fatal("non-numeric LINE Login channel ID accepted")
+	}
+}
+
+func TestLoadServerRequiresCompleteDocumentStorageAndScanner(t *testing.T) {
+	setValidServerEnvironment(t)
+	t.Setenv("DOCUMENT_BUCKET", "staging-documents")
+	if _, err := LoadServer(); err == nil {
+		t.Fatal("partial document configuration accepted")
+	}
+	t.Setenv("DOCUMENT_REGION", "sin1")
+	t.Setenv("DOCUMENT_ENDPOINT", "https://storage.example")
+	t.Setenv("DOCUMENT_ACCESS_KEY_ID", "access")
+	t.Setenv("DOCUMENT_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("DOCUMENT_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
+	t.Setenv("CLAMD_ADDR", "clamd.internal:3310")
+	config, err := LoadServer()
+	if err != nil || config.DocumentBucket != "staging-documents" || len(config.DocumentEncryptionKey) != 32 {
+		t.Fatalf("config=%+v err=%v", config, err)
 	}
 }
 

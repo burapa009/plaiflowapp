@@ -3,6 +3,7 @@ package drive
 import (
 	"context"
 	"errors"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -63,6 +64,9 @@ func (p *providerDouble) CreateFolder(context.Context, string, string) (string, 
 func (p *providerDouble) Refresh(context.Context, string) (string, error) { return "", p.refreshErr }
 func (*providerDouble) Revoke(context.Context, string) error {
 	return errors.New("provider unavailable")
+}
+func (*providerDouble) DownloadFile(_ context.Context, _ string, fileID, revision string) (File, error) {
+	return File{ID: fileID, Name: "invoice.pdf", MIME: "application/pdf", Revision: revision, Body: io.NopCloser(strings.NewReader("%PDF-1.7"))}, nil
 }
 
 func TestDriveAuthorizationIsSeparateAndMinimumScope(t *testing.T) {
@@ -127,4 +131,16 @@ func TestReconnectPreservesCanonicalFolder(t *testing.T) {
 	if err != nil || first.FolderID != second.FolderID || provider.folderCalls != 1 {
 		t.Fatalf("first=%+v second=%+v folder_calls=%d err=%v", first, second, provider.folderCalls, err)
 	}
+}
+
+func TestDownloadSelectedRechecksTheSelectedRevision(t *testing.T) {
+	store := &memoryStore{}
+	service, _ := New(Config{Provider: &providerDouble{}, Store: store, EncryptionKey: make([]byte, 32), Now: time.Now})
+	start, _ := service.Begin(context.Background(), "org-1", "user-1", "session-1", "Acme")
+	_, _ = service.Complete(context.Background(), start.State, start.BrowserSecret, "user-1", "session-1", "code")
+	file, err := service.DownloadSelected(context.Background(), "user-1", "org-1", "file-1", "rev-1")
+	if err != nil || file.ID != "file-1" || file.Revision != "rev-1" {
+		t.Fatalf("file=%+v err=%v", file, err)
+	}
+	file.Body.Close()
 }

@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
       { source: "/api/o/:organization/drive/:action", destination: `${api}/v1/o/:organization/drive/:action` },
       { source: "/api/o/:organization/vendors/export.csv", destination: `${api}/v1/o/:organization/vendors/export.csv` },
       { source: "/api/o/:organization/vendors/export.xlsx", destination: `${api}/v1/o/:organization/vendors/export.xlsx` },
+      { source: "/api/o/:organization/documents/export.csv", destination: `${api}/v1/o/:organization/documents/export.csv` },
+      { source: "/api/o/:organization/documents/export.xlsx", destination: `${api}/v1/o/:organization/documents/export.xlsx` },
+      { source: "/api/o/:organization/documents/drive", destination: `${api}/v1/o/:organization/documents/drive` },
+      { source: "/api/o/:organization/documents/summary", destination: `${api}/v1/o/:organization/documents/summary` },
+      { source: "/api/o/:organization/documents", destination: `${api}/v1/o/:organization/documents` },
+      { source: "/api/o/:organization/documents/:document/original", destination: `${api}/v1/o/:organization/documents/:document/original` },
     ];
   },
 };

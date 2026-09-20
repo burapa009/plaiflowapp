@@ -28,10 +28,34 @@ type delivery struct {
 			UserID  string `json:"userId,omitempty"`
 		} `json:"source,omitempty"`
 		Message struct {
-			Type string `json:"type,omitempty"`
-			Text string `json:"text,omitempty"`
+			Type     string `json:"type,omitempty"`
+			Text     string `json:"text,omitempty"`
+			ID       string `json:"id,omitempty"`
+			FileName string `json:"fileName,omitempty"`
 		} `json:"message,omitempty"`
 	} `json:"events"`
+}
+
+type DocumentMessage struct {
+	Type, ID, FileName string
+}
+
+func ParseDocumentMessage(payload []byte) (DocumentMessage, bool) {
+	var event struct {
+		Type    string `json:"type"`
+		Message struct {
+			Type     string `json:"type"`
+			ID       string `json:"id"`
+			FileName string `json:"fileName"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(payload, &event) != nil || event.Type != "message" || event.Message.ID == "" {
+		return DocumentMessage{}, false
+	}
+	if event.Message.Type != "image" && event.Message.Type != "file" {
+		return DocumentMessage{}, false
+	}
+	return DocumentMessage{Type: event.Message.Type, ID: event.Message.ID, FileName: event.Message.FileName}, true
 }
 
 func ParseSignedDelivery(body []byte, signature, secret, channel string) ([]inbound.Event, error) {

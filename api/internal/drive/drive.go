@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"io"
 	"time"
 )
 
@@ -17,6 +18,8 @@ var (
 	ErrInvalidGrant      = errors.New("drive credential is invalid")
 	ErrReconnectRequired = errors.New("drive reconnection is required")
 	ErrNotConnected      = errors.New("drive is not connected")
+	ErrFileChanged       = errors.New("drive file changed or is unavailable")
+	ErrFileProvider      = errors.New("drive file provider is unavailable")
 )
 
 const (
@@ -71,6 +74,15 @@ type Provider interface {
 	CreateFolder(context.Context, string, string) (string, error)
 	Refresh(context.Context, string) (string, error)
 	Revoke(context.Context, string) error
+}
+
+type File struct {
+	ID, Name, MIME, Revision string
+	Body                     io.ReadCloser
+}
+
+type FileProvider interface {
+	DownloadFile(context.Context, string, string, string) (File, error)
 }
 
 type Config struct {
@@ -211,6 +223,43 @@ func (s *Service) Check(ctx context.Context, userID, organizationID string) erro
 		return ErrReconnectRequired
 	}
 	return err
+}
+
+func (s *Service) DownloadSelected(ctx context.Context, userID, organizationID, fileID, revision string) (File, error) {
+	if fileID == "" || revision == "" {
+		return File{}, ErrFileChanged
+	}
+	provider, ok := s.provider.(FileProvider)
+	if !ok {
+		return File{}, ErrFileProvider
+	}
+	connection, err := s.store.GetConnection(ctx, userID, organizationID)
+	if err != nil || connection.Status != StatusConnected {
+		return File{}, ErrNotConnected
+	}
+	refreshToken, err := s.decrypt(connection.EncryptedRefreshToken, connection.TokenNonce, organizationID)
+	if err != nil {
+		return File{}, err
+	}
+	accessToken, err := s.provider.Refresh(ctx, refreshToken)
+	if errors.Is(err, ErrInvalidGrant) {
+		_ = s.store.RequireReconnect(ctx, organizationID, connection.CredentialGeneration, s.now().UTC())
+		return File{}, ErrReconnectRequired
+	}
+	if err != nil {
+		return File{}, err
+	}
+	file, err := provider.DownloadFile(ctx, accessToken, fileID, revision)
+	if err != nil {
+		return File{}, err
+	}
+	if file.ID != fileID || file.Revision != revision || file.Body == nil {
+		if file.Body != nil {
+			file.Body.Close()
+		}
+		return File{}, ErrFileChanged
+	}
+	return file, nil
 }
 
 func (s *Service) encrypt(value, organizationID string) ([]byte, []byte, error) {

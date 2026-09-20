@@ -9,28 +9,44 @@ import (
 )
 
 type Server struct {
-	Environment         string
-	Port                string
-	DatabaseURL         string
-	LineChannel         string
-	LineSecret          string
-	LineLoginChannel    string
-	LineLoginSecret     string
-	GoogleClientID      string
-	GoogleClientSecret  string
-	GoogleDriveClientID string
-	GoogleDriveSecret   string
-	GoogleDriveTokenKey []byte
-	DashboardTokens     []string
-	WebBaseURL          string
-	AllowedWebOrigins   []string
-	PoolMax             int32
+	Environment           string
+	Port                  string
+	DatabaseURL           string
+	LineChannel           string
+	LineSecret            string
+	LineLoginChannel      string
+	LineLoginSecret       string
+	GoogleClientID        string
+	GoogleClientSecret    string
+	GoogleDriveClientID   string
+	GoogleDriveSecret     string
+	GoogleDriveTokenKey   []byte
+	DocumentBucket        string
+	DocumentRegion        string
+	DocumentEndpoint      string
+	DocumentAccessKeyID   string
+	DocumentSecretKey     string
+	DocumentEncryptionKey []byte
+	DocumentPathStyle     bool
+	ClamDAddress          string
+	DashboardTokens       []string
+	WebBaseURL            string
+	AllowedWebOrigins     []string
+	PoolMax               int32
 }
 
 type Worker struct {
 	Environment            string
 	DatabaseURL            string
 	LineChannelAccessToken string
+	DocumentBucket         string
+	DocumentRegion         string
+	DocumentEndpoint       string
+	DocumentAccessKeyID    string
+	DocumentSecretKey      string
+	DocumentEncryptionKey  []byte
+	DocumentPathStyle      bool
+	ClamDAddress           string
 	WebBaseURL             string
 	PoolMax                int32
 }
@@ -60,15 +76,42 @@ func LoadServer() (Server, error) {
 		}
 		config.GoogleDriveTokenKey = decoded
 	}
+	config.DocumentBucket = os.Getenv("DOCUMENT_BUCKET")
+	config.DocumentRegion = os.Getenv("DOCUMENT_REGION")
+	config.DocumentEndpoint = os.Getenv("DOCUMENT_ENDPOINT")
+	config.DocumentAccessKeyID = os.Getenv("DOCUMENT_ACCESS_KEY_ID")
+	config.DocumentSecretKey = os.Getenv("DOCUMENT_SECRET_ACCESS_KEY")
+	config.DocumentPathStyle = os.Getenv("DOCUMENT_PATH_STYLE") == "true"
+	config.ClamDAddress = os.Getenv("CLAMD_ADDR")
+	documentKey := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
+	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != ""
+	if documentConfigured {
+		decoded, err := base64.StdEncoding.DecodeString(documentKey)
+		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || config.ClamDAddress == "" || err != nil || len(decoded) != 32 {
+			return Server{}, errors.New("invalid document configuration")
+		}
+		config.DocumentEncryptionKey = decoded
+	}
 	return config, nil
 }
 
 func LoadWorker() (Worker, error) {
 	config := Worker{Environment: os.Getenv("APP_ENV"), DatabaseURL: os.Getenv("DATABASE_URL"),
 		LineChannelAccessToken: os.Getenv("LINE_CHANNEL_ACCESS_TOKEN"), WebBaseURL: os.Getenv("WEB_BASE_URL"),
-		PoolMax: int32(number("WORKER_DB_POOL_MAX", 5))}
+		PoolMax: int32(number("WORKER_DB_POOL_MAX", 5)), DocumentBucket: os.Getenv("DOCUMENT_BUCKET"), DocumentRegion: os.Getenv("DOCUMENT_REGION"),
+		DocumentEndpoint: os.Getenv("DOCUMENT_ENDPOINT"), DocumentAccessKeyID: os.Getenv("DOCUMENT_ACCESS_KEY_ID"), DocumentSecretKey: os.Getenv("DOCUMENT_SECRET_ACCESS_KEY"),
+		DocumentPathStyle: os.Getenv("DOCUMENT_PATH_STYLE") == "true", ClamDAddress: os.Getenv("CLAMD_ADDR")}
 	if config.Environment == "" || config.DatabaseURL == "" || config.LineChannelAccessToken == "" || config.WebBaseURL == "" {
 		return Worker{}, errors.New("missing required worker configuration")
+	}
+	documentKey := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
+	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != ""
+	if documentConfigured {
+		decoded, err := base64.StdEncoding.DecodeString(documentKey)
+		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || config.ClamDAddress == "" || err != nil || len(decoded) != 32 {
+			return Worker{}, errors.New("invalid document configuration")
+		}
+		config.DocumentEncryptionKey = decoded
 	}
 	return config, nil
 }

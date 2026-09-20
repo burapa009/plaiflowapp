@@ -11,6 +11,7 @@ import (
 
 	"plaiflow/api/internal/auth"
 	"plaiflow/api/internal/config"
+	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/httpapi"
 	"plaiflow/api/internal/plan"
@@ -67,12 +68,31 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	documentService := &document.Service{Committer: store, Reader: store}
+	if settings.DocumentBucket != "" {
+		blob, blobErr := document.NewS3Blob(document.S3Config{
+			Bucket: settings.DocumentBucket, Region: settings.DocumentRegion, Endpoint: settings.DocumentEndpoint,
+			AccessKeyID: settings.DocumentAccessKeyID, SecretAccessKey: settings.DocumentSecretKey,
+			PathStyle: settings.DocumentPathStyle,
+		})
+		if blobErr != nil {
+			logger.Error("document_storage_initialization_failed")
+			os.Exit(1)
+		}
+		encrypted, encryptErr := document.NewEncryptedStore(blob, settings.DocumentEncryptionKey)
+		if encryptErr != nil {
+			logger.Error("document_encryption_initialization_failed")
+			os.Exit(1)
+		}
+		documentService.Intake = document.Intake{Temporary: encrypted,
+			Scanner: document.ClamAV{Address: settings.ClamDAddress}}
+	}
 	server := &http.Server{
 		Addr: ":" + settings.Port,
 		Handler: httpapi.New(httpapi.Config{
 			LineSecret: settings.LineSecret, LineChannel: settings.LineChannel, DashboardTokens: settings.DashboardTokens,
 			Logger: logger, Auth: authService, Tenants: store, Work: store, Business: store, PlanStore: store,
-			Gate: plan.Gate{Store: store}, Drive: driveService,
+			Gate: plan.Gate{Store: store}, Drive: driveService, Documents: documentService,
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}

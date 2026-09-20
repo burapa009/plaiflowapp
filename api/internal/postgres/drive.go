@@ -102,11 +102,11 @@ func (s *Store) GetConnection(ctx context.Context, actorUserID, organizationID s
 	}
 	var connection drive.Connection
 	err = tx.QueryRow(ctx, `SELECT organization_id,status,
-		CASE WHEN $2='Owner' THEN coalesce(google_email,'') ELSE '' END,coalesce(google_subject,''),
-		CASE WHEN $2='Owner' THEN coalesce(folder_id,'') ELSE '' END,
-        CASE WHEN $2='Owner' THEN coalesce(authorizer_user_id::text,'') ELSE '' END,
-		CASE WHEN $2='Owner' THEN coalesce(encrypted_refresh_token,''::bytea) ELSE ''::bytea END,
-		CASE WHEN $2='Owner' THEN coalesce(token_nonce,''::bytea) ELSE ''::bytea END,
+		CASE WHEN $2 IN ('Owner','Admin') THEN coalesce(google_email,'') ELSE '' END,coalesce(google_subject,''),
+		CASE WHEN $2 IN ('Owner','Admin') THEN coalesce(folder_id,'') ELSE '' END,
+	    CASE WHEN $2 IN ('Owner','Admin') THEN coalesce(authorizer_user_id::text,'') ELSE '' END,
+		CASE WHEN $2 IN ('Owner','Admin') THEN coalesce(encrypted_refresh_token,''::bytea) ELSE ''::bytea END,
+		CASE WHEN $2 IN ('Owner','Admin') THEN coalesce(token_nonce,''::bytea) ELSE ''::bytea END,
         credential_generation,coalesce(connected_at,'epoch'::timestamptz),updated_at
 		FROM drive_connections WHERE organization_id=$1`, organizationID, role).Scan(&connection.OrganizationID, &connection.Status,
 		&connection.GoogleEmail, &connection.GoogleSubject, &connection.FolderID, &connection.AuthorizerUserID,

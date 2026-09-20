@@ -1,0 +1,3 @@
+# Bind Document Usage to the intake period
+
+Phase 4 binds a file's Usage Reservation to the Organization calendar month in which intake began, using the Organization Timezone. A scanner or provider retry that completes after midnight still completes or releases the same reservation and cannot move the charge to a new month. A timezone change affects only the next monthly period, and a valid reservation made before a Plan downgrade may finish within the 24-hour retry window. This makes asynchronous work predictable and prevents delayed workers, timezone edits or Plan changes from silently reassigning an admitted charge.

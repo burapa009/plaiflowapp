@@ -1,0 +1,3 @@
+# Deduplicate accepted documents within an Organization
+
+Phase 4 treats matching file content received through Web, LINE or Drive as one Document within an Organization and records each accepted origin as a Document Source. This prevents channel switching and provider retries from creating extra Documents or consuming quota twice while keeping provenance visible. Duplicate identity never crosses Organization boundaries, and retry identity must remain stable independently of filename, MIME label or provider metadata. An Archived match stays Archived; a Trash match requires an Owner/Admin restore, while content submitted after permanent purge is a new Document and consumes a new unit.

@@ -51,3 +51,13 @@ func TestEmptyDeliveryIsValid(t *testing.T) {
 		t.Fatalf("empty delivery: events=%+v err=%v", events, err)
 	}
 }
+
+func TestParseDocumentMessageAcceptsOnlyImageAndFile(t *testing.T) {
+	message, ok := ParseDocumentMessage([]byte(`{"type":"message","message":{"type":"file","id":"msg-1","fileName":"invoice.pdf"}}`))
+	if !ok || message.Type != "file" || message.ID != "msg-1" || message.FileName != "invoice.pdf" {
+		t.Fatalf("message=%+v ok=%v", message, ok)
+	}
+	if _, ok := ParseDocumentMessage([]byte(`{"type":"message","message":{"type":"text","id":"msg-2"}}`)); ok {
+		t.Fatal("text message accepted as document")
+	}
+}
