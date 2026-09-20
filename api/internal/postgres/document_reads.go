@@ -101,7 +101,10 @@ func (s *Store) DocumentSummary(ctx context.Context, userID, organizationID stri
 		usedFrom, usedTo = trialStart, trialEnd
 	}
 	var summary document.Summary
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM document_usage_charges WHERE organization_id=$1 AND accepted_at >= $2 AND accepted_at < $3`, organizationID, usedFrom, usedTo).Scan(&summary.Used); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM document_usage_charges c JOIN documents d ON d.organization_id=c.organization_id AND d.id=c.document_id
+	    WHERE c.organization_id=$1 AND c.accepted_at >= $3 AND c.accepted_at < $4
+	      AND (organization_role($2::uuid,$1::uuid) IN ('Owner','Admin') OR d.submitted_by_user_id=$2 OR d.assignee_user_id=$2
+	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$2))`, organizationID, userID, usedFrom, usedTo).Scan(&summary.Used); err != nil {
 		return document.Summary{}, err
 	}
 	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE d.status='Available'),count(*) FILTER (WHERE d.status='Archived'),count(*) FILTER (WHERE d.status='Trash')
