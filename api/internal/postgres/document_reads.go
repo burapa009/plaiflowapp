@@ -273,6 +273,59 @@ func (s *Store) GetDocument(ctx context.Context, userID, organizationID, documen
 	return doc, tx.Commit(ctx)
 }
 
+func (s *Store) DocumentDetail(ctx context.Context, userID, organizationID, documentID string) (document.Detail, error) {
+	if !documentUUID.MatchString(documentID) {
+		return document.Detail{}, tenant.ErrNotFound
+	}
+	tx, err := s.organizationTx(ctx, userID, organizationID)
+	if err != nil {
+		return document.Detail{}, err
+	}
+	defer tx.Rollback(ctx)
+	role, err := currentRole(ctx, tx, userID, organizationID)
+	if err != nil {
+		return document.Detail{}, tenant.ErrNotFound
+	}
+	manager := role == tenant.Owner || role == tenant.Admin
+	var detail document.Detail
+	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.display_filename,d.detected_mime,d.byte_size,d.status,d.accepted_at
+	    FROM documents d WHERE d.organization_id=$1 AND d.id=$2 AND d.status<>'Purged'
+	      AND (d.status<>'Trash' OR $4::boolean)
+	      AND ($4::boolean OR d.submitted_by_user_id=$3 OR d.assignee_user_id=$3
+	        OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id AND ds.submitted_by_user_id=$3))`,
+		organizationID, documentID, userID, manager).Scan(&detail.Document.ID, &detail.Document.OrganizationID,
+		&detail.Document.Filename, &detail.Document.MIME, &detail.Document.Size, &detail.Document.Status, &detail.Document.AcceptedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return document.Detail{}, tenant.ErrNotFound
+	}
+	if err != nil {
+		return document.Detail{}, err
+	}
+	rows, err := tx.Query(ctx, `SELECT ds.id,ds.channel,coalesce(u.display_name,''),ds.created_at,ds.provider_filename,ds.provider_mime,ds.provider_size,ds.selected_at,
+	    CASE WHEN $4::boolean THEN ds.drive_file_id ELSE NULL END,
+	    CASE WHEN $4::boolean THEN ds.drive_revision ELSE NULL END
+	    FROM document_sources ds LEFT JOIN users u ON u.id=ds.submitted_by_user_id
+	    WHERE ds.organization_id=$1 AND ds.document_id=$2
+	      AND ($4::boolean OR ds.submitted_by_user_id=$3)
+	    ORDER BY ds.created_at,ds.id`, organizationID, documentID, userID, manager)
+	if err != nil {
+		return document.Detail{}, err
+	}
+	detail.Sources, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (document.Source, error) {
+		var source document.Source
+		err := row.Scan(&source.ID, &source.Channel, &source.SubmittedBy, &source.AcceptedAt, &source.ProviderFilename,
+			&source.ProviderMIME, &source.ProviderSize, &source.SelectedAt, &source.DriveFileID, &source.DriveRevision)
+		return source, err
+	})
+	if err != nil {
+		return document.Detail{}, err
+	}
+	if detail.Sources == nil {
+		detail.Sources = []document.Source{}
+	}
+	return detail, tx.Commit(ctx)
+}
+
 func (s *Store) ChangeDocumentStatus(ctx context.Context, userID, organizationID, documentID, action string, now time.Time) (document.Document, error) {
 	if !documentUUID.MatchString(documentID) || (action != "archive" && action != "trash" && action != "restore") {
 		return document.Document{}, tenant.ErrNotFound

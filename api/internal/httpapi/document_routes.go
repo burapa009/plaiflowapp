@@ -28,10 +28,28 @@ func (s *server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/o/{organization}/documents/export.csv", s.exportDocuments)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/export.xlsx", s.exportDocuments)
 	mux.HandleFunc("POST /v1/o/{organization}/documents/drive", s.importDriveDocument)
+	mux.HandleFunc("GET /v1/o/{organization}/documents/{document}/sources", s.documentDetail)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/{document}/original", s.openDocument)
 	mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/archive", s.changeDocumentStatus)
 	mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/trash", s.changeDocumentStatus)
 	mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/restore", s.changeDocumentStatus)
+}
+
+func (s *server) documentDetail(w http.ResponseWriter, r *http.Request) {
+	session, membership, ok := s.workContext(w, r, false)
+	if !ok {
+		return
+	}
+	detail, err := s.config.Documents.Detail(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
+	if errors.Is(err, tenant.ErrNotFound) {
+		writeError(w, r, http.StatusNotFound, "not_found", "Resource was not found")
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "document_unavailable", "Document details are unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
 }
 
 func (s *server) documentExportCount(w http.ResponseWriter, r *http.Request) {

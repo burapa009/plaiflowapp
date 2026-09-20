@@ -33,6 +33,24 @@ type Page struct {
 	NextCursor string     `json:"next_cursor,omitempty"`
 }
 
+type Source struct {
+	ID               string     `json:"id"`
+	Channel          string     `json:"channel"`
+	SubmittedBy      string     `json:"submitted_by"`
+	AcceptedAt       time.Time  `json:"accepted_at"`
+	ProviderFilename *string    `json:"provider_filename,omitempty"`
+	ProviderMIME     *string    `json:"provider_mime,omitempty"`
+	ProviderSize     *int64     `json:"provider_size,omitempty"`
+	SelectedAt       *time.Time `json:"selected_at,omitempty"`
+	DriveFileID      *string    `json:"drive_file_id,omitempty"`
+	DriveRevision    *string    `json:"drive_revision,omitempty"`
+}
+
+type Detail struct {
+	Document Document `json:"document"`
+	Sources  []Source `json:"sources"`
+}
+
 type Summary struct {
 	Used      int64     `json:"used"`
 	Limit     int64     `json:"limit"`
@@ -79,6 +97,10 @@ type FilterReader interface {
 
 type SummaryReader interface {
 	DocumentSummary(context.Context, string, string) (Summary, error)
+}
+
+type DetailReader interface {
+	DocumentDetail(context.Context, string, string, string) (Detail, error)
 }
 
 type StatusUpdater interface {
@@ -177,6 +199,13 @@ func (s Service) ListFiltered(ctx context.Context, userID, organizationID, curso
 		return reader.ListDocumentsFiltered(ctx, userID, organizationID, cursor, limit, filter)
 	}
 	return s.List(ctx, userID, organizationID, cursor, limit)
+}
+
+func (s Service) Detail(ctx context.Context, userID, organizationID, documentID string) (Detail, error) {
+	if reader, ok := s.Reader.(DetailReader); ok {
+		return reader.DocumentDetail(ctx, userID, organizationID, documentID)
+	}
+	return Detail{}, errors.New("document detail is not configured")
 }
 
 func (s Service) Summary(ctx context.Context, userID, organizationID string) (Summary, error) {
