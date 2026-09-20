@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"time"
 )
 
 const MaxFileBytes int64 = 20 << 20
@@ -50,7 +51,9 @@ func (i Intake) Prepare(ctx context.Context, organizationID, attemptID string, s
 	keep := false
 	defer func() {
 		if !keep {
-			_ = i.Temporary.Delete(ctx, key)
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			_ = i.Temporary.Delete(cleanup, key)
 		}
 	}()
 	if err = i.Temporary.Put(ctx, key, io.LimitReader(source, MaxFileBytes+1)); err != nil {

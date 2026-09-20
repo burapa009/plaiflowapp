@@ -31,3 +31,17 @@ func TestServiceAcceptKeepsOnlyAcceptedOriginal(t *testing.T) {
 		t.Fatalf("quota err=%v objects=%d", err, len(storage.objects))
 	}
 }
+
+func TestServiceAcceptDeletesQuarantineAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	storage := contextCheckingTemp{&memoryTemp{objects: map[string][]byte{}}}
+	service := Service{Intake: Intake{Temporary: storage, Scanner: scanFunc(func(context.Context, io.Reader) error { return nil })},
+		Committer: commitFunc(func(context.Context, CommitInput) (CommitResult, error) {
+			cancel()
+			return CommitResult{}, ErrQuota
+		})}
+	_, err := service.Accept(ctx, AcceptInput{OrganizationID: "org-1", ActorUserID: "user-1", AttemptID: "attempt-1", OriginKey: "origin-1", Filename: "invoice.pdf", Channel: "Web", Now: time.Now()}, bytes.NewBufferString("%PDF-1.4\n%%EOF"))
+	if !errors.Is(err, ErrQuota) || len(storage.objects) != 0 {
+		t.Fatalf("quota err=%v staged=%d", err, len(storage.objects))
+	}
+}

@@ -10,6 +10,15 @@ import (
 
 type memoryTemp struct{ objects map[string][]byte }
 
+type contextCheckingTemp struct{ *memoryTemp }
+
+func (m contextCheckingTemp) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return m.memoryTemp.Delete(ctx, key)
+}
+
 func (m *memoryTemp) Put(_ context.Context, key string, body io.Reader) error {
 	data, err := io.ReadAll(body)
 	if err == nil {
@@ -60,6 +69,19 @@ func TestPrepareFailsClosedWhenScannerFails(t *testing.T) {
 		return errors.New("scanner offline")
 	})}
 	_, err := service.Prepare(context.Background(), "org-1", "attempt-1", bytes.NewBufferString("%PDF-1.4\n%%EOF"))
+	if !errors.Is(err, ErrScanUnavailable) || len(storage.objects) != 0 {
+		t.Fatalf("scanner failure err=%v staged=%d", err, len(storage.objects))
+	}
+}
+
+func TestPrepareDeletesQuarantineAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	storage := contextCheckingTemp{&memoryTemp{objects: map[string][]byte{}}}
+	service := Intake{Temporary: storage, Scanner: scanFunc(func(context.Context, io.Reader) error {
+		cancel()
+		return errors.New("scanner canceled")
+	})}
+	_, err := service.Prepare(ctx, "org-1", "attempt-1", bytes.NewBufferString("%PDF-1.4\n%%EOF"))
 	if !errors.Is(err, ErrScanUnavailable) || len(storage.objects) != 0 {
 		t.Fatalf("scanner failure err=%v staged=%d", err, len(storage.objects))
 	}

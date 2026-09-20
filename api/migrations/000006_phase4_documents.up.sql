@@ -17,6 +17,7 @@ CREATE TABLE documents (
     status text NOT NULL CHECK (status IN ('Available','Archived','Trash','Purged')),
     submitted_by_user_id uuid,
     assignee_user_id uuid,
+    group_restricted boolean NOT NULL DEFAULT false,
     accepted_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     trashed_at timestamptz,
@@ -48,6 +49,7 @@ CREATE TABLE document_sources (
     provider_mime text,
     provider_size bigint,
     selected_at timestamptz,
+    group_source boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL,
     UNIQUE (organization_id,channel,origin_key),
     FOREIGN KEY (organization_id,document_id) REFERENCES documents(organization_id,id),
@@ -58,7 +60,8 @@ CREATE TABLE document_sources (
             AND provider_mime IS NOT NULL AND length(provider_mime) BETWEEN 1 AND 255
             AND provider_size IS NOT NULL AND provider_size >= 0 AND selected_at IS NOT NULL)
         OR (channel<>'Drive' AND drive_connection_id IS NULL AND drive_file_id IS NULL AND drive_revision IS NULL
-            AND provider_filename IS NULL AND provider_mime IS NULL AND provider_size IS NULL AND selected_at IS NULL))
+            AND provider_filename IS NULL AND provider_mime IS NULL AND provider_size IS NULL AND selected_at IS NULL)),
+    CHECK (NOT group_source OR channel='LINE')
 );
 CREATE INDEX document_sources_document_idx ON document_sources (organization_id,document_id,created_at);
 
@@ -106,9 +109,9 @@ CREATE POLICY document_usage_periods_member_insert ON document_usage_periods FOR
 CREATE POLICY documents_member_read ON documents FOR SELECT
     USING (organization_id=app_organization_id() AND is_organization_member(app_user_id(),organization_id)
        AND (organization_role(app_user_id(),organization_id) IN ('Owner','Admin')
-            OR submitted_by_user_id=app_user_id() OR assignee_user_id=app_user_id()
+            OR (submitted_by_user_id=app_user_id() AND NOT group_restricted) OR assignee_user_id=app_user_id()
             OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=documents.organization_id
-                AND ds.document_id=documents.id AND ds.submitted_by_user_id=app_user_id())));
+                AND ds.document_id=documents.id AND ds.submitted_by_user_id=app_user_id() AND NOT ds.group_source)));
 CREATE POLICY documents_member_insert ON documents FOR INSERT
     WITH CHECK (organization_id=app_organization_id() AND is_organization_member(app_user_id(),organization_id)
         AND submitted_by_user_id=app_user_id());

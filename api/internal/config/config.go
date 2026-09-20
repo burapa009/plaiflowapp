@@ -85,6 +85,9 @@ func LoadServer() (Server, error) {
 	config.ClamDAddress = os.Getenv("CLAMD_ADDR")
 	documentKey := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
 	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != ""
+	if (config.Environment == "staging" || config.Environment == "production") && !documentConfigured {
+		return Server{}, errors.New("document storage and scanner are required")
+	}
 	if documentConfigured {
 		decoded, err := base64.StdEncoding.DecodeString(documentKey)
 		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || config.ClamDAddress == "" || err != nil || len(decoded) != 32 {
@@ -106,6 +109,9 @@ func LoadWorker() (Worker, error) {
 	}
 	documentKey := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
 	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != ""
+	if (config.Environment == "staging" || config.Environment == "production") && !documentConfigured {
+		return Worker{}, errors.New("document storage and scanner are required")
+	}
 	if documentConfigured {
 		decoded, err := base64.StdEncoding.DecodeString(documentKey)
 		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || config.ClamDAddress == "" || err != nil || len(decoded) != 32 {

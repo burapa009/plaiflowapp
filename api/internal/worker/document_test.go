@@ -80,6 +80,21 @@ func TestLINEDocumentProcessorUsesSharedDocumentPipeline(t *testing.T) {
 	}
 }
 
+func TestLINEDocumentProcessorMarksGroupSource(t *testing.T) {
+	storage := &lineMemory{objects: map[string][]byte{}}
+	service := &document.Service{Intake: document.Intake{Temporary: storage, Scanner: scannerFunc(func(context.Context, io.Reader) error { return nil })}, Committer: commitFunc(func(_ context.Context, input document.CommitInput) (document.CommitResult, error) {
+		if !input.LINEGroup || input.Channel != "LINE" {
+			t.Fatalf("group source lost: %+v", input)
+		}
+		return document.CommitResult{Accepted: true}, nil
+	})}
+	process := NewLINEDocumentProcessor(service, lineResolve{}, lineDownload{})
+	status, _, err := process(context.Background(), inbound.Event{Provider: "line", Channel: "channel", SourceType: "group", SourceGroupID: "group-1", SourceUserID: "line-user", Payload: []byte(`{"type":"message","message":{"type":"file","id":"message-2","fileName":"invoice.pdf"}}`)})
+	if err != nil || status != inbound.Processed {
+		t.Fatalf("status=%s err=%v", status, err)
+	}
+}
+
 type scannerFunc func(context.Context, io.Reader) error
 
 func (f scannerFunc) Scan(ctx context.Context, body io.Reader) error { return f(ctx, body) }

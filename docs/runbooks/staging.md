@@ -35,6 +35,19 @@ For Phase 3, prefer application rollback while leaving the additive version-5 sc
 
 Migration `000001` is reversible but its down migration deletes all Phase 0 event data. CI tests down/up only against an isolated disposable database.
 
+## Phase 4 document release gate
+
+This section is a procedure, not deployment evidence. Do not release the document routes to staging until the remaining Phase 4 acceptance items are implemented and the checks below have recorded results.
+
+1. Create a staging-only private object bucket and a private ClamAV `clamd` service in the Singapore Railway region. Keep production resources separate. Confirm that the bucket credentials report their API region and endpoint; do not assume the deployment region is the S3 API region.
+2. Configure API and worker with the same `DOCUMENT_BUCKET`, `DOCUMENT_REGION`, `DOCUMENT_ENDPOINT`, `DOCUMENT_ACCESS_KEY_ID`, `DOCUMENT_SECRET_ACCESS_KEY`, `DOCUMENT_ENCRYPTION_KEY` (base64-encoded 32-byte key), `DOCUMENT_PATH_STYLE`, and `CLAMD_ADDR`. Keep credentials server-side. The API and worker reject staging startup if storage or scanner configuration is missing.
+3. Confirm private bucket access and `clamd` connectivity from both services using a disposable, non-sensitive file. Confirm encrypted bytes in the bucket and that rejection removes quarantine bytes. Do not use a production document for this check.
+4. Record deployment IDs, current database migration version, and a recoverable database snapshot. Apply `000006_phase4_documents` before deploying the new API. Require `version=6`, `dirty=false`, and `/readyz=200` before starting the new worker or web release. The migration has not been proven on this checkout without PostgreSQL.
+5. Deploy API, worker, then web. Run the existing `scripts/smoke-staging.ps1`, followed by one authorized PDF/JPEG/PNG from Web, LINE direct, LINE group, and a selected Drive revision. Check Organization isolation, original retrieval permissions, Drive provenance, repeated webhook/revision idempotency, invalid-file rejection, quota behavior, status actions, filtered CSV/XLSX export, and revoked Drive access. Use a staging account and disposable files.
+6. Record webhook response p95, document intake duration/error counts by channel and rejection code, scanner failures, Drive rate-limit/reconnect errors, worker queue age, bucket failures, API/worker CPU and memory, and database slow queries. Investigate any sustained error or backlog before calling the release healthy.
+
+Rollback: restore the previous web, worker, and API deployments together. Leave the additive version-6 schema in place once any Document, Source, Usage, or Attempt row exists; its down migration drops those tables and loses data. If no Phase 4 row has ever been written, verify that fact against the staging database and take a fresh snapshot before considering `down 1`. Re-run readiness, webhook, worker, and authenticated document-access checks after rollback. Bucket originals need separate inventory and retention review; a database rollback does not delete them.
+
 ## Retention residual risk
 
 Payload is cleared after 30 days and terminal metadata is deleted after 90 days. A provider replay after the 90-day idempotency window can create a new event; the accepted mitigation is the staging-only data boundary and no outbound Phase 0 side effect.

@@ -114,6 +114,7 @@ type AcceptInput struct {
 	OriginKey         string
 	Filename          string
 	Channel           string
+	LINEGroup         bool
 	Now               time.Time
 	DriveConnectionID string
 	DriveFileID       string
@@ -167,7 +168,9 @@ func (s Service) Accept(ctx context.Context, input AcceptInput, body io.Reader) 
 	result, err := s.Committer.CommitPrepared(ctx, CommitInput{AcceptInput: input, TemporaryKey: prepared.TemporaryKey,
 		SHA256: prepared.SHA256, MIME: prepared.MIME, Size: prepared.Size})
 	if err != nil || !result.Accepted {
-		if cleanupErr := s.Intake.Temporary.Delete(ctx, prepared.TemporaryKey); cleanupErr != nil && err == nil {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if cleanupErr := s.Intake.Temporary.Delete(cleanup, prepared.TemporaryKey); cleanupErr != nil && err == nil {
 			return CommitResult{}, cleanupErr
 		}
 	}

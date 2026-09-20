@@ -29,6 +29,10 @@ func TestLoadWorkerRequiresLineDeliveryConfiguration(t *testing.T) {
 		t.Fatal("missing LINE access token accepted")
 	}
 	t.Setenv("LINE_CHANNEL_ACCESS_TOKEN", "token")
+	if _, err := LoadWorker(); err == nil {
+		t.Fatal("staging worker started without document storage and scanner")
+	}
+	t.Setenv("APP_ENV", "test")
 	config, err := LoadWorker()
 	if err != nil || config.WebBaseURL != "https://staging.example" || config.LineChannelAccessToken != "token" {
 		t.Fatalf("config=%+v err=%v", config, err)
@@ -77,6 +81,14 @@ func TestLoadServerRequiresCompleteDocumentStorageAndScanner(t *testing.T) {
 	config, err := LoadServer()
 	if err != nil || config.DocumentBucket != "staging-documents" || len(config.DocumentEncryptionKey) != 32 {
 		t.Fatalf("config=%+v err=%v", config, err)
+	}
+}
+
+func TestLoadServerRequiresDocumentIntakeInStaging(t *testing.T) {
+	setValidServerEnvironment(t)
+	t.Setenv("APP_ENV", "staging")
+	if _, err := LoadServer(); err == nil {
+		t.Fatal("staging API started without document storage and scanner")
 	}
 }
 

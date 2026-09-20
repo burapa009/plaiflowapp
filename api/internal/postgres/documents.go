@@ -15,7 +15,7 @@ import (
 )
 
 func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) (document.CommitResult, error) {
-	if (input.Channel != "Web" && input.Channel != "LINE" && input.Channel != "Drive") || input.Now.IsZero() || input.Size < 1 || input.Size > document.MaxFileBytes || (input.Channel == "Drive" && (input.DriveConnectionID == "" || input.DriveFileID == "" || input.DriveRevision == "" || input.DriveProviderMIME == "" || input.DriveSelectedAt.IsZero())) {
+	if (input.Channel != "Web" && input.Channel != "LINE" && input.Channel != "Drive") || (input.LINEGroup && input.Channel != "LINE") || input.Now.IsZero() || input.Size < 1 || input.Size > document.MaxFileBytes || (input.Channel == "Drive" && (input.DriveConnectionID == "" || input.DriveFileID == "" || input.DriveRevision == "" || input.DriveProviderMIME == "" || input.DriveSelectedAt.IsZero())) {
 		return document.CommitResult{}, errors.New("invalid prepared document")
 	}
 	digest, err := hex.DecodeString(input.SHA256)
@@ -33,6 +33,26 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	// A short transaction lock serializes unique-content and hard-quota decisions per Organization.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, input.OrganizationID); err != nil {
 		return document.CommitResult{}, err
+	}
+	if input.LINEGroup {
+		var sourceDocumentID string
+		err := tx.QueryRow(ctx, `SELECT document_id FROM document_sources
+		    WHERE organization_id=$1 AND channel='LINE' AND origin_key=$2 AND submitted_by_user_id=$3`,
+			input.OrganizationID, input.OriginKey, input.ActorUserID).Scan(&sourceDocumentID)
+		if err == nil {
+			var contentDocumentID, status string
+			lookupErr := tx.QueryRow(ctx, `SELECT document_id,document_status FROM lookup_document_for_intake($1::uuid,$2::bytea)`, input.OrganizationID, digest).Scan(&contentDocumentID, &status)
+			if lookupErr != nil || contentDocumentID != sourceDocumentID {
+				return document.CommitResult{}, document.ErrSourceConflict
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return document.CommitResult{}, err
+			}
+			return document.CommitResult{Document: document.Document{ID: sourceDocumentID, OrganizationID: input.OrganizationID, Status: status}, Duplicate: true}, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return document.CommitResult{}, err
+		}
 	}
 	var previous document.Document
 	var previousHash []byte
@@ -67,6 +87,12 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 		    ON CONFLICT (organization_id,channel,origin_key) DO UPDATE SET status='Accepted',document_id=excluded.document_id,rejection_code=NULL,updated_at=excluded.updated_at`,
 			input.AttemptID, input.OrganizationID, input.ActorUserID, input.Channel, input.OriginKey, existingID, input.Now); err != nil {
 			return document.CommitResult{}, err
+		}
+		if input.LINEGroup {
+			if err := tx.Commit(ctx); err != nil {
+				return document.CommitResult{}, err
+			}
+			return document.CommitResult{Document: document.Document{ID: existingID, OrganizationID: input.OrganizationID, Status: existingStatus}, Duplicate: true}, nil
 		}
 		if err := tx.QueryRow(ctx, `SELECT id,organization_id,display_filename,detected_mime,byte_size,status,storage_key,accepted_at
 		    FROM documents WHERE organization_id=$1 AND id=$2`, input.OrganizationID, existingID).Scan(
@@ -118,9 +144,9 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	}
 	id := postgresUUID()
 	if _, err := tx.Exec(ctx, `INSERT INTO documents
-	    (id,organization_id,content_sha256,storage_key,display_filename,detected_mime,byte_size,status,submitted_by_user_id,accepted_at,updated_at,usage_period_start)
-	    VALUES ($1,$2,$3,$4,$5,$6,$7,'Available',$8,$9,$9,$10)`,
-		id, input.OrganizationID, digest, input.TemporaryKey, input.Filename, input.MIME, input.Size, input.ActorUserID, input.Now, periodStart); err != nil {
+	    (id,organization_id,content_sha256,storage_key,display_filename,detected_mime,byte_size,status,submitted_by_user_id,group_restricted,accepted_at,updated_at,usage_period_start)
+	    VALUES ($1,$2,$3,$4,$5,$6,$7,'Available',$8,$11,$9,$9,$10)`,
+		id, input.OrganizationID, digest, input.TemporaryKey, input.Filename, input.MIME, input.Size, input.ActorUserID, input.Now, periodStart, input.LINEGroup); err != nil {
 		return document.CommitResult{}, err
 	}
 	if err := insertDocumentSource(ctx, tx, input, id); err != nil {
@@ -155,10 +181,10 @@ func insertDocumentSource(ctx context.Context, tx pgx.Tx, input document.CommitI
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO document_sources
 	    (id,organization_id,document_id,channel,origin_key,submitted_by_user_id,drive_connection_id,drive_file_id,drive_revision,
-	     provider_filename,provider_mime,provider_size,selected_at,created_at)
-	    VALUES ($1,$2,$3,$4,$5,$6,nullif($8,'')::uuid,nullif($9,''),nullif($10,''),$11,$12,$13,$14,$7)`,
+	     provider_filename,provider_mime,provider_size,selected_at,created_at,group_source)
+	    VALUES ($1,$2,$3,$4,$5,$6,nullif($8,'')::uuid,nullif($9,''),nullif($10,''),$11,$12,$13,$14,$7,$15)`,
 		postgresUUID(), input.OrganizationID, documentID, input.Channel, input.OriginKey, input.ActorUserID, input.Now,
-		input.DriveConnectionID, input.DriveFileID, input.DriveRevision, providerFilename, providerMIME, providerSize, selectedAt)
+		input.DriveConnectionID, input.DriveFileID, input.DriveRevision, providerFilename, providerMIME, providerSize, selectedAt, input.LINEGroup)
 	return err
 }
 
