@@ -78,6 +78,7 @@ type Provider interface {
 
 type File struct {
 	ID, Name, MIME, Revision string
+	Size                     int64
 	Body                     io.ReadCloser
 }
 

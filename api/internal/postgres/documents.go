@@ -1,19 +1,21 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/tenant"
 )
 
 func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) (document.CommitResult, error) {
-	if (input.Channel != "Web" && input.Channel != "LINE" && input.Channel != "Drive") || input.Now.IsZero() || input.Size < 1 || input.Size > document.MaxFileBytes || (input.Channel == "Drive" && (input.DriveConnectionID == "" || input.DriveFileID == "" || input.DriveRevision == "")) {
+	if (input.Channel != "Web" && input.Channel != "LINE" && input.Channel != "Drive") || input.Now.IsZero() || input.Size < 1 || input.Size > document.MaxFileBytes || (input.Channel == "Drive" && (input.DriveConnectionID == "" || input.DriveFileID == "" || input.DriveRevision == "" || input.DriveProviderMIME == "" || input.DriveSelectedAt.IsZero())) {
 		return document.CommitResult{}, errors.New("invalid prepared document")
 	}
 	digest, err := hex.DecodeString(input.SHA256)
@@ -33,11 +35,15 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 		return document.CommitResult{}, err
 	}
 	var previous document.Document
-	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.display_filename,d.detected_mime,d.byte_size,d.status,d.storage_key,d.accepted_at
+	var previousHash []byte
+	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.display_filename,d.detected_mime,d.byte_size,d.status,d.storage_key,d.accepted_at,d.content_sha256
 	    FROM document_sources ds JOIN documents d ON d.organization_id=ds.organization_id AND d.id=ds.document_id
 	    WHERE ds.organization_id=$1 AND ds.channel=$2 AND ds.origin_key=$3 AND ds.submitted_by_user_id=$4`,
-		input.OrganizationID, input.Channel, input.OriginKey, input.ActorUserID).Scan(&previous.ID, &previous.OrganizationID, &previous.Filename, &previous.MIME, &previous.Size, &previous.Status, &previous.StorageKey, &previous.AcceptedAt)
+		input.OrganizationID, input.Channel, input.OriginKey, input.ActorUserID).Scan(&previous.ID, &previous.OrganizationID, &previous.Filename, &previous.MIME, &previous.Size, &previous.Status, &previous.StorageKey, &previous.AcceptedAt, &previousHash)
 	if err == nil {
+		if !bytes.Equal(previousHash, digest) {
+			return document.CommitResult{}, document.ErrSourceConflict
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return document.CommitResult{}, err
 		}
@@ -52,11 +58,8 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 		if existingStatus == "Trash" {
 			return document.CommitResult{}, document.ErrTrashed
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO document_sources
-		    (id,organization_id,document_id,channel,origin_key,submitted_by_user_id,drive_connection_id,drive_file_id,drive_revision,created_at)
-	    VALUES ($1,$2,$3,$4,$5,$6,nullif($8,'')::uuid,nullif($9,''),nullif($10,''),$7) ON CONFLICT (organization_id,channel,origin_key) DO NOTHING`,
-			postgresUUID(), input.OrganizationID, existingID, input.Channel, input.OriginKey, input.ActorUserID, input.Now, input.DriveConnectionID, input.DriveFileID, input.DriveRevision); err != nil {
-			return document.CommitResult{}, err
+		if err := insertDocumentSource(ctx, tx, input, existingID); err != nil {
+			return document.CommitResult{}, sourceConflict(err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO document_intake_attempts
 		    (id,organization_id,actor_user_id,channel,origin_key,status,document_id,created_at,updated_at,expires_at)
@@ -120,10 +123,8 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 		id, input.OrganizationID, digest, input.TemporaryKey, input.Filename, input.MIME, input.Size, input.ActorUserID, input.Now, periodStart); err != nil {
 		return document.CommitResult{}, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO document_sources
-	    (id,organization_id,document_id,channel,origin_key,submitted_by_user_id,drive_connection_id,drive_file_id,drive_revision,created_at)
-	    VALUES ($1,$2,$3,$4,$5,$6,nullif($8,'')::uuid,nullif($9,''),nullif($10,''),$7)`, postgresUUID(), input.OrganizationID, id, input.Channel, input.OriginKey, input.ActorUserID, input.Now, input.DriveConnectionID, input.DriveFileID, input.DriveRevision); err != nil {
-		return document.CommitResult{}, err
+	if err := insertDocumentSource(ctx, tx, input, id); err != nil {
+		return document.CommitResult{}, sourceConflict(err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO document_usage_charges (organization_id,document_id,period_start,accepted_at)
 	    VALUES ($1,$2,$3,$4)`, input.OrganizationID, id, periodStart, input.Now); err != nil {
@@ -145,6 +146,28 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	}
 	return document.CommitResult{Document: document.Document{ID: id, OrganizationID: input.OrganizationID, Filename: input.Filename, MIME: input.MIME,
 		Size: input.Size, Status: "Available", StorageKey: input.TemporaryKey, AcceptedAt: input.Now}, Accepted: true}, nil
+}
+
+func insertDocumentSource(ctx context.Context, tx pgx.Tx, input document.CommitInput, documentID string) error {
+	var providerFilename, providerMIME, providerSize, selectedAt any
+	if input.Channel == "Drive" {
+		providerFilename, providerMIME, providerSize, selectedAt = input.Filename, input.DriveProviderMIME, input.DriveProviderSize, input.DriveSelectedAt
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO document_sources
+	    (id,organization_id,document_id,channel,origin_key,submitted_by_user_id,drive_connection_id,drive_file_id,drive_revision,
+	     provider_filename,provider_mime,provider_size,selected_at,created_at)
+	    VALUES ($1,$2,$3,$4,$5,$6,nullif($8,'')::uuid,nullif($9,''),nullif($10,''),$11,$12,$13,$14,$7)`,
+		postgresUUID(), input.OrganizationID, documentID, input.Channel, input.OriginKey, input.ActorUserID, input.Now,
+		input.DriveConnectionID, input.DriveFileID, input.DriveRevision, providerFilename, providerMIME, providerSize, selectedAt)
+	return err
+}
+
+func sourceConflict(err error) error {
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) && databaseError.Code == "23505" {
+		return document.ErrSourceConflict
+	}
+	return err
 }
 
 func (s *Store) RecordRejected(ctx context.Context, input document.AcceptInput, reason string) error {

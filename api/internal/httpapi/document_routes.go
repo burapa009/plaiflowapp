@@ -114,6 +114,7 @@ func (s *server) importDriveDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "invalid_drive_file", "Drive file selection is invalid")
 		return
 	}
+	selectedAt := s.config.Now().UTC()
 	file, err := s.config.Drive.DownloadSelected(r.Context(), session.UserID, membership.OrganizationID, request.FileID, request.Revision)
 	if err != nil {
 		switch {
@@ -135,14 +136,17 @@ func (s *server) importDriveDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.config.Documents.Accept(r.Context(), document.AcceptInput{
 		OrganizationID: membership.OrganizationID, ActorUserID: session.UserID, AttemptID: newUUID(),
-		OriginKey: "drive:" + file.ID + ":" + file.Revision, Filename: filename, Channel: "Drive", Now: s.config.Now().UTC(),
+		OriginKey: "drive:" + file.ID + ":" + file.Revision, Filename: filename, Channel: "Drive", Now: selectedAt,
 		DriveConnectionID: membership.OrganizationID, DriveFileID: file.ID, DriveRevision: file.Revision,
+		DriveProviderMIME: file.MIME, DriveProviderSize: file.Size, DriveSelectedAt: selectedAt,
 	}, file.Body)
 	if err != nil {
 		if errors.Is(err, document.ErrQuota) {
 			writeError(w, r, http.StatusConflict, "document_quota_exhausted", "Document allowance is exhausted")
 		} else if errors.Is(err, document.ErrTrashed) {
 			writeError(w, r, http.StatusConflict, "document_in_trash", "Matching document is in trash")
+		} else if errors.Is(err, document.ErrSourceConflict) {
+			writeError(w, r, http.StatusConflict, "document_source_conflict", "File selection was reused for different content")
 		} else {
 			writeError(w, r, http.StatusUnprocessableEntity, "drive_file_rejected", "Drive file did not pass document checks")
 		}
@@ -350,6 +354,8 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, http.StatusConflict, "document_quota_exhausted", "Document allowance is exhausted")
 		case errors.Is(err, document.ErrTrashed):
 			writeError(w, r, http.StatusConflict, "document_in_trash", "Matching document must be restored by an administrator")
+		case errors.Is(err, document.ErrSourceConflict):
+			writeError(w, r, http.StatusConflict, "document_source_conflict", "Upload key was reused for different content")
 		default:
 			s.config.Logger.Error("document_upload_failed", "request_id", requestID(r))
 			writeError(w, r, http.StatusServiceUnavailable, "document_unavailable", "Document could not be accepted")

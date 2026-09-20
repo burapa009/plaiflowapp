@@ -44,13 +44,21 @@ CREATE TABLE document_sources (
     drive_connection_id uuid,
     drive_file_id text,
     drive_revision text,
+    provider_filename text,
+    provider_mime text,
+    provider_size bigint,
+    selected_at timestamptz,
     created_at timestamptz NOT NULL,
     UNIQUE (organization_id,channel,origin_key),
     FOREIGN KEY (organization_id,document_id) REFERENCES documents(organization_id,id),
     FOREIGN KEY (organization_id,submitted_by_user_id) REFERENCES memberships(organization_id,user_id),
     FOREIGN KEY (drive_connection_id) REFERENCES drive_connections(organization_id),
-    CHECK ((channel='Drive' AND drive_connection_id IS NOT NULL AND drive_file_id IS NOT NULL AND drive_revision IS NOT NULL)
-        OR (channel<>'Drive' AND drive_connection_id IS NULL AND drive_file_id IS NULL AND drive_revision IS NULL))
+    CHECK ((channel='Drive' AND drive_connection_id IS NOT NULL AND drive_file_id IS NOT NULL AND drive_revision IS NOT NULL
+            AND provider_filename IS NOT NULL AND length(provider_filename) BETWEEN 1 AND 240
+            AND provider_mime IS NOT NULL AND length(provider_mime) BETWEEN 1 AND 255
+            AND provider_size IS NOT NULL AND provider_size >= 0 AND selected_at IS NOT NULL)
+        OR (channel<>'Drive' AND drive_connection_id IS NULL AND drive_file_id IS NULL AND drive_revision IS NULL
+            AND provider_filename IS NULL AND provider_mime IS NULL AND provider_size IS NULL AND selected_at IS NULL))
 );
 CREATE INDEX document_sources_document_idx ON document_sources (organization_id,document_id,created_at);
 

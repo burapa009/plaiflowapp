@@ -12,6 +12,7 @@ var (
 	ErrTrashed        = errors.New("matching document is in trash")
 	ErrInvalidCursor  = errors.New("document cursor is invalid")
 	ErrStatusConflict = errors.New("document status transition is unavailable")
+	ErrSourceConflict = errors.New("document origin was reused with different content")
 )
 
 type Document struct {
@@ -95,6 +96,9 @@ type AcceptInput struct {
 	DriveConnectionID string
 	DriveFileID       string
 	DriveRevision     string
+	DriveProviderMIME string
+	DriveProviderSize int64
+	DriveSelectedAt   time.Time
 }
 
 type CommitInput struct {

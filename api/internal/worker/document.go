@@ -50,7 +50,7 @@ func NewLINEDocumentProcessor(service *document.Service, resolver LINEDocumentRe
 			OriginKey: "line:" + event.Provider + ":" + event.Channel + ":" + message.ID,
 			Filename:  filename, Channel: "LINE", Now: time.Now().UTC(),
 		}, body)
-		if errors.Is(err, document.ErrQuota) || errors.Is(err, document.ErrTrashed) || errors.Is(err, document.ErrUnsupportedType) || errors.Is(err, document.ErrTooLarge) || errors.Is(err, document.ErrMalware) {
+		if errors.Is(err, document.ErrQuota) || errors.Is(err, document.ErrTrashed) || errors.Is(err, document.ErrSourceConflict) || errors.Is(err, document.ErrUnsupportedType) || errors.Is(err, document.ErrTooLarge) || errors.Is(err, document.ErrMalware) {
 			return inbound.Ignored, "LINE document was rejected", nil
 		}
 		if err != nil {

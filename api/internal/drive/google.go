@@ -114,7 +114,7 @@ func (p *GoogleProvider) DownloadFile(ctx context.Context, accessToken, fileID, 
 		return File{}, ErrFileChanged
 	}
 	endpoint := strings.TrimRight(p.config.DriveFilesEndpoint, "/") + "/" + url.PathEscape(fileID)
-	metadataRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?fields=id,name,mimeType,headRevisionId,trashed", nil)
+	metadataRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?fields=id,name,mimeType,headRevisionId,trashed,size,capabilities(canDownload)", nil)
 	metadataRequest.Header.Set("Authorization", "Bearer "+accessToken)
 	metadataResponse, err := p.config.HTTPClient.Do(metadataRequest)
 	if err != nil {
@@ -122,16 +122,20 @@ func (p *GoogleProvider) DownloadFile(ctx context.Context, accessToken, fileID, 
 	}
 	defer metadataResponse.Body.Close()
 	var metadata struct {
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		MIME     string `json:"mimeType"`
-		Revision string `json:"headRevisionId"`
-		Trashed  bool   `json:"trashed"`
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		MIME         string `json:"mimeType"`
+		Revision     string `json:"headRevisionId"`
+		Trashed      bool   `json:"trashed"`
+		Size         int64  `json:"size,string"`
+		Capabilities struct {
+			CanDownload bool `json:"canDownload"`
+		} `json:"capabilities"`
 	}
-	if metadataResponse.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(metadataResponse.Body, 1<<20)).Decode(&metadata) != nil || metadata.ID != fileID || metadata.Revision != revision || metadata.Trashed || strings.HasPrefix(metadata.MIME, "application/vnd.google-apps.") {
+	if metadataResponse.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(metadataResponse.Body, 1<<20)).Decode(&metadata) != nil || metadata.ID != fileID || metadata.Revision != revision || metadata.Trashed || !metadata.Capabilities.CanDownload || strings.HasPrefix(metadata.MIME, "application/vnd.google-apps.") {
 		return File{}, ErrFileChanged
 	}
-	contentRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?alt=media", nil)
+	contentRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/revisions/"+url.PathEscape(revision)+"?alt=media", nil)
 	contentRequest.Header.Set("Authorization", "Bearer "+accessToken)
 	contentResponse, err := p.config.HTTPClient.Do(contentRequest)
 	if err != nil {
@@ -141,7 +145,7 @@ func (p *GoogleProvider) DownloadFile(ctx context.Context, accessToken, fileID, 
 		contentResponse.Body.Close()
 		return File{}, ErrFileChanged
 	}
-	return File{ID: metadata.ID, Name: metadata.Name, MIME: metadata.MIME, Revision: metadata.Revision, Body: contentResponse.Body}, nil
+	return File{ID: metadata.ID, Name: metadata.Name, MIME: metadata.MIME, Revision: metadata.Revision, Size: metadata.Size, Body: contentResponse.Body}, nil
 }
 
 func (p *GoogleProvider) Refresh(ctx context.Context, refreshToken string) (string, error) {
