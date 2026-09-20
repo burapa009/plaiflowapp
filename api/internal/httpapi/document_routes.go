@@ -16,6 +16,7 @@ import (
 
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
+	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
 )
 
@@ -122,6 +123,19 @@ func (s *server) exportDocuments(w http.ResponseWriter, r *http.Request) {
 	format := "csv"
 	if strings.HasSuffix(r.URL.Path, ".xlsx") {
 		format = "xlsx"
+	}
+	capability := plan.ExportCSV
+	if format == "xlsx" {
+		capability = plan.ExportXLSX
+	}
+	decision, gateErr := s.config.Gate.Check(r.Context(), membership.OrganizationID, capability, 0)
+	if gateErr != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "plan_unavailable", "Export entitlement is unavailable")
+		return
+	}
+	if !decision.Allowed {
+		writeError(w, r, http.StatusForbidden, "feature_unavailable", "This export format is not included in the current plan")
+		return
 	}
 	var output bytes.Buffer
 	_, err = s.config.Documents.Export(r.Context(), session.UserID, membership.OrganizationID, filter, format, &output)
