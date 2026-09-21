@@ -7,7 +7,7 @@ Foundation for the responsive dashboard, Go API/worker, PostgreSQL inbound-event
 ```powershell
 docker compose up -d postgres
 docker run --rm --network host -v "${PWD}/api/migrations:/migrations" migrate/migrate:v4.19.1 -path=/migrations -database "postgres://plaiflow:local-only-password@localhost:5432/plaiflow?sslmode=disable" up
-cd api; go test ./...; go vet ./...; go build ./cmd/server ./cmd/worker
+cd api; go test ./...; go vet ./...; go build ./cmd/server ./cmd/worker ./cmd/jobworker
 cd ../web; pnpm install --frozen-lockfile; pnpm test; pnpm lint; pnpm typecheck; pnpm build
 cd ../python; `$env:PYTHONPATH='src'; python -m unittest discover -s tests; python -m plaiflow_export
 ```

@@ -20,6 +20,7 @@ import (
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/inbound"
+	"plaiflow/api/internal/job"
 	lineadapter "plaiflow/api/internal/line"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
@@ -46,6 +47,10 @@ type Config struct {
 	PlanStore       plan.Store
 	Drive           *drive.Service
 	Documents       *document.Service
+	Jobs            job.Store
+	JobWorkerAuth   *job.WorkerAuth
+	JobArtifacts    job.ArtifactStore
+	ArtifactTokens  *job.ArtifactToken
 	Gate            work.Gate
 	Now             func() time.Time
 }
@@ -74,6 +79,9 @@ func New(config Config, store Store) http.Handler {
 	mux.HandleFunc("POST /webhooks/line", s.webhook)
 	mux.HandleFunc("GET /v1/dashboard", s.dashboard)
 	mux.HandleFunc("GET /v1/plans", s.listPlans)
+	if config.Jobs != nil && config.JobWorkerAuth != nil {
+		s.registerJobRoutes(mux)
+	}
 	if config.Auth == nil {
 		mux.HandleFunc("GET /v1/auth/{provider}/callback", s.authDisabled)
 		mux.HandleFunc("GET /v1/auth/{provider}/start", s.authDisabled)

@@ -106,15 +106,15 @@ func (s *Store) ProcessDomainEvents(ctx context.Context, limit int, lease time.D
 		WHERE e.id=ANY($1) AND e.event_type IN ('task.details_changed','task.due_changed','task.priority_changed','task.status_changed')
     )
     INSERT INTO notifications (id,organization_id,recipient_user_id,category,logical_key,title,deep_link,delivery_mode,created_at)
-    SELECT md5('notification:'||event_id::text||':'||recipient_user_id::text)::uuid,organization_id,recipient_user_id,category,
-           'event:'||event_id::text||':'||recipient_user_id::text,
-           CASE WHEN category='Assignment' THEN 'คุณได้รับมอบหมายงาน' ELSE 'งานที่คุณติดตามมีการเปลี่ยนแปลง' END,
-           '/o/'||organization_id::text||'/tasks/'||task_id::text,
-		   coalesce(p.web_mode,CASE WHEN category='Assignment' THEN 'Immediate' ELSE 'Digest' END),now()
+    SELECT md5('notification:'||r.event_id::text||':'||r.recipient_user_id::text)::uuid,r.organization_id,r.recipient_user_id,r.category,
+           'event:'||r.event_id::text||':'||r.recipient_user_id::text,
+           CASE WHEN r.category='Assignment' THEN 'คุณได้รับมอบหมายงาน' ELSE 'งานที่คุณติดตามมีการเปลี่ยนแปลง' END,
+           '/o/'||r.organization_id::text||'/tasks/'||r.task_id::text,
+		   coalesce(p.web_mode,CASE WHEN r.category='Assignment' THEN 'Immediate' ELSE 'Digest' END),now()
 	FROM recipients r LEFT JOIN notification_preferences p
 	  ON p.organization_id=r.organization_id AND p.user_id=r.recipient_user_id AND p.category=r.category
-    WHERE recipient_user_id IS NOT NULL AND recipient_user_id<>actor_user_id
-      AND (coalesce(p.web_mode,CASE WHEN category='Assignment' THEN 'Immediate' ELSE 'Digest' END)<>'Off' OR coalesce(p.line_mode,'Off')<>'Off')
+    WHERE r.recipient_user_id IS NOT NULL AND r.recipient_user_id<>r.actor_user_id
+      AND (coalesce(p.web_mode,CASE WHEN r.category='Assignment' THEN 'Immediate' ELSE 'Digest' END)<>'Off' OR coalesce(p.line_mode,'Off')<>'Off')
       AND EXISTS (SELECT 1 FROM memberships m WHERE m.organization_id=r.organization_id AND m.user_id=r.recipient_user_id)
     ON CONFLICT (organization_id,recipient_user_id,logical_key) DO NOTHING`, ids)
 	if err != nil {

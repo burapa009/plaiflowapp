@@ -40,10 +40,25 @@ type Counts struct {
 }
 
 type Snapshot struct {
-	Counts   Counts `json:"counts"`
-	API      string `json:"api"`
-	Database string `json:"database"`
-	Worker   string `json:"worker"`
+	Counts   Counts     `json:"counts"`
+	Jobs     JobMetrics `json:"jobs"`
+	API      string     `json:"api"`
+	Database string     `json:"database"`
+	Worker   string     `json:"worker"`
+}
+
+type JobMetrics struct {
+	Queued                    int64 `json:"queued"`
+	Running                   int64 `json:"running"`
+	Failed                    int64 `json:"failed"`
+	Retries                   int64 `json:"retries"`
+	StaleReclaims             int64 `json:"stale_reclaims"`
+	OldestQueueWaitSeconds    int64 `json:"oldest_queue_wait_seconds"`
+	WorkerHeartbeatAgeSeconds int64 `json:"worker_heartbeat_age_seconds"`
+	ExportRows                int64 `json:"export_rows"`
+	ExportBytes               int64 `json:"export_bytes"`
+	Downloads                 int64 `json:"downloads"`
+	AverageRuntimeSeconds     int64 `json:"average_runtime_seconds"`
 }
 
 func OutcomeForType(eventType string) Status {

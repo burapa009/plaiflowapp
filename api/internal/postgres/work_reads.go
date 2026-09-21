@@ -234,7 +234,7 @@ func (s *Store) ExportRows(ctx context.Context, userID, organizationID string, f
 		return work.ErrForbidden
 	}
 	query := `SELECT t.organization_id,o.name,t.id,t.title,t.description,t.status,t.priority,coalesce(t.due_on::text,''),
-        (t.status IN ('Open','InProgress') AND t.due_on<(now() AT TIME ZONE o.timezone)::date),
+        coalesce(t.status IN ('Open','InProgress') AND t.due_on<(now() AT TIME ZONE o.timezone)::date,false),
         coalesce(c.display_name,''),coalesce(a.display_name,''),
         coalesce(string_agg(wu.display_name,'|' ORDER BY lower(wu.display_name),wu.id) FILTER (WHERE wu.id IS NOT NULL),''),
         t.created_at,t.updated_at,t.status_changed_at,t.completed_at
@@ -278,7 +278,7 @@ func (s *Store) AuditExport(ctx context.Context, request work.ExportRequest, lif
 	if lifecycle == "requested" {
 		_, err = tx.Exec(ctx, `INSERT INTO export_jobs
             (id,organization_id,requester_user_id,filters,mode,status,requested_at,started_at,authorized_row_count,data_as_of)
-            VALUES ($1,$2,$3,$4,'sync','Running',$5,$5,0,$5)`, request.ID, request.OrganizationID, request.ActorUserID, filters, request.Now)
+			VALUES ($1,$2,$3,$4,'sync','Running',$5,$5,0,$5) ON CONFLICT (id) DO NOTHING`, request.ID, request.OrganizationID, request.ActorUserID, filters, request.Now)
 	} else {
 		status := "Failed"
 		if lifecycle == "completed" {
@@ -313,13 +313,40 @@ func (s *Store) QueueExport(ctx context.Context, request work.ExportRequest, cou
 	if err != nil || role != tenant.Owner && role != tenant.Admin {
 		return work.ExportJob{}, work.ErrForbidden
 	}
-	command, err := tx.Exec(ctx, `UPDATE export_jobs SET mode='background',status='Queued',started_at=NULL,data_as_of=NULL,
-        authorized_row_count=$3 WHERE organization_id=$1 AND id=$2 AND requester_user_id=$4`, request.OrganizationID, request.ID, count, request.ActorUserID)
+	var existing work.ExportJob
+	err = tx.QueryRow(ctx, `SELECT e.id,e.organization_id,e.requester_user_id,e.status,e.mode,coalesce(e.failure_code,''),
+		e.authorized_row_count,coalesce(e.produced_byte_count,0),e.requested_at,e.started_at,e.completed_at,e.object_expires_at
+		FROM durable_jobs j JOIN export_jobs e ON e.id=j.legacy_export_job_id
+		WHERE j.organization_id=$1 AND j.kind='export' AND j.idempotency_key=$2`, request.OrganizationID, request.IdempotencyKey).Scan(
+		&existing.ID, &existing.OrganizationID, &existing.RequesterUserID, &existing.Status, &existing.Mode, &existing.FailureCode, &existing.RowCount, &existing.ByteCount, &existing.RequestedAt, &existing.StartedAt, &existing.CompletedAt, &existing.ExpiresAt)
+	if err == nil {
+		return existing, tx.Commit(ctx)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return work.ExportJob{}, err
+	}
+	command, err := tx.Exec(ctx, `UPDATE export_jobs SET mode='background',status='Queued',started_at=NULL,data_as_of=$5,
+		authorized_row_count=$3 WHERE organization_id=$1 AND id=$2 AND requester_user_id=$4`, request.OrganizationID, request.ID, count, request.ActorUserID, request.Now)
 	if err != nil {
 		return work.ExportJob{}, err
 	}
 	if command.RowsAffected() != 1 {
 		return work.ExportJob{}, work.ErrNotFound
+	}
+	format := request.Format
+	if format == "" {
+		format = "csv"
+	}
+	payload, err := json.Marshal(map[string]any{"export_type": "tasks", "format": format, "format_version": format + "-v1",
+		"filters": request.Filters, "row_count": count, "data_as_of": request.Now.UTC()})
+	if err != nil {
+		return work.ExportJob{}, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO durable_jobs
+		(id,organization_id,requester_user_id,kind,status,payload,idempotency_key,request_id,available_at,created_at,legacy_export_job_id)
+		VALUES ($1,$2,$3,'export','Queued',$4,$7,nullif($5,''),$6,$6,$1)
+		ON CONFLICT (organization_id,kind,idempotency_key) DO NOTHING`, request.ID, request.OrganizationID, request.ActorUserID, payload, request.RequestID, request.Now, request.IdempotencyKey); err != nil {
+		return work.ExportJob{}, err
 	}
 	job := work.ExportJob{ID: request.ID, OrganizationID: request.OrganizationID, RequesterUserID: request.ActorUserID, Status: "Queued", Mode: "background", RowCount: count, RequestedAt: request.Now}
 	return job, tx.Commit(ctx)

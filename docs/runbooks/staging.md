@@ -17,6 +17,17 @@
 5. Deploy `web/` to Vercel with `API_BASE_URL=https://...` and the server-only token.
 6. Run `scripts/smoke-staging.ps1` with synthetic data, then inspect request duration/error logs and platform CPU/memory metrics.
 
+## Phase 5 durable jobs
+
+1. Record the API, legacy worker, web and database deployment IDs plus a recoverable database snapshot. Confirm migration state is version 6 and clean.
+2. Create a staging-only private Railway Bucket in `sin`. Configure the API with its `EXPORT_BUCKET`, `EXPORT_REGION`, `EXPORT_ENDPOINT`, `EXPORT_ACCESS_KEY_ID`, `EXPORT_SECRET_ACCESS_KEY`, a separate base64 32-byte `EXPORT_ENCRYPTION_KEY`, and `EXPORT_PATH_STYLE`. Add the same base64 32-byte `JOB_WORKER_AUTH_KEY` to the API and the new Durable Job worker. Add a separate base64 32-byte `EXPORT_DOWNLOAD_SIGNING_KEY` only to the API. Set only `APP_ENV`, `JOB_API_URL`, `JOB_WORKER_ID` and `JOB_WORKER_AUTH_KEY` on that worker; do not set `DATABASE_URL`, either export key or object-store credentials.
+3. Apply migration `000007_phase5_durable_jobs` before deploying the API. Confirm version 7, `dirty=false`, migrated active export counts match, and `/readyz` returns 200.
+4. Deploy the API, then deploy the new worker with `api/railway.jobworker.toml`. Keep the legacy worker running for inbound/LINE/document queues; it must not process Durable Jobs.
+5. Claim two synthetic jobs concurrently and verify distinct IDs, renew one lease, reclaim one expired lease, and confirm a stale completion returns conflict. Run one export above 5,000 rows and verify Completed status, formula-safe CSV, tenant-scoped 15-minute download and 24-hour artifact expiry.
+6. Check `/v1/dashboard` job queue wait, retry, stale reclaim, terminal failure, export row/byte and heartbeat-age metrics. Inspect logs for sustained errors, secrets, hot polling, slow queries and memory pressure.
+
+Rollback: stop the Durable Job worker first, restore the previous API and web deployments, and leave the additive version-7 tables in place if any Durable Job or artifact exists. Existing `export_jobs` history remains readable. Only when all three new tables are empty, after a fresh snapshot, may `migrate down 1` remove version 7. Re-run `/readyz`, legacy worker heartbeat and export history checks.
+
 Phase 3 requires schema version `5`; `/readyz` intentionally remains unavailable on older schema. Migrations `000004` and `000005` are additive. Before applying them, record the current migration version and take the provider's point-in-time backup/snapshot. Verify `version=5` and `dirty=false` before deploying the API.
 
 Publish the Rich Menu only to the staging LINE channel after the web preview URL is stable. Record the previous default Rich Menu ID, then run `scripts/build-rich-menu.ps1` and `go run ./cmd/richmenu` from `api/` with staging-only `LINE_CHANNEL_ACCESS_TOKEN`, `WEB_BASE_URL`, and `RICH_MENU_IMAGE=../web/public/rich-menu.png`.

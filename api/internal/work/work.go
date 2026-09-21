@@ -1,9 +1,12 @@
 package work
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/csv"
+	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -129,9 +132,10 @@ func Summarize(d Dashboard, now time.Time) AssistantSummary {
 }
 
 type ExportRequest struct {
-	ID, OrganizationID, ActorUserID, RequestID string
-	Filters                                    TaskFilter
-	Now                                        time.Time
+	ID, OrganizationID, ActorUserID, RequestID, IdempotencyKey string
+	Format                                                     string
+	Filters                                                    TaskFilter
+	Now                                                        time.Time
 }
 
 type ExportJob struct {
@@ -242,12 +246,91 @@ func NewCSVWriter(output io.Writer) (*CSVWriter, error) {
 }
 
 func (w *CSVWriter) Write(row ExportRow) error {
-	return w.writer.Write([]string{
+	return w.writer.Write(exportRecord(row, true))
+}
+
+func exportRecord(row ExportRow, safe bool) []string {
+	values := []string{
 		row.OrganizationID, safeCSVCell(row.OrganizationName), row.TaskID, safeCSVCell(row.Title), safeCSVCell(row.Description),
 		string(row.Status), string(row.Priority), row.DueDate, strconv.FormatBool(row.IsOverdue), safeCSVCell(row.CreatorName),
 		safeCSVCell(row.AssigneeName), safeCSVCell(row.WatcherNames), timestamp(row.CreatedAt), timestamp(row.UpdatedAt),
 		nullableTimestamp(row.StatusChangedAt), nullableTimestamp(row.CompletedAt),
-	})
+	}
+	if !safe {
+		values[1], values[3], values[4], values[9], values[10], values[11] = row.OrganizationName, row.Title, row.Description, row.CreatorName, row.AssigneeName, row.WatcherNames
+	}
+	return values
+}
+
+type XLSXWriter struct {
+	archive *zip.Writer
+	sheet   io.Writer
+	row     int
+}
+
+func NewXLSXWriter(output io.Writer) (*XLSXWriter, error) {
+	archive := zip.NewWriter(output)
+	files := map[string]string{
+		"[Content_Types].xml":        `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+		"_rels/.rels":                `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+		"xl/workbook.xml":            `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Tasks" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		"xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+	}
+	for name, content := range files {
+		entry, err := archive.Create(name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = io.WriteString(entry, content); err != nil {
+			return nil, err
+		}
+	}
+	sheet, err := archive.Create("xl/worksheets/sheet1.xml")
+	if err != nil {
+		return nil, err
+	}
+	if _, err = io.WriteString(sheet, `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>`); err != nil {
+		return nil, err
+	}
+	w := &XLSXWriter{archive: archive, sheet: sheet}
+	if err := w.write(exportHeader); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+func (w *XLSXWriter) Write(row ExportRow) error { return w.write(exportRecord(row, false)) }
+func (w *XLSXWriter) write(values []string) error {
+	w.row++
+	if _, err := fmt.Fprintf(w.sheet, `<row r="%d">`, w.row); err != nil {
+		return err
+	}
+	for index, value := range values {
+		if _, err := fmt.Fprintf(w.sheet, `<c r="%s%d" t="inlineStr"><is><t xml:space="preserve">`, spreadsheetColumn(index), w.row); err != nil {
+			return err
+		}
+		if err := xml.EscapeText(w.sheet, []byte(value)); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w.sheet, `</t></is></c>`); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w.sheet, `</row>`)
+	return err
+}
+func (w *XLSXWriter) Close() error {
+	if _, err := io.WriteString(w.sheet, `</sheetData></worksheet>`); err != nil {
+		return err
+	}
+	return w.archive.Close()
+}
+func spreadsheetColumn(index int) string {
+	result := ""
+	for index >= 0 {
+		result = string(rune('A'+index%26)) + result
+		index = index/26 - 1
+	}
+	return result
 }
 
 func (w *CSVWriter) Close() error {

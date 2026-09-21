@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,6 +31,29 @@ func (s *server) registerWorkRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/o/{organization}/assistant-summary", s.assistantSummary)
 	mux.HandleFunc("POST /v1/o/{organization}/task-exports", s.exportTasks)
 	mux.HandleFunc("GET /v1/o/{organization}/task-exports", s.listExports)
+	mux.HandleFunc("GET /v1/o/{organization}/task-exports/{export}/download", s.downloadExport)
+}
+
+func (s *server) downloadExport(w http.ResponseWriter, r *http.Request) {
+	session, membership, ok := s.workContext(w, r, false)
+	if !ok {
+		return
+	}
+	if s.config.Jobs == nil || s.config.ArtifactTokens == nil {
+		writeError(w, r, http.StatusServiceUnavailable, "export_unavailable", "Export is unavailable")
+		return
+	}
+	artifact, err := s.config.Jobs.AuthorizeExportArtifact(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("export"))
+	if err != nil {
+		writeWorkError(w, r, err)
+		return
+	}
+	token, err := s.config.ArtifactTokens.Sign(artifact.JobID, artifact.OrganizationID, session.UserID, s.config.Now().UTC())
+	if err != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "export_unavailable", "Export is unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"download_url": "/v1/export-artifacts/" + artifact.JobID + "?token=" + token, "expires_at": s.config.Now().UTC().Add(15 * time.Minute)})
 }
 
 func (s *server) workContext(w http.ResponseWriter, r *http.Request, mutation bool) (auth.Session, tenant.Membership, bool) {
@@ -288,12 +313,31 @@ func (s *server) exportTasks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	format := r.FormValue("format")
+	if format == "" {
+		format = "csv"
+	}
+	if format != "csv" && format != "xlsx" {
+		writeError(w, r, http.StatusUnprocessableEntity, "invalid_format", "Export format is invalid")
+		return
+	}
 	decision, err := s.config.Gate.Check(r.Context(), membership.OrganizationID, work.ExportTasks, 1)
 	if err != nil || !decision.Allowed {
 		writeError(w, r, http.StatusPaymentRequired, "feature_unavailable", "CSV export is unavailable")
 		return
 	}
-	request := work.ExportRequest{ID: newUUID(), OrganizationID: membership.OrganizationID, ActorUserID: session.UserID, RequestID: requestID(r), Filters: filter, Now: s.config.Now().UTC()}
+	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if idempotencyKey != "" && !validRequestID(idempotencyKey) {
+		writeError(w, r, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency key is invalid")
+		return
+	}
+	exportID := newUUID()
+	if idempotencyKey != "" {
+		exportID = deterministicExportID(membership.OrganizationID, session.UserID, idempotencyKey)
+	} else {
+		idempotencyKey = exportID
+	}
+	request := work.ExportRequest{ID: exportID, OrganizationID: membership.OrganizationID, ActorUserID: session.UserID, RequestID: requestID(r), IdempotencyKey: idempotencyKey, Format: format, Filters: filter, Now: s.config.Now().UTC()}
 	if err := s.config.Work.AuditExport(r.Context(), request, "requested", 0, 0, ""); err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "export_unavailable", "CSV export is unavailable")
 		return
@@ -304,7 +348,7 @@ func (s *server) exportTasks(w http.ResponseWriter, r *http.Request) {
 		writeWorkError(w, r, err)
 		return
 	}
-	if count > 100000 {
+	if count > 100000 || format == "xlsx" && count > 50000 {
 		_ = s.config.Work.AuditExport(r.Context(), request, "rejected", count, 0, "export_too_large")
 		writeError(w, r, http.StatusRequestEntityTooLarge, "export_too_large", "Narrow the filters and try again")
 		return
@@ -325,17 +369,31 @@ func (s *server) exportTasks(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, job)
 		return
 	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="tasks-`+s.config.Now().UTC().Format("20060102")+`-`+request.ID+`.csv"`)
+	contentType := "text/csv; charset=utf-8"
+	if format == "xlsx" {
+		contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="tasks-`+s.config.Now().UTC().Format("20060102")+`-`+request.ID+`.`+format+`"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
 	counter := &countingWriter{ResponseWriter: w}
-	csvWriter, err := work.NewCSVWriter(counter)
-	if err == nil {
-		err = s.config.Work.ExportRows(r.Context(), session.UserID, membership.OrganizationID, filter, csvWriter.Write)
+	var exportWriter interface {
+		Write(work.ExportRow) error
+		Close() error
 	}
-	if closeErr := csvWriterClose(csvWriter); err == nil {
-		err = closeErr
+	if format == "xlsx" {
+		exportWriter, err = work.NewXLSXWriter(counter)
+	} else {
+		exportWriter, err = work.NewCSVWriter(counter)
+	}
+	if err == nil {
+		err = s.config.Work.ExportRows(r.Context(), session.UserID, membership.OrganizationID, filter, exportWriter.Write)
+	}
+	if exportWriter != nil {
+		if closeErr := exportWriter.Close(); err == nil {
+			err = closeErr
+		}
 	}
 	if err != nil {
 		_ = s.config.Work.AuditExport(r.Context(), request, "failed", count, counter.bytes, "stream_failed")
@@ -343,6 +401,13 @@ func (s *server) exportTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.config.Work.AuditExport(r.Context(), request, "completed", count, counter.bytes, "")
 	_ = s.config.Gate.Record(r.Context(), membership.OrganizationID, work.ExportTasks, count, request.ID)
+}
+
+func deterministicExportID(organizationID, userID, key string) string {
+	value := sha256.Sum256([]byte(organizationID + ":" + userID + ":" + key))
+	value[6] = value[6]&0x0f | 0x50
+	value[8] = value[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
 }
 
 func (s *server) listExports(w http.ResponseWriter, r *http.Request) {

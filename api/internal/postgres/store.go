@@ -17,7 +17,7 @@ type Store struct {
 	logger *slog.Logger
 }
 
-const requiredMigrationVersion = 6
+const requiredMigrationVersion = 7
 
 func New(ctx context.Context, databaseURL string, maxConnections int32, logger *slog.Logger) (*Store, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
@@ -88,6 +88,23 @@ func (s *Store) Snapshot(ctx context.Context) (inbound.Snapshot, error) {
         FROM inbound_events WHERE received_at >= now() - interval '24 hours'`).Scan(
 		&result.Counts.Received, &result.Counts.Processed, &result.Counts.Ignored,
 		&result.Counts.Retryable, &result.Counts.Failed, &workerHealthy)
+	if err != nil {
+		return inbound.Snapshot{}, err
+	}
+	err = s.pool.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE status='Queued'),count(*) FILTER (WHERE status='Running'),
+		count(*) FILTER (WHERE status='Failed' AND failed_at>=now()-interval '24 hours'),
+		count(*) FILTER (WHERE status='Queued' AND attempt_count>0),coalesce(sum(stale_reclaim_count),0),
+		coalesce(extract(epoch FROM now()-(min(created_at) FILTER (WHERE status='Queued'))),0)::bigint,
+		coalesce((SELECT extract(epoch FROM now()-max(heartbeat_at)) FROM durable_job_worker_heartbeats),-1)::bigint,
+		coalesce((SELECT sum(row_count) FROM durable_job_artifacts WHERE created_at>=now()-interval '24 hours'),0),
+		coalesce((SELECT sum(byte_count) FROM durable_job_artifacts WHERE created_at>=now()-interval '24 hours'),0),
+		(SELECT count(*) FROM audit_events WHERE event_type='export.downloaded' AND occurred_at>=now()-interval '24 hours'),
+		coalesce(avg(extract(epoch FROM completed_at-started_at)) FILTER (WHERE status='Completed' AND completed_at>=now()-interval '24 hours'),0)::bigint
+		FROM durable_jobs`).Scan(
+		&result.Jobs.Queued, &result.Jobs.Running, &result.Jobs.Failed, &result.Jobs.Retries, &result.Jobs.StaleReclaims,
+		&result.Jobs.OldestQueueWaitSeconds, &result.Jobs.WorkerHeartbeatAgeSeconds, &result.Jobs.ExportRows, &result.Jobs.ExportBytes,
+		&result.Jobs.Downloads, &result.Jobs.AverageRuntimeSeconds)
 	if err != nil {
 		return inbound.Snapshot{}, err
 	}

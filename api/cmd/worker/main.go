@@ -69,7 +69,7 @@ func main() {
 				logger.Error("worker_cycle_failed")
 			}
 			if _, err := worker.RunWorkOnce(ctx, store, sender, time.Now().UTC()); err != nil {
-				logger.Error("work_cycle_failed")
+				logger.Error("work_cycle_failed", "error", err)
 			}
 		case <-heartbeat.C:
 			if err := store.Heartbeat(ctx, "worker-1"); err != nil {

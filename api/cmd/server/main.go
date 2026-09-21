@@ -14,6 +14,7 @@ import (
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/httpapi"
+	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/postgres"
 )
@@ -69,6 +70,7 @@ func main() {
 		}
 	}
 	documentService := &document.Service{Committer: store, Reader: store}
+	var artifactStore job.ArtifactStore
 	if settings.DocumentBucket != "" {
 		blob, blobErr := document.NewS3Blob(document.S3Config{
 			Bucket: settings.DocumentBucket, Region: settings.DocumentRegion, Endpoint: settings.DocumentEndpoint,
@@ -86,6 +88,34 @@ func main() {
 		}
 		documentService.Intake = document.Intake{Temporary: encrypted,
 			Scanner: document.ClamAV{Address: settings.ClamDAddress}}
+		artifactStore = encrypted
+	}
+	if settings.ExportBucket != "" {
+		blob, blobErr := document.NewS3Blob(document.S3Config{Bucket: settings.ExportBucket, Region: settings.ExportRegion, Endpoint: settings.ExportEndpoint,
+			AccessKeyID: settings.ExportAccessKeyID, SecretAccessKey: settings.ExportSecretKey, PathStyle: settings.ExportPathStyle})
+		if blobErr != nil {
+			logger.Error("export_storage_initialization_failed")
+			os.Exit(1)
+		}
+		artifactStore, err = document.NewEncryptedStore(blob, settings.ExportEncryptionKey)
+		if err != nil {
+			logger.Error("export_encryption_initialization_failed")
+			os.Exit(1)
+		}
+	}
+	var workerAuth *job.WorkerAuth
+	var artifactTokens *job.ArtifactToken
+	if len(settings.JobWorkerAuthKey) > 0 {
+		workerAuth, err = job.NewWorkerAuth(settings.JobWorkerAuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:artifact", "jobs:fail"})
+		if err != nil {
+			logger.Error("job_worker_auth_initialization_failed")
+			os.Exit(1)
+		}
+		artifactTokens, err = job.NewArtifactToken(settings.ExportDownloadKey)
+		if err != nil {
+			logger.Error("artifact_token_initialization_failed")
+			os.Exit(1)
+		}
 	}
 	server := &http.Server{
 		Addr: ":" + settings.Port,
@@ -93,6 +123,7 @@ func main() {
 			LineSecret: settings.LineSecret, LineChannel: settings.LineChannel, DashboardTokens: settings.DashboardTokens,
 			Logger: logger, Auth: authService, Tenants: store, Work: store, Business: store, PlanStore: store,
 			Gate: plan.Gate{Store: store}, Drive: driveService, Documents: documentService,
+			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}

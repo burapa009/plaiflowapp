@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/base64"
 	"errors"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -29,10 +30,24 @@ type Server struct {
 	DocumentEncryptionKey []byte
 	DocumentPathStyle     bool
 	ClamDAddress          string
+	JobWorkerAuthKey      []byte
+	ExportDownloadKey     []byte
+	ExportBucket          string
+	ExportRegion          string
+	ExportEndpoint        string
+	ExportAccessKeyID     string
+	ExportSecretKey       string
+	ExportEncryptionKey   []byte
+	ExportPathStyle       bool
 	DashboardTokens       []string
 	WebBaseURL            string
 	AllowedWebOrigins     []string
 	PoolMax               int32
+}
+
+type JobWorker struct {
+	Environment, APIURL, WorkerID string
+	AuthKey                       []byte
 }
 
 type Worker struct {
@@ -95,6 +110,50 @@ func LoadServer() (Server, error) {
 		}
 		config.DocumentEncryptionKey = decoded
 	}
+	jobKey := os.Getenv("JOB_WORKER_AUTH_KEY")
+	if decoded, err := base64.StdEncoding.DecodeString(jobKey); err == nil && len(decoded) == 32 {
+		config.JobWorkerAuthKey = decoded
+	} else if config.Environment == "staging" || config.Environment == "production" {
+		return Server{}, errors.New("invalid job worker configuration")
+	}
+	downloadKey := os.Getenv("EXPORT_DOWNLOAD_SIGNING_KEY")
+	if decoded, err := base64.StdEncoding.DecodeString(downloadKey); err == nil && len(decoded) == 32 {
+		config.ExportDownloadKey = decoded
+	} else if config.Environment == "staging" || config.Environment == "production" {
+		return Server{}, errors.New("invalid export download configuration")
+	}
+	config.ExportBucket = os.Getenv("EXPORT_BUCKET")
+	config.ExportRegion = os.Getenv("EXPORT_REGION")
+	config.ExportEndpoint = os.Getenv("EXPORT_ENDPOINT")
+	config.ExportAccessKeyID = os.Getenv("EXPORT_ACCESS_KEY_ID")
+	config.ExportSecretKey = os.Getenv("EXPORT_SECRET_ACCESS_KEY")
+	config.ExportPathStyle = os.Getenv("EXPORT_PATH_STYLE") == "true"
+	exportKey := os.Getenv("EXPORT_ENCRYPTION_KEY")
+	exportConfigured := config.ExportBucket != "" || config.ExportRegion != "" || config.ExportEndpoint != "" || config.ExportAccessKeyID != "" || config.ExportSecretKey != "" || exportKey != ""
+	if len(config.JobWorkerAuthKey) > 0 && (config.Environment == "staging" || config.Environment == "production") && !exportConfigured {
+		return Server{}, errors.New("export storage is required")
+	}
+	if exportConfigured {
+		decoded, err := base64.StdEncoding.DecodeString(exportKey)
+		if config.ExportBucket == "" || config.ExportRegion == "" || config.ExportEndpoint == "" || config.ExportAccessKeyID == "" || config.ExportSecretKey == "" || err != nil || len(decoded) != 32 {
+			return Server{}, errors.New("invalid export storage configuration")
+		}
+		config.ExportEncryptionKey = decoded
+	}
+	return config, nil
+}
+
+func LoadJobWorker() (JobWorker, error) {
+	config := JobWorker{Environment: os.Getenv("APP_ENV"), APIURL: strings.TrimRight(os.Getenv("JOB_API_URL"), "/"), WorkerID: os.Getenv("JOB_WORKER_ID")}
+	decoded, err := base64.StdEncoding.DecodeString(os.Getenv("JOB_WORKER_AUTH_KEY"))
+	if config.Environment == "" || config.APIURL == "" || config.WorkerID == "" || err != nil || len(decoded) != 32 {
+		return JobWorker{}, errors.New("invalid job worker configuration")
+	}
+	parsed, err := url.Parse(config.APIURL)
+	if err != nil || parsed.Host == "" || (config.Environment == "staging" || config.Environment == "production") && parsed.Scheme != "https" {
+		return JobWorker{}, errors.New("invalid job worker API URL")
+	}
+	config.AuthKey = decoded
 	return config, nil
 }
 
