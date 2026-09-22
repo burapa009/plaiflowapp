@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import Image from "next/image";
 import { getAPIBaseURL } from "@/lib/api-config";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
@@ -79,7 +80,7 @@ export default async function Organizations({ searchParams }: { searchParams: Pr
   return (
     <section className="auth-page">
       <div className="auth-card">
-        <p className="auth-brand">PlaiFlow</p>
+        <Link className="auth-brand app-brand" href="/" aria-label="PlaiFlow หน้าแรก"><Image src="/plaiflow-logo.png" alt="PlaiFlow" width={256} height={128} priority /></Link>
         {organizations.length === 0 ? (
           <>
             <p className="eyebrow">ขั้นตอนสุดท้าย</p>

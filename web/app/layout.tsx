@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import "./globals.css";
 import { NavLinks } from "./nav-links";
 
 export const metadata: Metadata = { title: "PlaiFlow", description: "ศูนย์ดูแลเวิร์กโฟลว์ธุรกิจ" };
 
-const Brand = () => <Link className="brand" href="/">PlaiFlow</Link>;
+const Brand = () => <Link className="brand app-brand" href="/" aria-label="PlaiFlow หน้าแรก"><Image src="/plaiflow-logo.png" alt="PlaiFlow" width={256} height={128} priority /></Link>;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
