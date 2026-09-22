@@ -114,7 +114,9 @@ func LoadServer() (Server, error) {
 	jobKey := os.Getenv("JOB_WORKER_AUTH_KEY")
 	if key := os.Getenv("OCR_WORKER_AUTH_KEY"); key != "" {
 		decoded, err := base64.StdEncoding.DecodeString(key)
-		if err != nil || len(decoded) != 32 || key == os.Getenv("JOB_WORKER_AUTH_KEY") { return Server{}, errors.New("invalid separate OCR worker key") }
+		if err != nil || len(decoded) != 32 || key == os.Getenv("JOB_WORKER_AUTH_KEY") {
+			return Server{}, errors.New("invalid separate OCR worker key")
+		}
 		config.OCRWorkerAuthKey = decoded
 	}
 	if decoded, err := base64.StdEncoding.DecodeString(jobKey); err == nil && len(decoded) == 32 {

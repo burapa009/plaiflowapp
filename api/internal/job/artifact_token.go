@@ -29,7 +29,9 @@ func (a *ArtifactToken) Sign(jobID, organizationID, userID string, now time.Time
 }
 
 func (a *ArtifactToken) SignTTL(jobID, organizationID, userID string, now time.Time, ttl time.Duration) (string, error) {
-	if ttl <= 0 || ttl > 15*time.Minute { return "", ErrUnauthorized }
+	if ttl <= 0 || ttl > 15*time.Minute {
+		return "", ErrUnauthorized
+	}
 	if jobID == "" || organizationID == "" || userID == "" {
 		return "", ErrUnauthorized
 	}
