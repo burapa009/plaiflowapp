@@ -53,7 +53,7 @@ a { color: inherit; text-decoration: none; }
 a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .skip-link { @apply fixed left-4 -top-20 z-[100] rounded-lg bg-fg px-4 py-3 text-canvas; }
 .skip-link:focus { top: 1rem; }
-.shell { @apply min-h-dvh; }
+.shell { @apply min-h-dvh bg-canvas text-fg; background-image: radial-gradient(circle at 88% 8%, #e5f4ff 0, transparent 27rem); }
 .sidebar { @apply hidden; }
 .topbar { @apply sticky top-0 z-20 flex min-h-16 items-center justify-between border-b px-4 py-2; border-color: var(--border); background: var(--surface); color: var(--foreground); }
 .brand { @apply flex items-center gap-[.65rem] font-semibold; }
@@ -63,7 +63,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .nav-list { @apply mt-8 grid list-none gap-2 p-0; }
 .nav-link { @apply flex min-h-11 items-center rounded-[.7rem] px-[.8rem] py-[.65rem]; }
 .nav-link:hover, .nav-link[aria-current="page"] { background: var(--surface-soft); color: var(--primary-strong); font-weight: 600; }
-.main { @apply mx-auto px-4 pt-8 pb-16; width: min(100%, 76rem); }
+.main { @apply mx-auto px-4 pt-8 pb-16; width: min(100%, 88rem); }
 .eyebrow { @apply mb-1 text-[.82rem] font-bold tracking-[.08em] uppercase; color: var(--primary-strong); }
 h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-spacing: -.03em; }
 .intro { @apply text-muted; max-width: 66ch; }
@@ -155,20 +155,20 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 }
 
 @media (min-width: 64rem) {
-  .shell { display: grid; grid-template-columns: 17rem minmax(0, 1fr); }
-  .sidebar { position: sticky; top: 0; display: block; height: 100dvh; padding: 1.5rem; border-right: 1px solid var(--border); background: var(--surface); color: var(--foreground); }
+  .shell { @apply grid grid-cols-[15rem_minmax(0,1fr)]; }
+  .sidebar { @apply sticky top-0 block h-dvh border-r border-line bg-gradient-to-b from-canvas to-[#eaf4ff] p-4 text-fg; }
+  .sidebar .nav-list { @apply mt-16 gap-1; }
+  .sidebar .nav-link { @apply rounded-xl px-4 py-3 text-muted; }
   .sidebar .nav-link:hover, .sidebar .nav-link[aria-current="page"] { background: var(--surface-soft); color: var(--primary-strong); }
   .topbar { display: none; }
-  .main { padding-block: 3.5rem; }
+  .main { @apply py-10; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
-/* Workspace: shared landing palette */
-.shell:has(.workspace-page) { background: var(--background); }
-.shell:has(.workspace-page) .main { width: min(100%, 88rem); }
+/* Workspace content */
 .workspace-page { color: var(--foreground); }
 .workspace-page .eyebrow { color: var(--primary-strong); text-transform: none; letter-spacing: 0; }
 .workspace-page .intro { margin: .5rem 0 0; }
@@ -200,19 +200,12 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
   .workspace-page .work-layout { grid-template-columns: minmax(0, 1.65fr) minmax(18rem, .85fr); }
   .workspace-page .form-row { grid-template-columns: 1fr; }
 }
-@media (min-width: 64rem) {
-  .shell:has(.workspace-page) .sidebar { border-right: 1px solid var(--border); background: var(--surface); color: var(--foreground); }
-  .shell:has(.workspace-page) .sidebar .brand { color: var(--primary-strong); font-size: 1.4rem; font-weight: 800; }
-  .shell:has(.workspace-page) .sidebar .nav-link:hover, .shell:has(.workspace-page) .sidebar .nav-link[aria-current="page"] { background: var(--surface-soft); color: var(--primary-strong); }
-  .shell:has(.workspace-page) .main { padding-top: 2.5rem; }
-}
 @media (max-width: 40rem) {
   .workspace-summary-tag { display: none !important; }
   .workspace-metrics > div { padding: .8rem; }
   .workspace-metrics span { font-size: .75rem; }
   .workspace-page .work-header .button { margin-top: .5rem; }
 }
-.shell:has(.workspace-page) { background: radial-gradient(circle at 88% 8%, #e5f4ff 0, transparent 27rem), var(--background); }
 .workspace-page { max-width: 1270px; margin: auto; }
 .workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; margin: -2rem -1rem 2rem; border-bottom: 1px solid var(--border); padding: .5rem 1.5rem; background: #ffffffd9; color: var(--muted); font-size: .85rem; font-weight: 650; }
 .workspace-toolbar > span > span { margin: 0 .75rem; color: var(--border); }
@@ -251,7 +244,7 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .workspace-task-dot.urgent { background: #e67866; box-shadow: 0 0 0 4px #fff0ec; }
 .workspace-task-dot.done { background: #55af83; box-shadow: 0 0 0 4px #e5f4ff; }
 .workspace-task-arrow { color: #8daea0; font-size: 1.2rem; }
-.workspace-page .field label { color: #365d4d; font-size: .86rem; }
+.workspace-page .field label { @apply text-[.86rem] text-muted; }
 .workspace-page .field input, .workspace-page .field select, .workspace-page .field textarea { border-radius: .7rem; background: #fff; }
 .workspace-page .work-form .button { border-radius: .75rem; box-shadow: 0 9px 18px #11584820; }
 .workspace-page .work-form .button:disabled { cursor: not-allowed; opacity: .7; }
@@ -259,13 +252,6 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
   .workspace-toolbar { margin: -2rem -2rem 2.2rem; padding-inline: 2rem; }
 }
 @media (min-width: 64rem) {
-  .shell:has(.workspace-page) { grid-template-columns: 15rem minmax(0, 1fr); }
-  .shell:has(.workspace-page) .main { padding-top: 2.5rem; }
-  .shell:has(.workspace-page) .sidebar { padding: 2rem 1rem; background: linear-gradient(160deg, #f8fffa, #eaf4ff); }
-  .shell:has(.workspace-page) .sidebar .brand { margin-left: .65rem; font-size: 1.65rem; letter-spacing: -.055em; }
-  .shell:has(.workspace-page) .sidebar .nav-list { gap: .35rem; margin-top: 4rem; }
-  .shell:has(.workspace-page) .sidebar .nav-link { border-radius: .85rem; padding: .8rem .95rem; color: #4c6e5d; }
-  .shell:has(.workspace-page) .sidebar .nav-link[aria-current="page"] { border-left: 3px solid #258865; background: #dff2e6; color: #175846; }
   .workspace-toolbar { margin: -2.5rem -2rem 2.4rem; }
 }
 @media (max-width: 40rem) {
