@@ -16,7 +16,7 @@ import (
 
 const taskColumns = `t.id,t.organization_id,t.title,t.description,t.creator_user_id,
     coalesce(t.assignee_user_id::text,''),coalesce(a.display_name,''),t.status,t.priority,coalesce(t.due_on::text,''),
-    (t.status IN ('Open','InProgress') AND t.due_on < (now() AT TIME ZONE o.timezone)::date),
+    coalesce(t.status IN ('Open','InProgress') AND t.due_on < (now() AT TIME ZONE o.timezone)::date,false),
     t.created_at,t.updated_at,t.status_changed_at,t.completed_at,
     coalesce(array_agg(wu.display_name ORDER BY lower(wu.display_name),wu.id) FILTER (WHERE wu.id IS NOT NULL),ARRAY[]::text[])`
 
@@ -107,7 +107,7 @@ func (s *Store) ListTasks(ctx context.Context, userID, organizationID string, fi
           AND ($6='' OR t.due_on>=nullif($6,'')::date) AND ($7='' OR t.due_on<=nullif($7,'')::date)
           AND ($8='' OR (t.created_at AT TIME ZONE o.timezone)::date>=nullif($8,'')::date)
           AND ($9='' OR (t.created_at AT TIME ZONE o.timezone)::date<=nullif($9,'')::date)
-          AND (NOT $10 OR (t.status IN ('Open','InProgress') AND t.due_on < (now() AT TIME ZONE o.timezone)::date)=$11)
+          AND (NOT $10 OR coalesce(t.status IN ('Open','InProgress') AND t.due_on < (now() AT TIME ZONE o.timezone)::date,false)=$11)
           AND ($12::timestamptz IS NULL OR (t.created_at,t.id)<($12,$13::uuid))
         `+taskGroup+` ORDER BY t.created_at DESC,t.id DESC LIMIT $14`,
 		organizationID, filter.Status, filter.Priority, filter.AssigneeUserID, filter.CreatorUserID, filter.DueFrom, filter.DueTo,

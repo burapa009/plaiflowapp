@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,37 +18,38 @@ import (
 )
 
 // This test creates and drops only its own isolated database, never test tables in staging.
-func TestOCRIsolatedDatabaseLifecycle(t *testing.T) {
-	url := os.Getenv("OCR_TEST_ADMIN_URL")
-	if url == "" {
+func isolatedTestStore(t *testing.T) (*Store, context.Context) {
+	t.Helper()
+	databaseURL := os.Getenv("OCR_TEST_ADMIN_URL")
+	if databaseURL == "" {
 		t.Skip("OCR_TEST_ADMIN_URL not set")
 	}
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, url)
+	admin, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {
 		t.Fatal("test database connection unavailable")
 	}
-	defer admin.Close(ctx)
+	t.Cleanup(func() { admin.Close(ctx) })
 	name := "plaiflow_ocr_test_" + strings.ReplaceAll(postgresUUID(), "-", "")
 	identifier := pgx.Identifier{name}.Sanitize()
 	if _, err = admin.Exec(ctx, "CREATE DATABASE "+identifier); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		if _, e := admin.Exec(ctx, "DROP DATABASE "+identifier+" WITH (FORCE)"); e != nil {
 			t.Error(e)
 		}
-	}()
-	config, err := pgx.ParseConfig(url)
+	})
+	config, err := url.Parse(databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	config.Database = name
-	store, err := New(ctx, config.ConnString(), 6, nil)
+	config.Path = "/" + name
+	store, err := New(ctx, config.String(), 6, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	t.Cleanup(store.Close)
 	paths, err := filepath.Glob("../../migrations/*.up.sql")
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +63,11 @@ func TestOCRIsolatedDatabaseLifecycle(t *testing.T) {
 			t.Fatalf("migration %s: %v", filepath.Base(p), e)
 		}
 	}
+	return store, ctx
+}
+
+func TestOCRIsolatedDatabaseLifecycle(t *testing.T) {
+	store, ctx := isolatedTestStore(t)
 	down, err := os.ReadFile("../../migrations/000008_phase6_ocr.down.sql")
 	if err != nil {
 		t.Fatal(err)
