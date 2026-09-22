@@ -60,18 +60,27 @@ export default async function TasksPage({ params, searchParams }: {
   const { memberships } = await memberResponse.json() as { memberships: Membership[] };
   const { notifications } = await notificationResponse.json() as { notifications: Notification[] };
   const create = createTask.bind(null, organization);
+  const activeTasks = tasks.filter((task) => task.Status === "Open" || task.Status === "InProgress");
+  const dueTasks = activeTasks.filter((task) => task.DueOn && task.DueOn <= new Date().toISOString().slice(0, 10));
 
   return (
-    <section>
+    <section className="workspace-page">
+      <div className="workspace-toolbar"><span>PlaiFlow <span aria-hidden="true">/</span> งานของทีม</span><div><Link href="/organizations">เปลี่ยน Organization</Link><span className="workspace-avatar" aria-hidden="true">P</span></div></div>
       <div className="work-header">
-        <div><p className="eyebrow">Organization workspace</p><h1>งานของทีม</h1><p className="intro">สร้าง มอบหมาย และติดตามงานในพื้นที่เดียวกัน</p></div>
-        <div className="card-actions"><Link className="secondary-button" href={`/o/${encodeURIComponent(organization)}/vendors`}>คู่ค้า</Link><Link className="secondary-button" href={`/o/${encodeURIComponent(organization)}/connections`}>Connections</Link><Link className="secondary-button" href="/pricing">แพ็กเกจ</Link><Link className="text-button" href="/organizations">เปลี่ยน Organization</Link></div>
+        <div><p className="eyebrow">พื้นที่งานของ Organization</p><h1>งานของทีม</h1><p className="intro">เห็นงานที่ต้องติดตาม แล้วมอบหมายงานต่อได้ในหน้าเดียว</p></div>
+        <a className="button inline-button" href="#create-task">+ สร้างงาน</a>
       </div>
       {query.error && <p className="form-error" role="alert">{errorMessage(query.error)}</p>}
       {query.read && <p className="success-message" role="status">ทำเครื่องหมายว่าอ่านแล้ว</p>}
+      <div className="workspace-summary" role="status"><div><strong>{dueTasks.length ? `มี ${dueTasks.length} งานที่ควรติดตามวันนี้` : "งานของทีมพร้อมให้ติดตาม"}</strong><span>{dueTasks.length ? "งานที่ครบกำหนดวันนี้หรือเลยกำหนดแล้วอยู่ในรายการด้านล่าง" : "เริ่มจากรายการงาน หรือสร้างงานใหม่เพื่อมอบหมายให้ทีม"}</span></div><span className="workspace-summary-tag">อัปเดตล่าสุด</span></div>
+      <div className="workspace-metrics" aria-label="สรุปงาน"><div><span>งานทั้งหมด</span><strong>{tasks.length}</strong></div><div><span>กำลังทำ</span><strong>{tasks.filter((task) => task.Status === "InProgress").length}</strong></div><div><span>เสร็จแล้ว</span><strong>{tasks.filter((task) => task.Status === "Done").length}</strong></div></div>
 
       <div className="work-layout">
-        <Card className="work-panel">
+        <div className="work-stack">
+          <section className="workspace-list-panel" aria-labelledby="task-list-heading"><div className="workspace-section-heading"><h2 id="task-list-heading">รายการงาน</h2><span>{tasks.length} งาน</span></div>{tasks.length === 0 ? <EmptyState /> : <div className="task-list">{tasks.map((task) => <TaskCard key={task.ID} organization={organization} task={task} />)}</div>}</section>
+          <section aria-labelledby="inbox-heading"><h2 id="inbox-heading">กล่องแจ้งเตือน</h2>{notifications.length === 0 ? <p className="empty-state">ยังไม่มีการแจ้งเตือนใหม่</p> : <div className="notification-list">{notifications.map((notification) => <Card className="notification-card" key={notification.ID}><div><p className="notification-title">{notification.Title}</p><p className="field-help">{new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(notification.CreatedAt))}{notification.ReadAt ? " · อ่านแล้ว" : " · ยังไม่อ่าน"}</p></div><div className="card-actions"><Link className="secondary-button" href={notification.DeepLink}>เปิดงาน</Link>{!notification.ReadAt && <form action={markRead.bind(null, organization, notification.ID)}><button className="text-button" type="submit">อ่านแล้ว</button></form>}</div></Card>)}</div>}</section>
+        </div>
+        <Card className="work-panel" id="create-task">
           <h2>สร้างงานใหม่</h2>
           <form action={create} className="work-form">
             <div className="field"><label htmlFor="task-title">ชื่องาน <span aria-hidden="true">*</span></label><input id="task-title" name="title" maxLength={200} required aria-describedby="task-title-help" /><p id="task-title-help" className="field-help">สั้น ชัด และค้นหาได้ง่าย</p></div>
@@ -84,18 +93,13 @@ export default async function TasksPage({ params, searchParams }: {
             <button className="button" type="submit">สร้างงาน</button>
           </form>
         </Card>
-
-        <div className="work-stack">
-          <section aria-labelledby="task-list-heading"><h2 id="task-list-heading">รายการงาน</h2>{tasks.length === 0 ? <EmptyState /> : <div className="task-list">{tasks.map((task) => <TaskCard key={task.ID} organization={organization} task={task} />)}</div>}</section>
-          <section aria-labelledby="inbox-heading"><h2 id="inbox-heading">กล่องแจ้งเตือน</h2>{notifications.length === 0 ? <p className="empty-state">ยังไม่มีการแจ้งเตือนใหม่</p> : <div className="notification-list">{notifications.map((notification) => <Card className="notification-card" key={notification.ID}><div><p className="notification-title">{notification.Title}</p><p className="field-help">{new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(notification.CreatedAt))}{notification.ReadAt ? " · อ่านแล้ว" : " · ยังไม่อ่าน"}</p></div><div className="card-actions"><Link className="secondary-button" href={notification.DeepLink}>เปิดงาน</Link>{!notification.ReadAt && <form action={markRead.bind(null, organization, notification.ID)}><button className="text-button" type="submit">อ่านแล้ว</button></form>}</div></Card>)}</div>}</section>
-        </div>
       </div>
     </section>
   );
 }
 
 function TaskCard({ organization, task }: { organization: string; task: Task }) {
-  return <Link className="task-card" href={`/o/${encodeURIComponent(organization)}/tasks/${encodeURIComponent(task.ID)}`}><span className="task-card-title">{task.Title}</span><span className="task-meta"><span>{statusLabel[task.Status]}</span><span>{priorityLabel[task.Priority]}</span>{task.AssigneeName && <span>{task.AssigneeName}</span>}{task.DueOn && <span>ครบกำหนด {thaiDate(task.DueOn)}</span>}</span></Link>;
+  return <Link className="task-card" href={`/o/${encodeURIComponent(organization)}/tasks/${encodeURIComponent(task.ID)}`}><span className={`workspace-task-dot ${task.Priority === "Urgent" ? "urgent" : task.Status === "Done" ? "done" : ""}`} aria-hidden="true" /><span className="workspace-task-copy"><span className="task-card-title">{task.Title}</span><span className="task-meta"><span>{statusLabel[task.Status]}</span><span>{priorityLabel[task.Priority]}</span>{task.AssigneeName && <span>{task.AssigneeName}</span>}{task.DueOn && <span>ครบกำหนด {thaiDate(task.DueOn)}</span>}</span></span><span className="workspace-task-arrow" aria-hidden="true">→</span></Link>;
 }
 
 function EmptyState() {

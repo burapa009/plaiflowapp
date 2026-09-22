@@ -1,0 +1,230 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "runtime": "Python 3.12 / PaddleOCR 3.7.0 / PaddlePaddle 3.2.2",
+  "cpu_threads": 2,
+  "container_cpu_limit_verified": false,
+  "acceptance_passed": false,
+  "accuracy_status": "unverified unless independently reviewed reference files are supplied",
+  "unique_files": 24,
+  "human_reference_count": 0,
+  "p50_seconds_per_page": 12.632500000006985,
+  "p95_seconds_per_page": 23.28200000000652,
+  "measurements": [
+    {
+      "sha256": "c520b086ed974599006b217e9dbd15ded78ccaf7f019f0cdd28beea2cfba4df4",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 9.76600000000326,
+      "peak_rss_bytes": 659066880,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "b8cba0f35230391d2dddeaab0309950f79d8216aad7437fc00cb5fe59f2d63c6",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 10.375,
+      "peak_rss_bytes": 647733248,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "127e765512c9cc91d2e9867497060f2d755e771d810d5653cac0cd0b984cc602",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 8.28100000001723,
+      "peak_rss_bytes": 646742016,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "ce4c40fbef887e270af65213a594b4472254bd07463e7044f6c6664b32515f52",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 8.125,
+      "peak_rss_bytes": 641728512,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "262564e8bd6dd5c9b8a1b5a60565f0d43c0be5e273e9e41b8bc5dd8f98068e08",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 21.68699999997625,
+      "peak_rss_bytes": 545857536,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "a51d0e082befa4f50599aef5e3c9fa92e91085f8863598c497115ed94a902fbc",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 18.73399999999674,
+      "peak_rss_bytes": 628277248,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "b9bb4f098595864b1c50e6eb1d7c53357d721bec8f4da7318bbc27e5ee8b33fa",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 15.188000000023749,
+      "peak_rss_bytes": 725446656,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "984c93da688d4e254696004949634542e6657e99b67fb8380aa7dad6aafcf2ab",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 12.75,
+      "peak_rss_bytes": 682033152,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "511a49031c1ebead88e372e7f17a5869022295732cec0442f08368cc3a45e44a",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 10.171999999962281,
+      "peak_rss_bytes": 713801728,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "0cd471d538cefe49566f8f05b648b713bf389e94c24631ea2fed85303574a670",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 12.51500000001397,
+      "peak_rss_bytes": 681783296,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "84ae46b5ada66c5ce685ada04cafa79ac74cfb1ccaf954022fde424efefdfc8d",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 11.73499999998603,
+      "peak_rss_bytes": 732463104,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "443a18e71d42ff33ea7b373812ef403a3fe6589bed2f12fe64743609c7e994c1",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 10.73499999998603,
+      "peak_rss_bytes": 573935616,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "784dd71509e0374970f449b669d29f7c0f60a34f78fe9d043967d570bd3b3674",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 8.53100000001723,
+      "peak_rss_bytes": 777314304,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "10418468f8568a8007da57b4609f24eab5e1f0567b7bdcf2229aceddba6d1550",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 9.436999999976251,
+      "peak_rss_bytes": 707350528,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "fdf1dde819599ba1abb9f73bd4d6eab373ea254d09e4945baf315c9f18ddd67d",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 11.828000000037719,
+      "peak_rss_bytes": 763191296,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "cbf39ebadaeb953507457d168235a8db61ffc95e37639b89edb7aa63bfcac14e",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 5.938000000023749,
+      "peak_rss_bytes": 689577984,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "1f1270262c6f4f5f110960bbddc78d0ab7e3de8e167186de2d14d1c18d1e75a5",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 13.25,
+      "peak_rss_bytes": 737722368,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "e5d098f3c912dfc3ac313dbbe5fe7452bb04802bb48e3423288bf57d1cf1f51a",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 16.82799999997951,
+      "peak_rss_bytes": 789639168,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "568437a2386b09bffc2a92941887e0d7dd30453daceb1b4e66451fd8fd777e32",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 14.063000000023749,
+      "peak_rss_bytes": 762273792,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "57f581305f7a68b1f728757cb7de2cfe82df913d084f992a32858d90d819353f",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 14.311999999976251,
+      "peak_rss_bytes": 669073408,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "3e00590c3556f99a9989fdbb25f26e7f24035da79e7ed75218e2e98b93797e79",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 13.35899999999674,
+      "peak_rss_bytes": 760995840,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "4931156b0ac281cd6c0b0b0a5aa08c5e9fbfe7e0be0cd59ccf6fce43836ad964",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 14.85899999999674,
+      "peak_rss_bytes": 761171968,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "3c349dafa0c9019bbf02ec43f793c2bd22a02b581a6a7c0408636bb52bad471f",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 23.68800000002375,
+      "peak_rss_bytes": 2432720896,
+      "empty_pages": 0
+    },
+    {
+      "sha256": "3b336a274cc5ed595a290ad5fc5ec09cfa2100afe24507b4ea3e46e8bc2de419",
+      "format": ".jpg",
+      "status": "completed",
+      "pages": 1,
+      "seconds": 23.28200000000652,
+      "peak_rss_bytes": 800907264,
+      "empty_pages": 0
+    }
+  ]
+}

@@ -47,7 +47,7 @@ type oauthProvider struct {
 func NewLINEProvider(config ProviderConfig) Provider {
 	return &oauthProvider{
 		name: "line", issuer: lineIssuer, authorizationEndpoint: lineAuthorizationURL,
-		tokenEndpoint: lineTokenURL, verifyEndpoint: lineVerifyURL, scope: "openid profile email",
+		tokenEndpoint: lineTokenURL, verifyEndpoint: lineVerifyURL, scope: "openid profile",
 		config: config, client: &http.Client{Timeout: 5 * time.Second},
 	}
 }

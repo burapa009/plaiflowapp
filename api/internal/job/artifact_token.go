@@ -25,10 +25,15 @@ func NewArtifactToken(secret []byte) (*ArtifactToken, error) {
 	return &ArtifactToken{secret: append([]byte(nil), secret...)}, nil
 }
 func (a *ArtifactToken) Sign(jobID, organizationID, userID string, now time.Time) (string, error) {
+	return a.SignTTL(jobID, organizationID, userID, now, 15*time.Minute)
+}
+
+func (a *ArtifactToken) SignTTL(jobID, organizationID, userID string, now time.Time, ttl time.Duration) (string, error) {
+	if ttl <= 0 || ttl > 15*time.Minute { return "", ErrUnauthorized }
 	if jobID == "" || organizationID == "" || userID == "" {
 		return "", ErrUnauthorized
 	}
-	body, err := json.Marshal(artifactClaims{JobID: jobID, OrganizationID: organizationID, UserID: userID, ExpiresAt: now.Add(15 * time.Minute).Unix()})
+	body, err := json.Marshal(artifactClaims{JobID: jobID, OrganizationID: organizationID, UserID: userID, ExpiresAt: now.Add(ttl).Unix()})
 	if err != nil {
 		return "", err
 	}

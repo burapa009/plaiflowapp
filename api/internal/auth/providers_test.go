@@ -29,7 +29,7 @@ func TestProviderAuthorizationRequests(t *testing.T) {
 			provider: NewLINEProvider(ProviderConfig{
 				ClientID: "line-client", ClientSecret: "line-secret", RedirectURI: "https://app.example/api/auth/line/callback",
 			}),
-			scope: "openid profile email",
+			scope: "openid profile",
 		},
 		{
 			name: "google",

@@ -21,6 +21,7 @@ import (
 	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/inbound"
 	"plaiflow/api/internal/job"
+	"plaiflow/api/internal/ocr"
 	lineadapter "plaiflow/api/internal/line"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
@@ -36,6 +37,11 @@ type Store interface {
 }
 
 type Config struct {
+	OCR ocr.Store
+	OCRJobs job.Store
+	OCRAuth *job.WorkerAuth
+	OCRTokens *job.ArtifactToken
+	OCRStorage job.ArtifactStore
 	LineSecret      string
 	LineChannel     string
 	DashboardTokens []string
@@ -79,6 +85,7 @@ func New(config Config, store Store) http.Handler {
 	mux.HandleFunc("POST /webhooks/line", s.webhook)
 	mux.HandleFunc("GET /v1/dashboard", s.dashboard)
 	mux.HandleFunc("GET /v1/plans", s.listPlans)
+	if config.OCR != nil && config.OCRAuth != nil { s.registerOCRRoutes(mux) }
 	if config.Jobs != nil && config.JobWorkerAuth != nil {
 		s.registerJobRoutes(mux)
 	}

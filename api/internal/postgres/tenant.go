@@ -26,7 +26,7 @@ func (s *Store) CreateOrganization(ctx context.Context, userID, organizationID, 
 		return tenant.Organization{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_events (organization_id,actor_user_id,event_type,target_type,target_id,outcome,occurred_at)
-        VALUES ($1,$2,'organization.create','organization',$1,'success',$3)`, organizationID, userID, now); err != nil {
+        VALUES ($1,$2,'organization.create','organization',$4,'success',$3)`, organizationID, userID, now, organizationID); err != nil {
 		return tenant.Organization{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

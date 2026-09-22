@@ -127,7 +127,7 @@ func (s *Store) ResolveSession(ctx context.Context, tokenHash []byte, now time.T
 			idleExpiry = session.AbsoluteExpiresAt
 		}
 		if _, err := s.pool.Exec(ctx, `UPDATE sessions SET last_seen_at=$2,idle_expires_at=$3
-            WHERE id=$1 AND last_seen_at<=$2-interval '5 minutes'`, session.ID, now, idleExpiry); err != nil {
+            WHERE id=$1 AND last_seen_at<=($2::timestamptz-interval '5 minutes')`, session.ID, now, idleExpiry); err != nil {
 			return auth.Session{}, err
 		}
 		session.IdleExpiresAt = idleExpiry

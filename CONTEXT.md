@@ -132,9 +132,25 @@ _Avoid_: Subscription, checkout, plan assignment
 สถานะของ Organization หลัง Trial หรือ Plan สิ้นสุดเมื่อจำนวนทรัพยากรที่มีอยู่เกิน Usage Limit ของ Plan ปัจจุบัน โดยยังอ่าน ใช้ CSV Export ตาม role และจัดการความปลอดภัยได้แต่หยุด mutation ปกติจนกว่าจะลดจำนวนหรืออัปเกรด
 _Avoid_: Account suspension, data deletion, automatic member removal
 
+**Document Quota Exhausted**:
+สถานะที่จำนวน Document ที่รับสำเร็จในรอบเดือนของ Organization ถึงขีดจำกัดของ Plan ปัจจุบัน จึงหยุดรับ Document ใหม่ที่ไม่ซ้ำ แต่ยังอ่าน ส่งออก และทำงานอื่นตามสิทธิ์เดิมได้
+_Avoid_: Plan Over Limit, account suspension, overage billing
+
 **Document**:
-เอกสารธุรกิจต้นฉบับหนึ่งฉบับที่ PlaiFlow รับเข้า โดยไม่นับ Task, แถวจากการนำเข้า, แถวจากการส่งออก หรือจำนวนครั้งที่ OCR/AI ประมวลผลเป็น Document
+เอกสารธุรกิจต้นฉบับหนึ่งฉบับที่ผ่านการตรวจรับและเก็บสำเนาต้นฉบับไว้ใน PlaiFlow แล้ว โดยไม่นับ Task, แถวจากการนำเข้า, แถวจากการส่งออก หรือจำนวนครั้งที่ OCR/AI ประมวลผลเป็น Document
 _Avoid_: Import row, Task, OCR Usage
+
+**Document Source**:
+บันทึกที่มาของการรับเอกสารจาก Web, LINE หรือ Google Drive ซึ่งชี้ไปยัง Document ที่รับแล้วภายใน Organization เดียวกัน โดย Document หนึ่งรายการอาจมีหลาย Document Source เมื่อส่งไฟล์เนื้อหาเดียวกันเข้ามาหลายครั้งหรือหลายช่องทาง
+_Avoid_: Document copy, provider authorization, rejected intake attempt
+
+**Document Intake Attempt**:
+คำขอรับไฟล์หนึ่งครั้งที่อาจกำลังตรวจ ผ่านเป็น Document หรือถูกปฏิเสธ โดยรายการที่ถูกปฏิเสธไม่ใช่ Document และไม่ใช้โควตา Document
+_Avoid_: Document, Document Source, accepted original
+
+**Document Trash**:
+สถานะเอกสารที่ Owner หรือ Admin นำออกจากงานปัจจุบันและกู้คืนได้ภายใน 30 วัน ก่อนลบต้นฉบับถาวร โดยไม่คืน Document Usage ที่เคยใช้
+_Avoid_: Archived Document, immediate deletion, quota refund
 
 **Business Contact**:
 บุคคลหรือนิติบุคคลหนึ่งสาขาภายใน Organization ที่มีบทบาท Customer, Vendor หรือทั้งสองบทบาท โดยประเทศ Tax ID และ canonical branch identity เดียวกันใช้ข้อมูลระบุตัวตนทางธุรกิจชุดเดียวร่วมกัน
@@ -263,3 +279,31 @@ _Avoid_: Retryable, ignored
 **Ignored**:
 สถานะของ Inbound Event ที่จัดเก็บสำเร็จแต่ไม่มี handler สำหรับชนิดเหตุการณ์นั้น และไม่จำเป็นต้องลองใหม่
 _Avoid_: Failed, Processed
+
+**Durable Job**:
+คำขอประมวลผลเบื้องหลังที่เก็บสถานะและผลลัพธ์ไว้จนตรวจสอบได้ โดย Phase 5 ใช้โมเดลกลางเดียวรองรับ `export` และ `ocr` แยกชนิดด้วย `kind`
+_Avoid_: ad-hoc background task, request-local work
+
+**Job Lease**:
+สิทธิ์ชั่วคราวของ worker ที่ claim งานหนึ่งรายการ โดยมีวันหมดอายุและต่ออายุด้วย heartbeat งานที่ lease หมดอายุสามารถถูกนำกลับไปทำใหม่ได้
+_Avoid_: permanent lock, worker ownership
+
+**Export Artifact**:
+ไฟล์ส่งออกที่สร้างเสร็จใน object storage และเข้าถึงผ่าน signed URL อายุสั้น โดยต้องตรวจ Organization และสิทธิ์เจ้าของงานทุกครั้ง
+_Avoid_: database blob, public download URL
+
+**OCR Result Artifact**:
+ผลข้อความและตำแหน่งที่ OCR อ่านได้จากต้นฉบับ Document รุ่นหนึ่ง โดยผูกกับรุ่นโมเดลที่ใช้และเก็บแยกจากต้นฉบับ เอกสารเดียวอาจมีผลหลายรายการเมื่อประมวลผลใหม่ด้วยโมเดลคนละรุ่น
+_Avoid_: Document original, extracted business fields, OCR Job
+
+**Worker Protocol**:
+ช่องทาง internal API สำหรับ claim, heartbeat, complete และ fail ของ Durable Job โดย worker ไม่มีสิทธิ์ต่อ PostgreSQL โดยตรง
+_Avoid_: worker database credentials, direct table access
+
+**Lease Token**:
+ค่าที่ผูกกับการ claim และ attempt ของ Durable Job เพื่อป้องกัน worker เก่าส่ง completion หลัง lease หมดอายุ
+_Avoid_: job ID เป็นตัวอนุมัติผลเพียงอย่างเดียว
+
+**Export Artifact Retention**:
+ไฟล์ export เก็บ 24 ชั่วโมง signed URL ใช้ได้ 15 นาที ส่วน job metadata เก็บ 90 วันและ audit การสร้าง/ดาวน์โหลด/ลบเก็บ 1 ปี
+_Avoid_: permanent public export

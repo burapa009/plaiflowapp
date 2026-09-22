@@ -104,6 +104,14 @@ func main() {
 		}
 	}
 	var workerAuth *job.WorkerAuth
+	var ocrAuth *job.WorkerAuth
+	var ocrTokens *job.ArtifactToken
+	if len(settings.OCRWorkerAuthKey)>0 {
+		ocrAuth, err = job.NewWorkerAuth(settings.OCRWorkerAuthKey, settings.Environment, []string{"ocr:claim","ocr:heartbeat","ocr:input","ocr:submit","ocr:fail"})
+		if err != nil { logger.Error("ocr_auth_initialization_failed"); os.Exit(1) }
+		ocrTokens, err = job.NewArtifactToken(settings.ExportDownloadKey)
+		if err != nil { logger.Error("ocr_token_initialization_failed"); os.Exit(1) }
+	}
 	var artifactTokens *job.ArtifactToken
 	if len(settings.JobWorkerAuthKey) > 0 {
 		workerAuth, err = job.NewWorkerAuth(settings.JobWorkerAuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:artifact", "jobs:fail"})
@@ -124,6 +132,7 @@ func main() {
 			Logger: logger, Auth: authService, Tenants: store, Work: store, Business: store, PlanStore: store,
 			Gate: plan.Gate{Store: store}, Drive: driveService, Documents: documentService,
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
+			OCR:store, OCRJobs:store, OCRAuth:ocrAuth, OCRTokens:ocrTokens, OCRStorage:documentService.Intake.Temporary,
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}

@@ -215,7 +215,7 @@ func validJobKinds(kinds []job.Kind) bool {
 	}
 	seen := map[job.Kind]bool{}
 	for _, kind := range kinds {
-		if kind != job.Export && kind != job.OCR || seen[kind] {
+		if kind != job.Export || seen[kind] {
 			return false
 		}
 		seen[kind] = true

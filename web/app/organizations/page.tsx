@@ -57,7 +57,9 @@ async function createOrganization(formData: FormData) {
     const code = body.code === "invalid_name" ? "invalid_name" : "organization_not_created";
     redirect(`/organizations?error=${code}`);
   }
-  redirect("/organizations?created=1");
+  const organization = await response.json().catch(() => null) as { id?: string } | null;
+  if (!organization?.id) redirect("/organizations?error=organization_not_created");
+  redirect(`/o/${encodeURIComponent(organization.id)}/tasks`);
 }
 
 export default async function Organizations({ searchParams }: { searchParams: Promise<{ created?: string; error?: string; drive?: string }> }) {
