@@ -17,7 +17,7 @@ type Store struct {
 	logger *slog.Logger
 }
 
-const requiredMigrationVersion = 7
+const requiredMigrationVersion = 11
 
 func New(ctx context.Context, databaseURL string, maxConnections int32, logger *slog.Logger) (*Store, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)

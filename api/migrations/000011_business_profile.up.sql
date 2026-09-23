@@ -1,0 +1,15 @@
+ALTER TABLE organizations
+    ADD COLUMN business_type text NOT NULL DEFAULT '',
+    ADD COLUMN vat_status text NOT NULL DEFAULT '',
+    ADD COLUMN branch_type text NOT NULL DEFAULT '',
+    ADD COLUMN name_th text NOT NULL DEFAULT '',
+    ADD COLUMN name_en text NOT NULL DEFAULT '',
+    ADD COLUMN tax_id text NOT NULL DEFAULT '',
+    ADD COLUMN address_1 text NOT NULL DEFAULT '',
+    ADD COLUMN address_2 text NOT NULL DEFAULT '',
+    ADD COLUMN district text NOT NULL DEFAULT '',
+    ADD COLUMN province text NOT NULL DEFAULT '',
+    ADD COLUMN postal_code text NOT NULL DEFAULT '',
+    ADD COLUMN phone text NOT NULL DEFAULT '',
+    ADD COLUMN logo bytea,
+    ADD COLUMN logo_type text NOT NULL DEFAULT '';

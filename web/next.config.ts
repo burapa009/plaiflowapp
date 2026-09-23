@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
       { source: "/api/drive/callback", destination: `${api}/v1/drive/callback` },
       { source: "/api/o/:organization/drive/:action", destination: `${api}/v1/o/:organization/drive/:action` },
       { source: "/api/o/:organization/vendors/export.csv", destination: `${api}/v1/o/:organization/vendors/export.csv` },
+      { source: "/api/o/:organization/business/logo", destination: `${api}/v1/o/:organization/business/logo` },
       { source: "/api/o/:organization/vendors/export.xlsx", destination: `${api}/v1/o/:organization/vendors/export.xlsx` },
       { source: "/api/o/:organization/documents/export.csv", destination: `${api}/v1/o/:organization/documents/export.csv` },
       { source: "/api/o/:organization/documents/export.xlsx", destination: `${api}/v1/o/:organization/documents/export.xlsx` },

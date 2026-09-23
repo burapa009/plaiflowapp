@@ -49,6 +49,24 @@ type Organization struct {
 	Role Role   `json:"role"`
 }
 
+type BusinessProfile struct {
+	BusinessType string `json:"business_type"`
+	VATStatus    string `json:"vat_status"`
+	BranchType   string `json:"branch_type"`
+	NameTH       string `json:"name_th"`
+	NameEN       string `json:"name_en"`
+	TaxID        string `json:"tax_id"`
+	Address1     string `json:"address_1"`
+	Address2     string `json:"address_2"`
+	District     string `json:"district"`
+	Province     string `json:"province"`
+	PostalCode   string `json:"postal_code"`
+	Phone        string `json:"phone"`
+	HasLogo      bool   `json:"has_logo"`
+	Logo         []byte `json:"-"`
+	LogoType     string `json:"-"`
+}
+
 type Membership struct {
 	OrganizationID   string    `json:"organization_id"`
 	OrganizationName string    `json:"organization_name,omitempty"`
@@ -94,6 +112,8 @@ type LineCodeCreate struct {
 }
 
 type Store interface {
+	GetBusinessProfile(context.Context, string, string) (BusinessProfile, error)
+	UpdateBusinessProfile(context.Context, string, string, BusinessProfile, time.Time) error
 	CreateOrganization(context.Context, string, string, string, time.Time) (Organization, error)
 	ListOrganizations(context.Context, string) ([]Organization, error)
 	ResolveMembership(context.Context, string, string) (Membership, error)

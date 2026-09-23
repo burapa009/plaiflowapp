@@ -40,6 +40,21 @@ type tenantStore struct {
 	created tenant.Organization
 	allowed string
 	role    tenant.Role
+	profile tenant.BusinessProfile
+}
+
+func (s *tenantStore) GetBusinessProfile(_ context.Context, _, organizationID string) (tenant.BusinessProfile, error) {
+	if organizationID != s.allowed {
+		return tenant.BusinessProfile{}, tenant.ErrNotFound
+	}
+	return s.profile, nil
+}
+func (s *tenantStore) UpdateBusinessProfile(_ context.Context, _, organizationID string, p tenant.BusinessProfile, _ time.Time) error {
+	if organizationID != s.allowed {
+		return tenant.ErrNotFound
+	}
+	s.profile = p
+	return nil
 }
 
 func (s *tenantStore) CreateOrganization(_ context.Context, _, id, name string, _ time.Time) (tenant.Organization, error) {
