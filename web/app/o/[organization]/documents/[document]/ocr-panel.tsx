@@ -2,10 +2,10 @@ import { sessionGET, sessionPOST } from "@/lib/session-api";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-type OCRState = { ocr: { status: string; page_count: number; failure_code?: string }; download_url: string };
+type OCRState = { ocr: { status: string; enabled: boolean; page_count: number; failure_code?: string }; download_url: string };
 type OCRResult = { pages: { page_number: number; text: string; lines: { confidence: number }[] }[] };
 
-export default async function OCRPanel({ organization, document }: { organization: string; document: string }) {
+export default async function OCRPanel({ organization, document, unavailable }: { organization: string; document: string; unavailable: boolean }) {
   const path = `/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(document)}`;
   const response = await sessionGET(`/v1${path}/ocr`);
   if (!response?.ok) return null;
@@ -27,14 +27,15 @@ export default async function OCRPanel({ organization, document }: { organizatio
   }
   return <section className="mt-5 rounded-[1.2rem] border border-line bg-surface p-5 shadow-panel" aria-labelledby="ocr-heading">
     <h2 id="ocr-heading">ข้อความจากเอกสาร</h2>
-    <p role="status" className="text-muted">{labels[state.ocr.status] ?? "ยังไม่พร้อมใช้งาน"}</p>
+    <p role="status" className="text-muted">{!state.ocr.enabled && state.ocr.status === "NotScheduled" ? "ระบบอ่านข้อความจากเอกสารยังไม่เปิดใช้งาน" : labels[state.ocr.status] ?? "ยังไม่พร้อมใช้งาน"}</p>
+    {unavailable && state.ocr.enabled && <p role="alert">ส่งคำขอประมวลผลไม่สำเร็จ กรุณาลองใหม่</p>}
     {state.ocr.status === "Failed" && <p>ลองใหม่หรือตรวจว่าไฟล์เปิดได้และอยู่ในขนาดที่รองรับ</p>}
     {result?.pages.map(page => <article key={page.page_number} className="mt-4 border-t border-line pt-4">
       <h3>หน้า {page.page_number}</h3>
       <p className="whitespace-pre-wrap break-words">{page.text || "ไม่พบข้อความในหน้านี้"}</p>
       <p className="text-sm text-muted">ข้อความจาก OCR อาจคลาดเคลื่อน โปรดตรวจเทียบต้นฉบับ</p>
     </article>)}
-    {(role === "Owner" || role === "Admin") && !["Queued", "Running"].includes(state.ocr.status) &&
+    {state.ocr.enabled && (role === "Owner" || role === "Admin") && !["Queued", "Running"].includes(state.ocr.status) &&
       <form action={retry} className="mt-4"><button className="secondary-button" type="submit">ประมวลผลเอกสารอีกครั้ง</button></form>}
   </section>;
 }

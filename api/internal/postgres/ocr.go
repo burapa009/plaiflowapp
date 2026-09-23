@@ -94,9 +94,13 @@ func (s *Store) OCRState(ctx context.Context, user, org, doc string) (ocr.State,
 		return ocr.State{}, tenant.ErrNotFound
 	}
 	var state ocr.State
+	if err = s.pool.QueryRow(ctx, `SELECT enabled FROM ocr_settings WHERE singleton`).Scan(&state.Enabled); err != nil {
+		return ocr.State{}, err
+	}
 	err = s.pool.QueryRow(ctx, `SELECT j.id,j.status,coalesce(j.failure_code,''),coalesce(o.page_count,0),coalesce(o.object_key,'') FROM document_ocr_runs o JOIN durable_jobs j ON j.id=o.job_id WHERE o.organization_id=$1 AND o.document_id=$2 AND o.deleted_at IS NULL ORDER BY j.created_at DESC,j.id DESC LIMIT 1`, org, doc).Scan(&state.JobID, &state.Status, &state.FailureCode, &state.PageCount, &state.ObjectKey)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ocr.State{Status: "NotScheduled"}, nil
+		state.Status = "NotScheduled"
+		return state, nil
 	}
 	return state, err
 }

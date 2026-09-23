@@ -16,6 +16,7 @@ import (
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/ocr"
+	"plaiflow/api/internal/tenant"
 )
 
 // This test creates and drops only its own isolated database, never test tables in staging.
@@ -154,8 +155,18 @@ func TestOCRIsolatedDatabaseLifecycle(t *testing.T) {
 		t.Fatalf("duplicate=%s err=%v", duplicate, err)
 	}
 	state, err := store.OCRState(ctx, user, org, accepted.Document.ID)
-	if err != nil || state.Status != "Completed" {
+	if err != nil || state.Status != "Completed" || !state.Enabled {
 		t.Fatalf("state=%+v err=%v", state, err)
+	}
+	if _, err = store.pool.Exec(ctx, `UPDATE ocr_settings SET enabled=false`); err != nil {
+		t.Fatal(err)
+	}
+	state, err = store.OCRState(ctx, user, org, accepted.Document.ID)
+	if err != nil || state.Enabled || state.Status != "Completed" {
+		t.Fatalf("disabled state=%+v err=%v", state, err)
+	}
+	if _, err = store.RetryOCR(ctx, user, org, accepted.Document.ID, time.Now()); !errors.Is(err, tenant.ErrForbidden) {
+		t.Fatalf("disabled retry err=%v", err)
 	}
 	if _, err = store.OCRState(ctx, postgresUUID(), org, accepted.Document.ID); err == nil {
 		t.Fatal("unauthorized retrieval")

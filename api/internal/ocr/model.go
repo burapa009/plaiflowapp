@@ -79,6 +79,7 @@ type Input struct {
 type State struct {
 	JobID       string `json:"job_id"`
 	Status      string `json:"status"`
+	Enabled     bool   `json:"enabled"`
 	FailureCode string `json:"failure_code,omitempty"`
 	PageCount   int    `json:"page_count"`
 	ObjectKey   string `json:"-"`

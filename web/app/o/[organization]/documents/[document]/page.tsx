@@ -23,10 +23,12 @@ type Detail = {
   sources: Source[];
 };
 
-export default async function DocumentDetailPage({ params }: {
+export default async function DocumentDetailPage({ params, searchParams }: {
   params: Promise<{ organization: string; document: string }>;
+  searchParams: Promise<{ ocr?: string }>;
 }) {
   const { organization, document } = await params;
+  const { ocr } = await searchParams;
   const base = `/o/${encodeURIComponent(organization)}/documents`;
   const response = await sessionGET(`/v1${base}/${encodeURIComponent(document)}/sources`);
   if (response?.status === 401) redirect("/");
@@ -48,7 +50,7 @@ export default async function DocumentDetailPage({ params }: {
         {source.drive_revision && <span>Drive revision: {source.drive_revision}</span>}
       </li>)}</ol>}
     </section>
-    <OCRPanel organization={organization} document={document} />
+    <OCRPanel organization={organization} document={document} unavailable={ocr === "unavailable"} />
     <ExtractionPanel organization={organization} document={document} />
     <AccountingPanel organization={organization} document={document} />
   </section>;
