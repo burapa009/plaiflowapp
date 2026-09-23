@@ -92,6 +92,43 @@ func TestLoadServerRequiresDocumentIntakeInStaging(t *testing.T) {
 	}
 }
 
+func TestDocumentScanBypassRequiresStagingAndStorage(t *testing.T) {
+	setValidServerEnvironment(t)
+	t.Setenv("APP_ENV", "staging")
+	t.Setenv("SKIP_DOCUMENT_SCAN", "true")
+	t.Setenv("DOCUMENT_BUCKET", "staging-documents")
+	t.Setenv("DOCUMENT_REGION", "sin1")
+	t.Setenv("DOCUMENT_ENDPOINT", "https://storage.example")
+	t.Setenv("DOCUMENT_ACCESS_KEY_ID", "access")
+	t.Setenv("DOCUMENT_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("DOCUMENT_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
+	t.Setenv("CLAMD_ADDR", "")
+	t.Setenv("JOB_WORKER_AUTH_KEY", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("j", 32))))
+	t.Setenv("EXPORT_DOWNLOAD_SIGNING_KEY", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("s", 32))))
+	t.Setenv("EXPORT_BUCKET", "staging-exports")
+	t.Setenv("EXPORT_REGION", "sin1")
+	t.Setenv("EXPORT_ENDPOINT", "https://storage.example")
+	t.Setenv("EXPORT_ACCESS_KEY_ID", "access")
+	t.Setenv("EXPORT_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("EXPORT_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("e", 32))))
+	config, err := LoadServer()
+	if err != nil || !config.SkipDocumentScan {
+		t.Fatalf("staging bypass=%v err=%v", config.SkipDocumentScan, err)
+	}
+	t.Setenv("LINE_CHANNEL_ACCESS_TOKEN", "line-token")
+	worker, err := LoadWorker()
+	if err != nil || !worker.SkipDocumentScan {
+		t.Fatalf("worker bypass=%v err=%v", worker.SkipDocumentScan, err)
+	}
+	t.Setenv("APP_ENV", "production")
+	if _, err := LoadServer(); err == nil {
+		t.Fatal("production scan bypass accepted")
+	}
+	if _, err := LoadWorker(); err == nil {
+		t.Fatal("production worker scan bypass accepted")
+	}
+}
+
 func setValidServerEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "test")

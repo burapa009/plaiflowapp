@@ -26,6 +26,9 @@ func main() {
 		logger.Error("configuration_invalid")
 		os.Exit(1)
 	}
+	if settings.SkipDocumentScan {
+		logger.Warn("document_scan_bypassed")
+	}
 	callback := auth.CallbackConfig{WebBaseURL: settings.WebBaseURL, AllowedOrigins: settings.AllowedWebOrigins}
 	lineCallback, err := callback.CallbackURL("line")
 	if err != nil {
@@ -87,7 +90,7 @@ func main() {
 			os.Exit(1)
 		}
 		documentService.Intake = document.Intake{Temporary: encrypted,
-			Scanner: document.ClamAV{Address: settings.ClamDAddress}}
+			Scanner: document.ClamAV{Address: settings.ClamDAddress}, SkipScan: settings.SkipDocumentScan}
 		artifactStore = encrypted
 	}
 	if settings.ExportBucket != "" {

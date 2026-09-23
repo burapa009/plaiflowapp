@@ -32,6 +32,7 @@ type Scanner interface {
 type Intake struct {
 	Temporary Temporary
 	Scanner   Scanner
+	SkipScan  bool
 }
 
 type Prepared struct {
@@ -43,7 +44,7 @@ type Prepared struct {
 
 // Prepare bounds and validates original bytes for every intake channel.
 func (i Intake) Prepare(ctx context.Context, organizationID, attemptID string, source io.Reader) (result Prepared, err error) {
-	if i.Temporary == nil || i.Scanner == nil || organizationID == "" || attemptID == "" || source == nil {
+	if i.Temporary == nil || (!i.SkipScan && i.Scanner == nil) || organizationID == "" || attemptID == "" || source == nil {
 		return Prepared{}, errors.New("document intake is not configured")
 	}
 	keyDigest := sha256.Sum256([]byte(organizationID + ":" + attemptID))
@@ -87,17 +88,19 @@ func (i Intake) Prepare(ctx context.Context, organizationID, attemptID string, s
 	if mime == "" || size == 0 {
 		return Prepared{}, ErrUnsupportedType
 	}
-	body, err = i.Temporary.Open(ctx, key)
-	if err != nil {
-		return Prepared{}, err
-	}
-	scanErr := i.Scanner.Scan(ctx, body)
-	closeErr = body.Close()
-	if errors.Is(scanErr, ErrMalware) {
-		return Prepared{}, ErrMalware
-	}
-	if scanErr != nil || closeErr != nil {
-		return Prepared{}, ErrScanUnavailable
+	if !i.SkipScan {
+		body, err = i.Temporary.Open(ctx, key)
+		if err != nil {
+			return Prepared{}, err
+		}
+		scanErr := i.Scanner.Scan(ctx, body)
+		closeErr = body.Close()
+		if errors.Is(scanErr, ErrMalware) {
+			return Prepared{}, ErrMalware
+		}
+		if scanErr != nil || closeErr != nil {
+			return Prepared{}, ErrScanUnavailable
+		}
 	}
 	keep = true
 	return Prepared{TemporaryKey: key, SHA256: hex.EncodeToString(hash.Sum(nil)), MIME: mime, Size: size}, nil

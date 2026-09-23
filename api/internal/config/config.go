@@ -30,6 +30,7 @@ type Server struct {
 	DocumentEncryptionKey []byte
 	DocumentPathStyle     bool
 	ClamDAddress          string
+	SkipDocumentScan      bool
 	JobWorkerAuthKey      []byte
 	OCRWorkerAuthKey      []byte
 	ExportDownloadKey     []byte
@@ -63,6 +64,7 @@ type Worker struct {
 	DocumentEncryptionKey  []byte
 	DocumentPathStyle      bool
 	ClamDAddress           string
+	SkipDocumentScan       bool
 	WebBaseURL             string
 	PoolMax                int32
 }
@@ -99,14 +101,18 @@ func LoadServer() (Server, error) {
 	config.DocumentSecretKey = os.Getenv("DOCUMENT_SECRET_ACCESS_KEY")
 	config.DocumentPathStyle = os.Getenv("DOCUMENT_PATH_STYLE") == "true"
 	config.ClamDAddress = os.Getenv("CLAMD_ADDR")
+	config.SkipDocumentScan = os.Getenv("SKIP_DOCUMENT_SCAN") == "true"
+	if config.SkipDocumentScan && config.Environment != "staging" {
+		return Server{}, errors.New("document scan bypass is restricted to staging")
+	}
 	documentKey := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
-	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != ""
+	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != "" || config.SkipDocumentScan
 	if (config.Environment == "staging" || config.Environment == "production") && !documentConfigured {
 		return Server{}, errors.New("document storage and scanner are required")
 	}
 	if documentConfigured {
 		decoded, err := base64.StdEncoding.DecodeString(documentKey)
-		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || config.ClamDAddress == "" || err != nil || len(decoded) != 32 {
+		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || (!config.SkipDocumentScan && config.ClamDAddress == "") || err != nil || len(decoded) != 32 {
 			return Server{}, errors.New("invalid document configuration")
 		}
 		config.DocumentEncryptionKey = decoded
@@ -170,18 +176,21 @@ func LoadWorker() (Worker, error) {
 		LineChannelAccessToken: os.Getenv("LINE_CHANNEL_ACCESS_TOKEN"), WebBaseURL: os.Getenv("WEB_BASE_URL"),
 		PoolMax: int32(number("WORKER_DB_POOL_MAX", 5)), DocumentBucket: os.Getenv("DOCUMENT_BUCKET"), DocumentRegion: os.Getenv("DOCUMENT_REGION"),
 		DocumentEndpoint: os.Getenv("DOCUMENT_ENDPOINT"), DocumentAccessKeyID: os.Getenv("DOCUMENT_ACCESS_KEY_ID"), DocumentSecretKey: os.Getenv("DOCUMENT_SECRET_ACCESS_KEY"),
-		DocumentPathStyle: os.Getenv("DOCUMENT_PATH_STYLE") == "true", ClamDAddress: os.Getenv("CLAMD_ADDR")}
+		DocumentPathStyle: os.Getenv("DOCUMENT_PATH_STYLE") == "true", ClamDAddress: os.Getenv("CLAMD_ADDR"), SkipDocumentScan: os.Getenv("SKIP_DOCUMENT_SCAN") == "true"}
+	if config.SkipDocumentScan && config.Environment != "staging" {
+		return Worker{}, errors.New("document scan bypass is restricted to staging")
+	}
 	if config.Environment == "" || config.DatabaseURL == "" || config.LineChannelAccessToken == "" || config.WebBaseURL == "" {
 		return Worker{}, errors.New("missing required worker configuration")
 	}
 	documentKey := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
-	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != ""
+	documentConfigured := config.DocumentBucket != "" || config.DocumentRegion != "" || config.DocumentEndpoint != "" || config.DocumentAccessKeyID != "" || config.DocumentSecretKey != "" || documentKey != "" || config.ClamDAddress != "" || config.SkipDocumentScan
 	if (config.Environment == "staging" || config.Environment == "production") && !documentConfigured {
 		return Worker{}, errors.New("document storage and scanner are required")
 	}
 	if documentConfigured {
 		decoded, err := base64.StdEncoding.DecodeString(documentKey)
-		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || config.ClamDAddress == "" || err != nil || len(decoded) != 32 {
+		if config.DocumentBucket == "" || config.DocumentRegion == "" || config.DocumentEndpoint == "" || config.DocumentAccessKeyID == "" || config.DocumentSecretKey == "" || (!config.SkipDocumentScan && config.ClamDAddress == "") || err != nil || len(decoded) != 32 {
 			return Worker{}, errors.New("invalid document configuration")
 		}
 		config.DocumentEncryptionKey = decoded

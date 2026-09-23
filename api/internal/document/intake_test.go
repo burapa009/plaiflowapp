@@ -74,6 +74,19 @@ func TestPrepareFailsClosedWhenScannerFails(t *testing.T) {
 	}
 }
 
+func TestPrepareCanSkipScannerForValidatedFile(t *testing.T) {
+	storage := &memoryTemp{objects: map[string][]byte{}}
+	intake := Intake{Temporary: storage, SkipScan: true}
+	got, err := intake.Prepare(context.Background(), "org-1", "attempt-1", bytes.NewBufferString("%PDF-1.4\n%%EOF"))
+	if err != nil || got.MIME != "application/pdf" || len(storage.objects) != 1 {
+		t.Fatalf("got=%+v staged=%d err=%v", got, len(storage.objects), err)
+	}
+	_, err = intake.Prepare(context.Background(), "org-1", "attempt-2", bytes.NewBufferString("invalid bytes"))
+	if !errors.Is(err, ErrUnsupportedType) || len(storage.objects) != 1 {
+		t.Fatalf("invalid file err=%v staged=%d", err, len(storage.objects))
+	}
+}
+
 func TestPrepareDeletesQuarantineAfterCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	storage := contextCheckingTemp{&memoryTemp{objects: map[string][]byte{}}}

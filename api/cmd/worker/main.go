@@ -23,6 +23,9 @@ func main() {
 		logger.Error("configuration_invalid")
 		os.Exit(1)
 	}
+	if settings.SkipDocumentScan {
+		logger.Warn("document_scan_bypassed")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	store, err := postgres.New(ctx, settings.DatabaseURL, settings.PoolMax, logger)
@@ -50,7 +53,7 @@ func main() {
 			logger.Error("line_content_initialization_failed")
 			os.Exit(1)
 		}
-		documents := &document.Service{Intake: document.Intake{Temporary: encrypted, Scanner: document.ClamAV{Address: settings.ClamDAddress}}, Committer: store}
+		documents := &document.Service{Intake: document.Intake{Temporary: encrypted, Scanner: document.ClamAV{Address: settings.ClamDAddress}, SkipScan: settings.SkipDocumentScan}, Committer: store}
 		process = worker.NewLINEDocumentProcessor(documents, store, downloader)
 	}
 	poll := time.NewTicker(time.Second)
