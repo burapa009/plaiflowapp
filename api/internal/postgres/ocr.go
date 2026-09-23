@@ -19,7 +19,7 @@ func (s *Store) OCRInput(ctx context.Context, c job.LeaseCommand, worker string)
  FROM durable_jobs j JOIN document_ocr_runs o ON o.job_id=j.id JOIN documents d ON d.id=o.document_id AND d.organization_id=o.organization_id
  WHERE j.id=$1 AND j.kind='ocr' AND d.status NOT IN ('Trash','Purged') AND j.payload->>'sha256'=encode(d.content_sha256,'hex') AND
  ((j.status='Running' AND j.current_attempt_id=$2 AND j.lease_token_hash=$3 AND j.lease_expires_at>$4 AND j.worker_id=$5)
- OR (j.status='Completed' AND j.result->>'attempt_id'=$2 AND j.result->>'lease_hash'=$6 AND j.result->>'worker_id'=$5))`, c.JobID, c.AttemptID, leaseHash(c.LeaseToken), c.Now, worker, hex.EncodeToString(leaseHash(c.LeaseToken))).Scan(&in.OrganizationID, &in.DocumentID, &in.SHA256, &in.MIME, &in.Size, &in.StorageKey, &in.ModelVersion, &in.PreprocessingVersion)
+ OR (j.status='Completed' AND j.result->>'attempt_id'=$2::text AND j.result->>'lease_hash'=$6 AND j.result->>'worker_id'=$5))`, c.JobID, c.AttemptID, leaseHash(c.LeaseToken), c.Now, worker, hex.EncodeToString(leaseHash(c.LeaseToken))).Scan(&in.OrganizationID, &in.DocumentID, &in.SHA256, &in.MIME, &in.Size, &in.StorageKey, &in.ModelVersion, &in.PreprocessingVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return in, job.ErrLeaseLost
 	}
@@ -51,7 +51,7 @@ func (s *Store) CompleteOCR(ctx context.Context, c job.LeaseCommand, worker stri
 	var valid bool
 	err = tx.QueryRow(ctx, `SELECT j.status,coalesce(o.object_key,''),
  ((j.status='Running' AND j.current_attempt_id=$2 AND j.lease_token_hash=$3 AND j.lease_expires_at>$4 AND j.worker_id=$5)
- OR (j.status='Completed' AND j.result->>'attempt_id'=$2 AND j.result->>'lease_hash'=$6 AND j.result->>'worker_id'=$5))
+ OR (j.status='Completed' AND j.result->>'attempt_id'=$2::text AND j.result->>'lease_hash'=$6 AND j.result->>'worker_id'=$5))
  FROM durable_jobs j JOIN document_ocr_runs o ON o.job_id=j.id WHERE j.id=$1 FOR UPDATE OF j,o`, c.JobID, c.AttemptID, leaseHash(c.LeaseToken), c.Now, worker, hex.EncodeToString(leaseHash(c.LeaseToken))).Scan(&status, &savedKey, &valid)
 	if err != nil {
 		return "", err
