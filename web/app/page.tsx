@@ -140,7 +140,7 @@ export default function Welcome() {
         <section className="faq-section" id="faq" aria-labelledby="faq-title"><div className="section-copy"><p className="hero-eyebrow">คำถามที่พบบ่อย</p><h2 id="faq-title">เริ่มใช้งานอย่างมั่นใจ</h2></div><div><details><summary>เริ่มใช้งานอย่างไร?</summary><p>เข้าสู่ระบบด้วย LINE หรือ Google แล้วสร้าง Organization แรกเพื่อเริ่มจัดการงาน</p></details><details><summary>ใช้บนโทรศัพท์ได้ไหม?</summary><p>หน้าเว็บปรับตามขนาดหน้าจอ และเปิดผ่านเบราว์เซอร์บนโทรศัพท์ได้</p></details><details><summary>ข้อมูลของแต่ละบริษัทแยกกันไหม?</summary><p>งาน สมาชิก และสิทธิ์ถูกแยกตาม Organization</p></details></div></section>
       </div>
 
-      <footer className="landing-footer"><span>© 2026 PlaiFlow</span><span>งานชัด ทีมคล่อง ธุรกิจเดินหน้า</span></footer>
+      <footer className="landing-footer"><span>© 2026 PlaiFlow</span><a className="underline underline-offset-4" href="/privacy">นโยบายความเป็นส่วนตัว / Privacy Policy</a><span>งานชัด ทีมคล่อง ธุรกิจเดินหน้า</span></footer>
     </div>
   );
 }
