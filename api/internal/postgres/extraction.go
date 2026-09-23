@@ -124,8 +124,8 @@ func (s *Store) ListCurrentReviews(ctx context.Context, user, org string, limit 
 	return out, tx.Commit(ctx)
 }
 
-func (s *Store) ListRecentReviews(ctx context.Context, user, org string, limit int) ([]extraction.Review, error) {
-	if limit < 1 || limit > 100 {
+func (s *Store) ListRecentReviews(ctx context.Context, user, org string, limit, offset int) ([]extraction.Review, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 10000 {
 		return nil, errors.New("invalid review queue limit")
 	}
 	tx, err := s.organizationTx(ctx, user, org)
@@ -140,7 +140,7 @@ func (s *Store) ListRecentReviews(ctx context.Context, user, org string, limit i
 	rows, err := tx.Query(ctx, `SELECT e.id,e.organization_id,e.document_id,e.ocr_job_id,e.revision,e.object_key,e.confirmed_by,e.confirmed_at
 		FROM document_extraction_reviews e JOIN documents d ON d.organization_id=e.organization_id AND d.id=e.document_id
 		WHERE e.organization_id=$1 AND e.superseded_at IS NULL AND d.status='Available'
-		ORDER BY e.confirmed_at DESC,e.id DESC LIMIT $2`, org, limit)
+		ORDER BY e.confirmed_at DESC,e.id DESC LIMIT $2 OFFSET $3`, org, limit, offset)
 	if err != nil {
 		return nil, err
 	}

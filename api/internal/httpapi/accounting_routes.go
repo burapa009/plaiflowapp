@@ -57,7 +57,16 @@ func (s *server) accountingReviewQueue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 403, "forbidden", "Owner or Admin required")
 		return
 	}
-	metas, err := s.config.Extraction.ListRecentReviews(r.Context(), session.UserID, membership.OrganizationID, 20)
+	offset := 0
+	if r.URL.Query().Get("offset") != "" {
+		var parseErr error
+		offset, parseErr = strconv.Atoi(r.URL.Query().Get("offset"))
+		if parseErr != nil || offset < 0 || offset > 10000 {
+			writeError(w, r, 400, "invalid_offset", "Review queue offset is invalid")
+			return
+		}
+	}
+	metas, err := s.config.Extraction.ListRecentReviews(r.Context(), session.UserID, membership.OrganizationID, 20, offset)
 	if err != nil {
 		writeError(w, r, 503, "accounting_unavailable", "Review queue is unavailable")
 		return
@@ -88,7 +97,7 @@ func (s *server) accountingReviewQueue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
-	writeJSON(w, 200, map[string]any{"items": queue, "limit": 20})
+	writeJSON(w, 200, map[string]any{"items": queue, "limit": 20, "offset": offset, "has_more": len(metas) == 20})
 }
 
 func (s *server) renameAccountingCategory(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +239,8 @@ func (s *server) accountingSuggestion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"source_review_id": review.ID, "source_review_revision": review.Revision,
 		"document_type": review.DocumentType, "reviewed_values": review.Values, "suggestion": result})
 	s.config.Logger.Info("accounting_suggestion", "basis", result.Candidate.Basis, "warning_count", len(result.Candidate.Warnings),
-		"duration_ms", time.Since(started).Milliseconds(), "provider_cost_usd", 0)
+		"unresolved", result.Status == "NeedsReview", "conflict", result.Candidate.Basis == "rule_conflict",
+		"cache_status", "disabled", "fallback_status", "disabled", "duration_ms", time.Since(started).Milliseconds(), "provider_cost_usd", 0)
 }
 
 func (s *server) approveAccounting(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +268,25 @@ func (s *server) approveAccounting(w http.ResponseWriter, r *http.Request) {
 		DocumentID: r.PathValue("document"), ReviewID: r.PostForm.Get("review_id"), ReviewRevision: reviewRevision,
 		RuleSetVersion: ruleVersion, CategoryID: r.PostForm.Get("category_id"), VendorID: r.PostForm.Get("vendor_id"),
 		UnmatchedReason: r.PostForm.Get("unmatched_vendor_reason"), ExpectedRevision: expectedRevision, ApprovedAt: s.config.Now().UTC()}
+	input.RequestID = requestID(r)
+	meta, err := s.config.Extraction.CurrentReview(r.Context(), session.UserID, membership.OrganizationID, input.DocumentID)
+	if err != nil || meta.ID != input.ReviewID || meta.Revision != input.ReviewRevision {
+		writeError(w, r, 409, "source_changed", "Source changed; review again")
+		return
+	}
+	review, err := s.readReview(r.Context(), meta)
+	if err != nil {
+		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
+		return
+	}
+	evaluation, err := s.config.Accounting.Evaluate(r.Context(), session.UserID, membership.OrganizationID, *review)
+	if err != nil || evaluation.RuleSetVersion != input.RuleSetVersion {
+		writeError(w, r, 409, "suggestion_changed", "Suggestion changed; reload before approving")
+		return
+	}
+	if evaluation.Candidate.RuleID != "" && evaluation.Candidate.CategoryID == input.CategoryID && evaluation.VendorID == input.VendorID {
+		input.RuleID, input.RuleVersion, input.SuggestionBasis = evaluation.Candidate.RuleID, evaluation.Candidate.Version, evaluation.Candidate.Basis
+	}
 	approved, err := s.config.Accounting.Approve(r.Context(), input)
 	if errors.Is(err, accounting.ErrConflict) {
 		writeError(w, r, 409, "suggestion_changed", "Suggestion changed; reload before approving")
@@ -356,6 +385,10 @@ func (s *server) exportAccounting(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rows = append(rows, row)
+	}
+	if err := s.config.Accounting.ValidateApprovedSnapshot(r.Context(), session.UserID, membership.OrganizationID, approved); err != nil {
+		writeError(w, r, 409, "source_changed", "Authorization or source changed; request a new export")
+		return
 	}
 	var output bytes.Buffer
 	if err := document.WriteTable(&output, format, accounting.ExportHeader, rows); err != nil || output.Len() > 128<<20 {

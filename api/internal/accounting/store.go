@@ -32,9 +32,13 @@ type ApproveInput struct {
 	RuleSetVersion   int
 	CategoryID       string
 	VendorID         string
+	RuleID           string
+	RuleVersion      int
+	SuggestionBasis  string
 	UnmatchedReason  string
 	ExpectedRevision int
 	ApprovedAt       time.Time
+	RequestID        string
 }
 
 type RuleInput struct {
@@ -56,6 +60,7 @@ type Store interface {
 	Evaluate(context.Context, string, string, extraction.Review) (Evaluation, error)
 	Approve(context.Context, ApproveInput) (Approval, error)
 	ListApproved(context.Context, string, string, int, string) ([]Approval, error)
+	ValidateApprovedSnapshot(context.Context, string, string, []Approval) error
 	ListRules(context.Context, string, string, string) ([]Rule, error)
 	CreateRule(context.Context, RuleInput) (Rule, error)
 	RetireRule(context.Context, string, string, string, time.Time) error

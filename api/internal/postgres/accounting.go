@@ -246,6 +246,13 @@ func (s *Store) Approve(ctx context.Context, input accounting.ApproveInput) (acc
 		input.ExpectedRevision < 0 || len(input.UnmatchedReason) > 240 || input.VendorID == "" && strings.TrimSpace(input.UnmatchedReason) == "" {
 		return accounting.Approval{}, accounting.ErrInvalid
 	}
+	basis := "human_reviewed"
+	if input.RuleID != "" {
+		if input.RuleVersion < 1 || input.VendorID == "" || input.SuggestionBasis != "approved_vendor_default" && input.SuggestionBasis != "approved_vendor_document_type" {
+			return accounting.Approval{}, accounting.ErrInvalid
+		}
+		basis = input.SuggestionBasis
+	}
 	tx, err := s.organizationTx(ctx, input.ActorID, input.OrganizationID)
 	if err != nil {
 		return accounting.Approval{}, err
@@ -289,6 +296,14 @@ func (s *Store) Approve(ctx context.Context, input accounting.ApproveInput) (acc
 			return accounting.Approval{}, accounting.ErrInvalid
 		}
 	}
+	if input.RuleID != "" {
+		var ruleVersion int
+		err := tx.QueryRow(ctx, `SELECT version FROM accounting_mapping_rules WHERE organization_id=$1 AND id=$2 AND vendor_id=$3
+			AND category_id=$4 AND retired_at IS NULL`, input.OrganizationID, input.RuleID, input.VendorID, input.CategoryID).Scan(&ruleVersion)
+		if err != nil || ruleVersion != input.RuleVersion {
+			return accounting.Approval{}, accounting.ErrConflict
+		}
+	}
 	var priorID string
 	var priorRevision int
 	err = tx.QueryRow(ctx, `SELECT id,revision FROM accounting_suggestions WHERE organization_id=$1 AND document_id=$2 AND superseded_at IS NULL FOR UPDATE`, input.OrganizationID, input.DocumentID).Scan(&priorID, &priorRevision)
@@ -305,19 +320,28 @@ func (s *Store) Approve(ctx context.Context, input accounting.ApproveInput) (acc
 	}
 	approved := accounting.Approval{ID: input.ID, Revision: priorRevision + 1, DocumentID: input.DocumentID, ReviewID: input.ReviewID,
 		ReviewRevision: input.ReviewRevision, CategoryID: input.CategoryID, CategoryName: categoryName, VendorID: input.VendorID,
-		ContactCode: contactCode, Basis: "human_reviewed", Warnings: []string{}, ApprovedAt: input.ApprovedAt}
+		ContactCode: contactCode, Basis: basis, RuleVersion: input.RuleVersion, Warnings: []string{}, ApprovedAt: input.ApprovedAt}
+	var ruleVersion any
+	if input.RuleID != "" {
+		ruleVersion = input.RuleVersion
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO accounting_suggestions(id,organization_id,document_id,review_id,review_revision,revision,rule_set_version,
-		category_id,category_name,vendor_id,vendor_contact_code,unmatched_vendor_reason,suggestion_basis,approved_by,approved_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'human_reviewed',$13,$14)`, input.ID, input.OrganizationID, input.DocumentID,
+		category_id,category_name,vendor_id,vendor_contact_code,unmatched_vendor_reason,suggestion_basis,matching_rule_id,rule_version,approved_by,approved_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, input.ID, input.OrganizationID, input.DocumentID,
 		input.ReviewID, input.ReviewRevision, priorRevision+1, ruleSetVersion, input.CategoryID, categoryName, nullUUID(input.VendorID),
-		contactCode, strings.TrimSpace(input.UnmatchedReason), input.ActorID, input.ApprovedAt)
+		contactCode, strings.TrimSpace(input.UnmatchedReason), basis, nullUUID(input.RuleID), ruleVersion, input.ActorID, input.ApprovedAt)
 	if duplicateDatabaseError(err) {
 		return accounting.Approval{}, accounting.ErrConflict
 	}
 	if err != nil {
 		return accounting.Approval{}, err
 	}
-	if err := auditTenant(ctx, tx, input.OrganizationID, input.ActorID, "accounting.suggestion.approve", "accounting_suggestion", input.ID, input.ApprovedAt); err != nil {
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,actor_user_id,event_type,target_type,target_id,
+		request_id,outcome,occurred_at,metadata) VALUES($1,$2,'accounting.suggestion.approve','accounting_suggestion',$3,
+		$4,'success',$5,jsonb_build_object('old_revision',$6,'new_revision',$7,'review_revision',$8,
+		'rule_set_version',$9,'matching_rule_id',$10))`, input.OrganizationID, input.ActorID, input.ID, input.RequestID,
+		input.ApprovedAt, priorRevision, priorRevision+1, input.ReviewRevision, ruleSetVersion, input.RuleID)
+	if err != nil {
 		return accounting.Approval{}, err
 	}
 	return approved, tx.Commit(ctx)
@@ -370,6 +394,37 @@ func (s *Store) ListApproved(ctx context.Context, user, org string, limit int, d
 		return nil, err
 	}
 	return out, tx.Commit(ctx)
+}
+
+func (s *Store) ValidateApprovedSnapshot(ctx context.Context, user, org string, items []accounting.Approval) error {
+	if len(items) > 100 {
+		return accounting.ErrTooMany
+	}
+	tx, err := s.organizationTx(ctx, user, org)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	role, err := currentRole(ctx, tx, user, org)
+	if err != nil || role != tenant.Owner && role != tenant.Admin {
+		return tenant.ErrForbidden
+	}
+	// ponytail: bounded per-row recheck avoids a dynamic SQL builder; replace if 100-row latency breaches the measured target.
+	for _, item := range items {
+		var valid bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM accounting_suggestions a
+			JOIN document_extraction_reviews e ON e.organization_id=a.organization_id AND e.id=a.review_id
+			JOIN documents d ON d.organization_id=a.organization_id AND d.id=a.document_id
+			JOIN document_ocr_runs o ON o.job_id=e.ocr_job_id AND o.organization_id=e.organization_id AND o.document_id=e.document_id
+			WHERE a.organization_id=$1 AND a.id=$2 AND a.document_id=$3 AND a.review_id=$4 AND a.review_revision=$5
+			AND a.superseded_at IS NULL AND e.superseded_at IS NULL AND d.status='Available'
+			AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL)`,
+			org, item.ID, item.DocumentID, item.ReviewID, item.ReviewRevision).Scan(&valid)
+		if err != nil || !valid {
+			return accounting.ErrConflict
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) CreateRule(ctx context.Context, input accounting.RuleInput) (accounting.Rule, error) {

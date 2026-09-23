@@ -54,6 +54,7 @@ CREATE TABLE accounting_suggestions (
     vendor_contact_code text NOT NULL DEFAULT '' CHECK (length(vendor_contact_code) <= 64),
     unmatched_vendor_reason text NOT NULL DEFAULT '' CHECK (length(unmatched_vendor_reason) <= 240),
     suggestion_basis text NOT NULL CHECK (length(suggestion_basis) <= 64),
+    matching_rule_id uuid,
     rule_version integer,
     approved_by uuid NOT NULL,
     approved_at timestamptz NOT NULL,
@@ -61,6 +62,7 @@ CREATE TABLE accounting_suggestions (
     FOREIGN KEY (organization_id,document_id) REFERENCES documents(organization_id,id),
     FOREIGN KEY (organization_id,review_id) REFERENCES document_extraction_reviews(organization_id,id),
     FOREIGN KEY (organization_id,category_id) REFERENCES expense_categories(organization_id,id),
+    FOREIGN KEY (organization_id,matching_rule_id) REFERENCES accounting_mapping_rules(organization_id,id),
     FOREIGN KEY (organization_id,vendor_id) REFERENCES business_contacts(organization_id,id),
     FOREIGN KEY (organization_id,approved_by) REFERENCES memberships(organization_id,user_id),
     UNIQUE (organization_id,document_id,revision)

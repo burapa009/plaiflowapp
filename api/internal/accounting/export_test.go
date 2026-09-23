@@ -25,4 +25,9 @@ func TestApprovedSuggestionExportsOnlyReviewedValuesInStableV1Columns(t *testing
 	if _, err := accounting.ExportRow(approved, extraction.Review{ID: "new-review", Revision: 3}); err == nil {
 		t.Fatal("stale review exported")
 	}
+	approved.Basis, approved.RuleVersion = "approved_vendor_document_type", 7
+	row, err = accounting.ExportRow(approved, review)
+	if err != nil || row[16] != "approved_vendor_document_type" || row[17] != "7" {
+		t.Fatalf("approved rule provenance lost: %#v %v", row, err)
+	}
 }

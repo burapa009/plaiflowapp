@@ -25,5 +25,5 @@ type Store interface {
 	CurrentReview(context.Context, string, string, string) (Review, error)
 	SaveReview(context.Context, Review, int) (Review, error)
 	ListCurrentReviews(context.Context, string, string, int) ([]Review, error)
-	ListRecentReviews(context.Context, string, string, int) ([]Review, error)
+	ListRecentReviews(context.Context, string, string, int, int) ([]Review, error)
 }

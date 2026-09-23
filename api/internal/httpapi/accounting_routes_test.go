@@ -40,6 +40,9 @@ func (s *accountingTestStore) ListApproved(context.Context, string, string, int,
 	}
 	return []accounting.Approval{s.approval}, nil
 }
+func (s *accountingTestStore) ValidateApprovedSnapshot(context.Context, string, string, []accounting.Approval) error {
+	return nil
+}
 
 func TestConfirmedInvoiceCanBeApprovedAndExportedAsGenericAccountingRow(t *testing.T) {
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
