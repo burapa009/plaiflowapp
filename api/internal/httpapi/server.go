@@ -19,6 +19,7 @@ import (
 	"plaiflow/api/internal/business"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
+	"plaiflow/api/internal/extraction"
 	"plaiflow/api/internal/inbound"
 	"plaiflow/api/internal/job"
 	lineadapter "plaiflow/api/internal/line"
@@ -37,28 +38,30 @@ type Store interface {
 }
 
 type Config struct {
-	OCR             ocr.Store
-	OCRJobs         job.Store
-	OCRAuth         *job.WorkerAuth
-	OCRTokens       *job.ArtifactToken
-	OCRStorage      job.ArtifactStore
-	LineSecret      string
-	LineChannel     string
-	DashboardTokens []string
-	Logger          *slog.Logger
-	Auth            *auth.Service
-	Tenants         tenant.Store
-	Work            work.Store
-	Business        business.Store
-	PlanStore       plan.Store
-	Drive           *drive.Service
-	Documents       *document.Service
-	Jobs            job.Store
-	JobWorkerAuth   *job.WorkerAuth
-	JobArtifacts    job.ArtifactStore
-	ArtifactTokens  *job.ArtifactToken
-	Gate            work.Gate
-	Now             func() time.Time
+	OCR               ocr.Store
+	OCRJobs           job.Store
+	OCRAuth           *job.WorkerAuth
+	OCRTokens         *job.ArtifactToken
+	OCRStorage        job.ArtifactStore
+	Extraction        extraction.Store
+	ExtractionEnabled bool
+	LineSecret        string
+	LineChannel       string
+	DashboardTokens   []string
+	Logger            *slog.Logger
+	Auth              *auth.Service
+	Tenants           tenant.Store
+	Work              work.Store
+	Business          business.Store
+	PlanStore         plan.Store
+	Drive             *drive.Service
+	Documents         *document.Service
+	Jobs              job.Store
+	JobWorkerAuth     *job.WorkerAuth
+	JobArtifacts      job.ArtifactStore
+	ArtifactTokens    *job.ArtifactToken
+	Gate              work.Gate
+	Now               func() time.Time
 }
 
 type server struct {
@@ -122,6 +125,9 @@ func New(config Config, store Store) http.Handler {
 		}
 		if config.Documents != nil {
 			s.registerDocumentRoutes(mux)
+		}
+		if config.ExtractionEnabled && config.Extraction != nil && config.OCR != nil && config.OCRStorage != nil {
+			s.registerExtractionRoutes(mux)
 		}
 		if config.Business != nil && config.PlanStore != nil {
 			s.registerBusinessRoutes(mux)

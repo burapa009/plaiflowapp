@@ -52,3 +52,23 @@ func TestWriteExportXLSXIsReadable(t *testing.T) {
 		t.Fatalf("xlsx sheet missing values: %q", sheet)
 	}
 }
+
+func TestStructuredTableDoesNotExecuteUntrustedSpreadsheetValues(t *testing.T) {
+	var output bytes.Buffer
+	if err := WriteTable(&output, "csv", []string{"seller_name"}, [][]string{{"  ＝HYPERLINK(1)"}, {" \ufeff =HYPERLINK(1)"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "'  ＝HYPERLINK(1)") {
+		t.Fatalf("full-width formula prefix not neutralized: %q", output.String())
+	}
+	if !strings.Contains(output.String(), "' \ufeff =HYPERLINK(1)") {
+		t.Fatalf("BOM formula prefix not neutralized: %q", output.String())
+	}
+	output.Reset()
+	if err := WriteTable(&output, "xlsx", []string{"seller_name"}, [][]string{{"\x01=HYPERLINK(1)"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(output.Bytes(), []byte("PK")) {
+		t.Fatal("structured XLSX is not a zip archive")
+	}
+}

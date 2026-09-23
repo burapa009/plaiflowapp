@@ -2,6 +2,7 @@ import { sessionGET } from "@/lib/session-api";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import OCRPanel from "./ocr-panel";
+import ExtractionPanel from "./extraction-panel";
 
 
 type Source = {
@@ -47,5 +48,6 @@ export default async function DocumentDetailPage({ params }: {
       </li>)}</ol>}
     </section>
     <OCRPanel organization={organization} document={document} />
+    <ExtractionPanel organization={organization} document={document} />
   </section>;
 }

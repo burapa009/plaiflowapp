@@ -10,32 +10,49 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 var exportHeader = []string{"document_id", "display_filename", "detected_type", "byte_size", "status", "first_source_channel", "source_count", "submitter", "assignee", "received_at", "updated_at"}
 
 func WriteExport(output io.Writer, format string, rows []ExportRow) error {
+	values := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		values = append(values, exportValues(row))
+	}
+	return WriteTable(output, format, exportHeader, values)
+}
+
+// WriteTable reuses the fixed CSV/XLSX safety rules for other structured document exports.
+func WriteTable(output io.Writer, format string, header []string, values [][]string) error {
 	switch format {
 	case "csv":
-		return writeCSV(output, rows)
+		return writeCSV(output, header, values)
 	case "xlsx":
-		return writeXLSX(output, rows)
+		return writeXLSX(output, header, values)
 	default:
 		return errors.New("unsupported document export format")
 	}
 }
 
-func writeCSV(output io.Writer, rows []ExportRow) error {
+func writeCSV(output io.Writer, header []string, rows [][]string) error {
 	if _, err := io.WriteString(output, "\ufeff"); err != nil {
 		return err
 	}
 	w := csv.NewWriter(output)
 	w.UseCRLF = true
-	if err := w.Write(exportHeader); err != nil {
+	if err := w.Write(header); err != nil {
 		return err
 	}
 	for _, row := range rows {
-		if err := w.Write(exportValues(row, true)); err != nil {
+		values := append([]string(nil), row...)
+		for i, value := range values {
+			if spreadsheetFormula(value) {
+				values[i] = "'" + value
+			}
+		}
+		if err := w.Write(values); err != nil {
 			return err
 		}
 	}
@@ -43,25 +60,18 @@ func writeCSV(output io.Writer, rows []ExportRow) error {
 	return w.Error()
 }
 
-func exportValues(row ExportRow, protect bool) []string {
-	values := []string{row.ID, row.Filename, row.MIME, strconv.FormatInt(row.Size, 10), row.Status, row.SourceChannel,
+func exportValues(row ExportRow) []string {
+	return []string{row.ID, row.Filename, row.MIME, strconv.FormatInt(row.Size, 10), row.Status, row.SourceChannel,
 		strconv.FormatInt(row.SourceCount, 10), row.SubmitterName, row.AssigneeName, row.AcceptedAt.UTC().Format("2006-01-02T15:04:05Z"), row.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z")}
-	if protect {
-		for i, value := range values {
-			if spreadsheetFormula(value) {
-				values[i] = "'" + value
-			}
-		}
-	}
-	return values
 }
 
 func spreadsheetFormula(value string) bool {
-	trimmed := strings.TrimLeft(value, " \t\r\n")
-	return trimmed != "" && strings.ContainsRune("=+-@", rune(trimmed[0]))
+	trimmed := strings.TrimLeftFunc(value, func(r rune) bool { return unicode.IsSpace(r) || r == '\ufeff' })
+	first, _ := utf8.DecodeRuneInString(trimmed)
+	return strings.ContainsRune("=+-@＝＋－＠", first)
 }
 
-func writeXLSX(output io.Writer, rows []ExportRow) error {
+func writeXLSX(output io.Writer, header []string, rows [][]string) error {
 	archive := zip.NewWriter(output)
 	parts := map[string]string{
 		"[Content_Types].xml":        `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
@@ -94,6 +104,12 @@ func writeXLSX(output io.Writer, rows []ExportRow) error {
 			if _, err := fmt.Fprintf(buffer, `<c r="%s%d" t="inlineStr"><is><t xml:space="preserve">`, columnName(column), index); err != nil {
 				return err
 			}
+			value = strings.Map(func(r rune) rune {
+				if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
+					return '\ufffd'
+				}
+				return r
+			}, value)
 			if err := xml.EscapeText(buffer, []byte(value)); err != nil {
 				return err
 			}
@@ -104,11 +120,11 @@ func writeXLSX(output io.Writer, rows []ExportRow) error {
 		_, err := io.WriteString(buffer, `</row>`)
 		return err
 	}
-	if err := writeRow(1, exportHeader); err != nil {
+	if err := writeRow(1, header); err != nil {
 		return err
 	}
 	for i, row := range rows {
-		if err := writeRow(i+2, exportValues(row, false)); err != nil {
+		if err := writeRow(i+2, row); err != nil {
 			return err
 		}
 	}

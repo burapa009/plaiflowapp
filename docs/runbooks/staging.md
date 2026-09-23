@@ -1,5 +1,13 @@
 # Staging deployment and rollback
 
+## Phase 7 release gate (not yet executed)
+
+`EXTRACTION_ENABLED` defaults to `false`. Do not enable it or apply migration 9 to the current Railway `staging` database while the production Vercel site still points to that API. First isolate the public site from staging, or obtain an explicit maintenance/cutover decision with a recoverable database snapshot.
+
+After isolation: record API/web deployment IDs and migration version/dirty state; take and verify a restorable database snapshot. Apply the additive `000009_phase7_extraction` migration, confirm version 9 and `dirty=false`, deploy API/web with the flag still off, then enable it only for staging. Smoke one disposable Thai tax invoice through completed OCR, raw/normalized review, a low-confidence warning, explicit human confirmation, and exactly one CSV and XLSX row. Check another Organization cannot read/confirm/export it; check spreadsheet formula escaping, request duration, export size, application errors, DB slow queries, and service CPU/memory. Synchronous export rejects more than 100 reviewed rows; larger exports require a durable job. The extractor has zero external provider calls; its provider cost is logged as zero, while compute cost is explicitly marked `not_metered`.
+
+Rollback: set `EXTRACTION_ENABLED=false` and restore the prior API/web deployments. Leave the additive version-9 table and encrypted review artifacts in place if any review has been saved. Only after proving the table empty, taking a fresh snapshot, and confirming artifact cleanup should `migrate down 1` be considered. Recheck `/readyz`, OCR reads, document access, and existing exports.
+
 ## Required separation
 
 - Use staging-only Railway project/services, PostgreSQL role/database, LINE test channel, and Vercel project/environment.
