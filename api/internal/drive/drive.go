@@ -165,7 +165,9 @@ func (s *Service) Complete(ctx context.Context, state, browserSecret, userID, se
 	}
 	folderID := ""
 	if existing, existingErr := s.store.GetConnection(ctx, userID, attempt.OrganizationID); existingErr == nil {
-		folderID = existing.FolderID
+		if existing.GoogleSubject == credential.Subject {
+			folderID = existing.FolderID
+		}
 	} else {
 		return Connection{}, existingErr
 	}

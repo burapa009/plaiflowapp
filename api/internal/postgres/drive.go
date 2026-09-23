@@ -63,7 +63,7 @@ func (s *Store) SaveConnection(ctx context.Context, connection drive.Connection)
         (organization_id,status,google_subject,google_email,folder_id,authorizer_user_id,encrypted_refresh_token,token_nonce,credential_generation,connected_at,updated_at)
         VALUES ($1,'Connected',$2,$3,$4,$5,$6,$7,1,$8,$8)
         ON CONFLICT (organization_id) DO UPDATE SET status='Connected',google_subject=excluded.google_subject,
-          google_email=excluded.google_email,folder_id=coalesce(drive_connections.folder_id,excluded.folder_id),
+          google_email=excluded.google_email,folder_id=excluded.folder_id,
           authorizer_user_id=excluded.authorizer_user_id,encrypted_refresh_token=excluded.encrypted_refresh_token,
           token_nonce=excluded.token_nonce,credential_generation=drive_connections.credential_generation+1,
           connected_at=excluded.connected_at,updated_at=excluded.updated_at,disconnected_at=NULL

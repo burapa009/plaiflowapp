@@ -67,8 +67,6 @@ jobs:
       - run: go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
       - run: migrate -path api/migrations -database "$TEST_DATABASE_URL" up
       - run: cd api && go test -p 1 ./internal/postgres ./internal/httpapi
-      - run: migrate -path api/migrations -database "$TEST_DATABASE_URL" down -all
-      - run: migrate -path api/migrations -database "$TEST_DATABASE_URL" up
 
   secrets:
     runs-on: ubuntu-latest

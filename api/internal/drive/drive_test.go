@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,7 @@ func (s *memoryStore) RequireReconnect(context.Context, string, int64, time.Time
 type providerDouble struct {
 	refreshErr  error
 	folderCalls int
+	subject     string
 }
 
 func (*providerDouble) AuthorizationURL(attempt OAuthAttempt) string {
@@ -53,13 +55,17 @@ func (*providerDouble) AuthorizationURL(attempt OAuthAttempt) string {
 		"scope": {strings.Join(attempt.Scopes, " ")}, "access_type": {"offline"}, "state": {attempt.State},
 	}.Encode()
 }
-func (*providerDouble) Exchange(context.Context, string, string) (Credential, error) {
-	return Credential{AccessToken: "access", RefreshToken: "refresh", Subject: "google-user", Email: "owner@example.com"}, nil
+func (p *providerDouble) Exchange(context.Context, string, string) (Credential, error) {
+	subject := p.subject
+	if subject == "" {
+		subject = "google-user"
+	}
+	return Credential{AccessToken: "access", RefreshToken: "refresh", Subject: subject, Email: "owner@example.com"}, nil
 }
 
 func (p *providerDouble) CreateFolder(context.Context, string, string) (string, error) {
 	p.folderCalls++
-	return "folder-1", nil
+	return "folder-" + strconv.Itoa(p.folderCalls), nil
 }
 func (p *providerDouble) Refresh(context.Context, string) (string, error) { return "", p.refreshErr }
 func (*providerDouble) Revoke(context.Context, string) error {
@@ -130,6 +136,20 @@ func TestReconnectPreservesCanonicalFolder(t *testing.T) {
 	second, err := service.Complete(context.Background(), start.State, start.BrowserSecret, "user-1", "session-1", "code")
 	if err != nil || first.FolderID != second.FolderID || provider.folderCalls != 1 {
 		t.Fatalf("first=%+v second=%+v folder_calls=%d err=%v", first, second, provider.folderCalls, err)
+	}
+}
+
+func TestReconnectWithDifferentGoogleAccountCreatesNewFolder(t *testing.T) {
+	store := &memoryStore{}
+	provider := &providerDouble{}
+	service, _ := New(Config{Provider: provider, Store: store, EncryptionKey: make([]byte, 32), Now: time.Now})
+	start, _ := service.Begin(context.Background(), "org-1", "user-1", "session-1", "Acme")
+	first, _ := service.Complete(context.Background(), start.State, start.BrowserSecret, "user-1", "session-1", "code")
+	provider.subject = "other-google-user"
+	start, _ = service.Begin(context.Background(), "org-1", "user-1", "session-1", "Acme")
+	connection, err := service.Complete(context.Background(), start.State, start.BrowserSecret, "user-1", "session-1", "code")
+	if err != nil || provider.folderCalls != 2 || connection.FolderID == first.FolderID || connection.GoogleSubject != provider.subject {
+		t.Fatalf("connection=%+v folder_calls=%d err=%v", connection, provider.folderCalls, err)
 	}
 }
 
