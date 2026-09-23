@@ -83,7 +83,7 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO document_intake_attempts
 		    (id,organization_id,actor_user_id,channel,origin_key,status,document_id,created_at,updated_at,expires_at)
-		    VALUES ($1,$2,$3,$4,$5,'Accepted',$6,$7,$7,$7+interval '90 days')
+		    VALUES ($1,$2,$3,$4,$5,'Accepted',$6,$7,$7,$7::timestamptz+interval '90 days')
 		    ON CONFLICT (organization_id,channel,origin_key) DO UPDATE SET status='Accepted',document_id=excluded.document_id,rejection_code=NULL,updated_at=excluded.updated_at`,
 			input.AttemptID, input.OrganizationID, input.ActorUserID, input.Channel, input.OriginKey, existingID, input.Now); err != nil {
 			return document.CommitResult{}, err
@@ -158,7 +158,7 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO document_intake_attempts
 	    (id,organization_id,actor_user_id,channel,origin_key,status,document_id,created_at,updated_at,expires_at)
-	    VALUES ($1,$2,$3,$4,$5,'Accepted',$6,$7,$7,$7+interval '90 days')
+		    VALUES ($1,$2,$3,$4,$5,'Accepted',$6,$7,$7,$7::timestamptz+interval '90 days')
 	    ON CONFLICT (organization_id,channel,origin_key) DO UPDATE SET status='Accepted',document_id=excluded.document_id,
 	        rejection_code=NULL,updated_at=excluded.updated_at`,
 		input.AttemptID, input.OrganizationID, input.ActorUserID, input.Channel, input.OriginKey, id, input.Now); err != nil {
@@ -214,7 +214,7 @@ func (s *Store) RecordRejected(ctx context.Context, input document.AcceptInput, 
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO document_intake_attempts
 	    (id,organization_id,actor_user_id,channel,origin_key,status,rejection_code,created_at,updated_at,expires_at)
-	    VALUES ($1,$2,$3,$4,$5,'Rejected',$6,$7,$7,$7+interval '90 days')
+		    VALUES ($1,$2,$3,$4,$5,'Rejected',$6,$7,$7,$7::timestamptz+interval '90 days')
 	    ON CONFLICT (organization_id,channel,origin_key) DO UPDATE SET
 	        status=CASE WHEN document_intake_attempts.status='Accepted' THEN document_intake_attempts.status ELSE 'Rejected' END,
 	        rejection_code=CASE WHEN document_intake_attempts.status='Accepted' THEN document_intake_attempts.rejection_code ELSE excluded.rejection_code END,

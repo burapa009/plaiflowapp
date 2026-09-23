@@ -375,7 +375,7 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, document.ErrSourceConflict):
 			writeError(w, r, http.StatusConflict, "document_source_conflict", "Upload key was reused for different content")
 		default:
-			s.config.Logger.Error("document_upload_failed", "request_id", requestID(r))
+			s.config.Logger.Error("document_upload_failed", "request_id", requestID(r), "error", err)
 			writeError(w, r, http.StatusServiceUnavailable, "document_unavailable", "Document could not be accepted")
 		}
 		return
