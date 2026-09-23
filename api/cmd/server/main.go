@@ -140,6 +140,7 @@ func main() {
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true",
+			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true",
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}

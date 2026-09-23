@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"plaiflow/api/internal/accounting"
 	"plaiflow/api/internal/auth"
 	"plaiflow/api/internal/business"
 	"plaiflow/api/internal/document"
@@ -45,6 +46,8 @@ type Config struct {
 	OCRStorage        job.ArtifactStore
 	Extraction        extraction.Store
 	ExtractionEnabled bool
+	Accounting        accounting.Store
+	AccountingEnabled bool
 	LineSecret        string
 	LineChannel       string
 	DashboardTokens   []string
@@ -128,6 +131,9 @@ func New(config Config, store Store) http.Handler {
 		}
 		if config.ExtractionEnabled && config.Extraction != nil && config.OCR != nil && config.OCRStorage != nil {
 			s.registerExtractionRoutes(mux)
+			if config.AccountingEnabled && config.Accounting != nil {
+				s.registerAccountingRoutes(mux)
+			}
 		}
 		if config.Business != nil && config.PlanStore != nil {
 			s.registerBusinessRoutes(mux)
@@ -144,6 +150,12 @@ func (s *server) ready(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Ready(r.Context()); err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Service dependencies are not ready")
 		return
+	}
+	if s.config.AccountingEnabled && s.config.Accounting != nil {
+		if err := s.config.Accounting.ReadyAccounting(r.Context()); err != nil {
+			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Accounting schema is not ready")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }

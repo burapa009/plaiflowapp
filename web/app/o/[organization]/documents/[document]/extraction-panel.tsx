@@ -14,7 +14,7 @@ type Extraction = {
 
 const fields: [string, string][] = [
   ["document_number", "เลขที่เอกสาร"], ["issue_date", "วันที่ออกเอกสาร (YYYY-MM-DD)"],
-  ["seller_name", "ชื่อผู้ขาย"], ["seller_tax_id", "เลขผู้เสียภาษีผู้ขาย"],
+  ["seller_name", "ชื่อผู้ขาย"], ["seller_tax_id", "เลขผู้เสียภาษีผู้ขาย"], ["seller_branch", "สาขาผู้ขาย (5 หลัก; เว้นว่างถ้าไม่ทราบ)"],
   ["buyer_name", "ชื่อผู้ซื้อ"], ["buyer_tax_id", "เลขผู้เสียภาษีผู้ซื้อ"],
   ["currency", "สกุลเงิน"], ["subtotal", "มูลค่าก่อนภาษี"],
   ["vat_amount", "ภาษีมูลค่าเพิ่ม"], ["total_amount", "ยอดรวม"],

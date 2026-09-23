@@ -25,6 +25,20 @@ func (s *Store) CreateOrganization(ctx context.Context, userID, organizationID, 
 	if err != nil {
 		return tenant.Organization{}, err
 	}
+	var hasCategories bool
+	if err := tx.QueryRow(ctx, `SELECT to_regclass('public.expense_categories') IS NOT NULL`).Scan(&hasCategories); err != nil {
+		return tenant.Organization{}, err
+	}
+	if hasCategories {
+		if _, err := tx.Exec(ctx, `SELECT set_config('app.organization_id',$1,true)`, organizationID); err != nil {
+			return tenant.Organization{}, err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO expense_categories(id,organization_id,name,created_at,updated_at)
+			SELECT gen_random_uuid(),$1,seed.name,$2,$2 FROM (VALUES ('ค่าเดินทาง'),('ค่าอาหาร'),('วัสดุสำนักงาน')) AS seed(name)`,
+			organizationID, now); err != nil {
+			return tenant.Organization{}, err
+		}
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_events (organization_id,actor_user_id,event_type,target_type,target_id,outcome,occurred_at)
         VALUES ($1,$2,'organization.create','organization',$4,'success',$3)`, organizationID, userID, now, organizationID); err != nil {
 		return tenant.Organization{}, err

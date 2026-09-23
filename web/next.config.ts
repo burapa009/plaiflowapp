@@ -17,6 +17,8 @@ const nextConfig: NextConfig = {
       { source: "/api/o/:organization/documents/export.xlsx", destination: `${api}/v1/o/:organization/documents/export.xlsx` },
       { source: "/api/o/:organization/documents/extraction.csv", destination: `${api}/v1/o/:organization/documents/extraction.csv` },
       { source: "/api/o/:organization/documents/extraction.xlsx", destination: `${api}/v1/o/:organization/documents/extraction.xlsx` },
+      { source: "/api/o/:organization/documents/accounting.csv", destination: `${api}/v1/o/:organization/documents/accounting.csv` },
+      { source: "/api/o/:organization/documents/accounting.xlsx", destination: `${api}/v1/o/:organization/documents/accounting.xlsx` },
       { source: "/api/o/:organization/documents/export/count", destination: `${api}/v1/o/:organization/documents/export/count` },
       { source: "/api/o/:organization/documents/drive", destination: `${api}/v1/o/:organization/documents/drive` },
       { source: "/api/o/:organization/documents/summary", destination: `${api}/v1/o/:organization/documents/summary` },

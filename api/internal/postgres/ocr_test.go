@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -18,7 +19,7 @@ import (
 )
 
 // This test creates and drops only its own isolated database, never test tables in staging.
-func isolatedTestStore(t *testing.T) (*Store, context.Context) {
+func isolatedTestStore(t *testing.T, versions ...int) (*Store, context.Context) {
 	t.Helper()
 	databaseURL := os.Getenv("OCR_TEST_ADMIN_URL")
 	if databaseURL == "" {
@@ -55,6 +56,14 @@ func isolatedTestStore(t *testing.T) (*Store, context.Context) {
 		t.Fatal(err)
 	}
 	for _, p := range paths {
+		maxVersion := 8
+		if len(versions) > 0 {
+			maxVersion = versions[0]
+		}
+		version, e := strconv.Atoi(filepath.Base(p)[:6])
+		if e != nil || version > maxVersion {
+			continue
+		}
 		sql, e := os.ReadFile(p)
 		if e != nil {
 			t.Fatal(e)

@@ -123,3 +123,39 @@ func (s *Store) ListCurrentReviews(ctx context.Context, user, org string, limit 
 	}
 	return out, tx.Commit(ctx)
 }
+
+func (s *Store) ListRecentReviews(ctx context.Context, user, org string, limit int) ([]extraction.Review, error) {
+	if limit < 1 || limit > 100 {
+		return nil, errors.New("invalid review queue limit")
+	}
+	tx, err := s.organizationTx(ctx, user, org)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	role, err := currentRole(ctx, tx, user, org)
+	if err != nil || role != tenant.Owner && role != tenant.Admin {
+		return nil, tenant.ErrForbidden
+	}
+	rows, err := tx.Query(ctx, `SELECT e.id,e.organization_id,e.document_id,e.ocr_job_id,e.revision,e.object_key,e.confirmed_by,e.confirmed_at
+		FROM document_extraction_reviews e JOIN documents d ON d.organization_id=e.organization_id AND d.id=e.document_id
+		WHERE e.organization_id=$1 AND e.superseded_at IS NULL AND d.status='Available'
+		ORDER BY e.confirmed_at DESC,e.id DESC LIMIT $2`, org, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []extraction.Review
+	for rows.Next() {
+		var review extraction.Review
+		if err := rows.Scan(&review.ID, &review.OrganizationID, &review.DocumentID, &review.OCRJobID,
+			&review.Revision, &review.ObjectKey, &review.ConfirmedBy, &review.ConfirmedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, review)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, tx.Commit(ctx)
+}

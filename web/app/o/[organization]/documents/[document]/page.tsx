@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import OCRPanel from "./ocr-panel";
 import ExtractionPanel from "./extraction-panel";
+import AccountingPanel from "./accounting-panel";
 
 
 type Source = {
@@ -49,5 +50,6 @@ export default async function DocumentDetailPage({ params }: {
     </section>
     <OCRPanel organization={organization} document={document} />
     <ExtractionPanel organization={organization} document={document} />
+    <AccountingPanel organization={organization} document={document} />
   </section>;
 }

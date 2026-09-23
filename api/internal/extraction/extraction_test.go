@@ -93,3 +93,21 @@ func TestConfirmationRejectsMissingRequiredAndInventedSystemDefaults(t *testing.
 		t.Fatal("contradictory amounts were confirmed")
 	}
 }
+
+func TestSellerBranchMustBeReviewedAndNeverDefaultsToHeadOffice(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+		{Text: "ใบกำกับภาษี", Confidence: .99}, {Text: "สาขาที่ 00012", Confidence: .98},
+	}}}})
+	if draft.Fields["seller_branch"].Normalized != "00012" || draft.Fields["seller_branch"].Confidence != "unrated" {
+		t.Fatalf("branch candidate missing: %+v", draft.Fields["seller_branch"])
+	}
+	values := map[string]string{"document_number": "INV-42", "issue_date": "2026-09-23", "seller_name": "ร้าน",
+		"seller_tax_id": "0123456789012", "total_amount": "0.00"}
+	if err := extraction.ValidateReview(draft, values); err != nil {
+		t.Fatalf("unknown branch should remain empty: %v", err)
+	}
+	values["seller_branch"] = "head"
+	if err := extraction.ValidateReview(draft, values); err == nil {
+		t.Fatal("invalid branch accepted")
+	}
+}

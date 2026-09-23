@@ -12,7 +12,7 @@ import (
 
 const SchemaVersion = 1
 
-var Keys = []string{"document_number", "issue_date", "seller_name", "seller_tax_id", "buyer_name", "buyer_tax_id", "currency", "subtotal", "vat_amount", "total_amount"}
+var Keys = []string{"document_number", "issue_date", "seller_name", "seller_tax_id", "seller_branch", "buyer_name", "buyer_tax_id", "currency", "subtotal", "vat_amount", "total_amount"}
 
 type Evidence struct {
 	Page int `json:"page"`
@@ -45,6 +45,7 @@ var patterns = map[string]*regexp.Regexp{
 	"issue_date":      regexp.MustCompile(`(?i)(?:วันที่|date)\s*[:：]?\s*([0-9๐-๙]{1,2}[/.-][0-9๐-๙]{1,2}[/.-][0-9๐-๙]{4})`),
 	"seller_name":     regexp.MustCompile(`(?:ผู้ขาย|ชื่อผู้ขาย)\s*[:：]\s*(.+)`),
 	"seller_tax_id":   regexp.MustCompile(`(?:เลขประจำตัวผู้เสียภาษี(?:อากร)?|เลขผู้เสียภาษี)\s*[:：]?\s*([0-9๐-๙ -]{13,20})`),
+	"seller_branch":   regexp.MustCompile(`(?:สาขา(?:ที่)?|branch(?:\s*(?:no\.?|number))?)\s*[:：]?\s*([0-9๐-๙]{5})`),
 	"buyer_name":      regexp.MustCompile(`(?:ผู้ซื้อ|ชื่อลูกค้า)\s*[:：]\s*(.+)`),
 	"buyer_tax_id":    regexp.MustCompile(`(?:เลขประจำตัวผู้เสียภาษีผู้ซื้อ|เลขผู้เสียภาษีผู้ซื้อ)\s*[:：]?\s*([0-9๐-๙ -]{13,20})`),
 	"subtotal":        regexp.MustCompile(`(?i)(?:มูลค่าก่อนภาษี|รวมก่อนภาษี|subtotal)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
@@ -184,6 +185,11 @@ func normalize(key, raw string) (string, bool) {
 			value += ".00"
 		}
 		return value, true
+	case "seller_branch":
+		if len(valueASCII) != 5 || strings.Trim(valueASCII, "0123456789") != "" {
+			return "", false
+		}
+		return valueASCII, true
 	case "seller_tax_id", "buyer_tax_id":
 		value := strings.NewReplacer(" ", "", "-", "").Replace(valueASCII)
 		if len(value) != 13 {
@@ -248,6 +254,10 @@ func ValidateReview(draft Draft, values map[string]string) error {
 		} else if key == "subtotal" || key == "vat_amount" || key == "total_amount" {
 			if _, ok := cents(value); !ok || !strings.Contains(value, ".") {
 				return errors.New("invalid reviewed amount")
+			}
+		} else if key == "seller_branch" {
+			if len(value) != 5 || strings.Trim(value, "0123456789") != "" {
+				return errors.New("invalid reviewed seller branch")
 			}
 		} else if key == "seller_tax_id" || key == "buyer_tax_id" {
 			if len(value) != 13 || strings.Trim(value, "0123456789") != "" {
