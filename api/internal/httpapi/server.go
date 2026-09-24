@@ -46,6 +46,7 @@ type Config struct {
 	OCRStorage        job.ArtifactStore
 	Extraction        extraction.Store
 	ExtractionEnabled bool
+	ReviewEnabled     bool
 	Accounting        accounting.Store
 	AccountingEnabled bool
 	LineSecret        string
@@ -60,6 +61,7 @@ type Config struct {
 	Drive             *drive.Service
 	Documents         *document.Service
 	Jobs              job.Store
+	ReviewExports     job.DocumentExportStore
 	JobWorkerAuth     *job.WorkerAuth
 	JobArtifacts      job.ArtifactStore
 	ArtifactTokens    *job.ArtifactToken
@@ -134,6 +136,17 @@ func New(config Config, store Store) http.Handler {
 		}
 		if config.ExtractionEnabled && config.Extraction != nil && config.OCR != nil && config.OCRStorage != nil {
 			s.registerExtractionRoutes(mux)
+			if config.ReviewEnabled {
+				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/draft", s.saveExtractionDraft)
+				mux.HandleFunc("GET /v1/o/{organization}/review-queue", s.reviewQueue)
+				mux.HandleFunc("POST /v1/o/{organization}/review-queue/assign", s.assignReviewQueue)
+				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/review/return", s.returnReview)
+				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/review/reprocess", s.reprocessReview)
+				mux.HandleFunc("POST /v1/o/{organization}/review-exports", s.requestReviewExport)
+				mux.HandleFunc("GET /v1/o/{organization}/review-exports/count", s.reviewExportCount)
+				mux.HandleFunc("GET /v1/o/{organization}/review-exports/{export}", s.reviewExportStatus)
+				mux.HandleFunc("GET /v1/o/{organization}/review-exports/{export}/download", s.reviewExportDownload)
+			}
 			if config.AccountingEnabled && config.Accounting != nil {
 				s.registerAccountingRoutes(mux)
 			}
@@ -150,6 +163,10 @@ func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) ready(w http.ResponseWriter, r *http.Request) {
+	if s.config.ReviewEnabled && (!s.config.ExtractionEnabled || !s.config.AccountingEnabled) {
+		writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Review dependencies are disabled")
+		return
+	}
 	if err := s.store.Ready(r.Context()); err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Service dependencies are not ready")
 		return
@@ -158,6 +175,14 @@ func (s *server) ready(w http.ResponseWriter, r *http.Request) {
 		if err := s.config.Accounting.ReadyAccounting(r.Context()); err != nil {
 			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Accounting schema is not ready")
 			return
+		}
+	}
+	if s.config.ReviewEnabled && s.config.Extraction != nil {
+		if ready, ok := s.config.Extraction.(interface{ ReadyReview(context.Context) error }); ok {
+			if err := ready.ReadyReview(r.Context()); err != nil {
+				writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Review schema is not ready")
+				return
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})

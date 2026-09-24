@@ -168,6 +168,38 @@ _Avoid_: Vendor entity, supplier record
 รายการอ้างอิงที่ Organization เป็นเจ้าของ เช่น Expense Category และ Payment Channel โดยไม่ใช่รายการบัญชี สมุดรายวัน หรือธุรกรรมทางการเงิน
 _Avoid_: Ledger, journal entry, transaction
 
+**Expense Category**:
+หมวดค่าใช้จ่ายแบบแบนที่ Organization เป็นเจ้าของ ใช้จัดกลุ่มเอกสารค่าใช้จ่ายโดยไม่ใช่รหัสบัญชีหรือรายการลงบัญชี
+_Avoid_: Chart of accounts, ledger account, journal entry
+
+**Accounting Suggestion**:
+ข้อเสนอหมวดค่าใช้จ่ายและคู่ค้าอย่างไม่เป็นทางการสำหรับ Document หนึ่งฉบับที่ยืนยันข้อมูลแล้ว ซึ่งต้องให้ผู้มีสิทธิรับรองก่อนส่งออก และไม่ใช่การลงบัญชี
+_Avoid_: Accounting entry, authoritative posting, OCR result
+
+**Document Review Item**:
+งานตรวจที่ลงมือทำได้หนึ่งรายการสำหรับ Document และ revision ปัจจุบันภายใน Organization โดย revision ที่ถูกแทนที่ยังอยู่ในประวัติแต่ไม่รอการอนุมัติ
+_Avoid_: Task, Document Source, historical revision
+
+**Review Draft**:
+ชุดการยอมรับ แก้ไข หรือระบุว่าไม่ทราบค่าของผู้ตรวจต่อ Document Review Item ซึ่งยังไม่ใช่การยืนยันข้อมูลหรืออนุมัติส่งออก
+_Avoid_: Confirmed extraction, Approved Export Row, OCR result
+
+**Approved Export Row**:
+แถวข้อมูลของ Document revision ปัจจุบันที่มีทั้งข้อมูลสกัดที่ยืนยันแล้วและ Accounting Suggestion ที่อนุมัติแล้ว โดยไม่ใช่การลงบัญชี
+_Avoid_: Raw Export, draft extraction, accounting entry
+
+**Raw Document Export**:
+ไฟล์ข้อมูล metadata ของ Document ที่ผู้ขอมีสิทธิ์ส่งออก โดยไม่รวมต้นฉบับ ข้อความ OCR หรือค่าที่สกัดแต่ยังไม่ยืนยัน
+_Avoid_: Original-file bundle, OCR dump, Approved Export Row
+
+**Suggestion Basis**:
+ที่มาของ Accounting Suggestion เช่นกฎที่อนุมัติแล้ว การไม่มีคู่ที่แน่นอน หรือกฎที่ขัดกัน โดยไม่ใช่ค่าความน่าจะเป็นว่าข้อเสนอถูกต้อง
+_Avoid_: OCR confidence, fabricated accuracy percentage
+
+**Approved Mapping Rule**:
+กฎใช้ซ้ำภายใน Organization ที่ Owner หรือ Admin อนุมัติอย่างชัดเจนเพื่อช่วยสร้าง Accounting Suggestion โดยการแก้ข้อเสนอเฉพาะเอกสารไม่สร้างกฎนี้เอง
+_Avoid_: Automatic learning, cross-Organization mapping, one-off correction
+
 **Archived**:
 สถานะของ Business Contact หรือ Business Reference Data ที่ไม่ให้เลือกใช้กับงานใหม่ แต่ยังคงข้อมูลอ้างอิงและประวัติเดิมไว้และสามารถ Restore ได้
 _Avoid_: Deleted, inactive Membership
@@ -187,6 +219,10 @@ _Avoid_: Database rollback, delete import
 **Export Template**:
 ชุดคอลัมน์แบบคงที่และมี version สำหรับส่งออกข้อมูลชนิดหนึ่งจาก Organization โดย Phase 3 ไม่มี custom columns หรือ template ที่ผู้ใช้สร้างเอง
 _Avoid_: Saved view, custom report, database dump
+
+**Destination Mapping Template**:
+รูปแบบไฟล์ส่งออกที่ PlaiFlow กำหนดและออกเวอร์ชันสำหรับโปรแกรมปลายทางหนึ่งแห่ง โดยแยกจากค่าจับคู่ที่ Organization กำหนดและไม่รับสูตรหรือคอลัมน์อิสระจากผู้ใช้
+_Avoid_: Organization mapping values, generic Export Template, arbitrary spreadsheet
 
 **Organization Drive Connection**:
 การอนุญาต Google Drive แยกจาก Google Login ซึ่ง Owner หรือ Admin ของลูกค้าให้แก่ Organization โดยมีได้หนึ่ง active connection เพื่อเขียนไฟล์ส่งออกลงโฟลเดอร์ PlaiFlow ใน My Drive ของลูกค้า บัญชี Google ของลูกค้าเป็นเจ้าของพื้นที่และ PlaiFlow ไม่ได้จัดสรร Drive หรือโควตาพื้นที่ให้

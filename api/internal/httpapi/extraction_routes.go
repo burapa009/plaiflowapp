@@ -74,11 +74,85 @@ func (s *server) getExtraction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var saved *extraction.ReviewDraft
+	var returned *extraction.ReturnNotice
+	var history []extraction.ReviewDraft
+	if s.config.ReviewEnabled {
+		item, draftErr := s.config.Extraction.CurrentDraft(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
+		if draftErr != nil {
+			writeError(w, r, 503, "review_unavailable", "Saved review is unavailable")
+			return
+		}
+		if item.Revision > 0 && item.OCRJobID == ocrJob {
+			saved = &item
+		}
+		history, err = s.config.Extraction.ListDraftHistory(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"), 20)
+		if err != nil {
+			writeError(w, r, 503, "review_unavailable", "Review history is unavailable")
+			return
+		}
+		notice, noticeErr := s.config.Extraction.CurrentReturn(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
+		if noticeErr != nil {
+			writeError(w, r, 503, "review_unavailable", "Return status is unavailable")
+			return
+		}
+		if notice.ReasonCode != "" {
+			returned = &notice
+		}
+	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, 200, map[string]any{"draft": draft, "ocr_job_id": ocrJob, "revision": current.Revision, "confirmed": confirmed,
+		"review_enabled": s.config.ReviewEnabled,
+		"saved_review":   saved, "review_history": history, "returned_review": returned,
 		"source_superseded": current.ID != "" && current.OCRJobID != ocrJob})
 	s.config.Logger.Info("extraction_generated", "duration_ms", time.Since(started).Milliseconds(), "fields", len(draft.Fields), "provider_cost_usd", 0,
 		"compute_cost_status", "not_metered")
+}
+
+func (s *server) saveExtractionDraft(w http.ResponseWriter, r *http.Request) {
+	session, membership, ok := s.workContext(w, r, true)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxReviewBytes)
+	if err := r.ParseForm(); err != nil {
+		writeError(w, r, 400, "invalid_review", "Review draft is invalid")
+		return
+	}
+	expected, err := strconv.Atoi(r.PostForm.Get("expected_draft_revision"))
+	if err != nil || expected < 0 {
+		writeError(w, r, 400, "invalid_review", "Review draft revision is invalid")
+		return
+	}
+	proposal, ocrJob, err := s.extractionDraft(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
+	if err != nil || ocrJob != r.PostForm.Get("ocr_job_id") {
+		writeError(w, r, 409, "ocr_changed", "OCR result changed; review again")
+		return
+	}
+	draft := extraction.ReviewDraft{OrganizationID: membership.OrganizationID, DocumentID: r.PathValue("document"),
+		OCRJobID: ocrJob, Values: make(map[string]string, len(extraction.Keys)), Decisions: make(map[string]string, len(extraction.Keys)),
+		UpdatedBy: session.UserID, UpdatedAt: s.config.Now().UTC()}
+	for _, key := range extraction.Keys {
+		value := strings.TrimSpace(r.PostForm.Get(key))
+		decision := r.PostForm.Get(key + "_decision")
+		if len([]rune(value)) > 240 || decision != "" && decision != "accepted" && decision != "corrected" && decision != "unknown" ||
+			decision == "unknown" && value != "" || decision == "accepted" && value != proposal.Fields[key].Normalized {
+			writeError(w, r, 422, "invalid_review", "Review field is invalid")
+			return
+		}
+		draft.Values[key], draft.Decisions[key] = value, decision
+	}
+	draft, err = s.config.Extraction.SaveDraft(r.Context(), draft, expected, requestID(r))
+	if errors.Is(err, extraction.ErrConflict) {
+		writeError(w, r, 409, "review_changed", "Review changed; reload before saving")
+		return
+	}
+	if err != nil {
+		writeError(w, r, 503, "review_unavailable", "Review draft could not be saved")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, draft)
 }
 
 func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
@@ -110,8 +184,32 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	values := make(map[string]string, len(extraction.Keys))
-	for _, key := range extraction.Keys {
-		values[key] = strings.TrimSpace(r.PostForm.Get(key))
+	if s.config.ReviewEnabled {
+		saved, draftErr := s.config.Extraction.CurrentDraft(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
+		draftRevision, parseErr := strconv.Atoi(r.PostForm.Get("expected_draft_revision"))
+		if draftErr != nil || parseErr != nil || saved.Revision == 0 || saved.Revision != draftRevision || saved.OCRJobID != ocrJob {
+			writeError(w, r, 409, "review_changed", "Saved review changed; reload before confirming")
+			return
+		}
+		for _, key := range extraction.Keys {
+			if saved.Decisions[key] != "accepted" && saved.Decisions[key] != "corrected" && saved.Decisions[key] != "unknown" {
+				writeError(w, r, 422, "review_required", "Decide every field before confirming")
+				return
+			}
+			if strings.TrimSpace(r.PostForm.Get(key)) != saved.Values[key] || r.PostForm.Get(key+"_decision") != saved.Decisions[key] {
+				writeError(w, r, 409, "unsaved_changes", "Save changes before confirming")
+				return
+			}
+			values[key] = saved.Values[key]
+		}
+		if !s.originalAvailable(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document")) {
+			writeError(w, r, 409, "original_unavailable", "Open the original before confirming")
+			return
+		}
+	} else {
+		for _, key := range extraction.Keys {
+			values[key] = strings.TrimSpace(r.PostForm.Get(key))
+		}
 	}
 	if err := extraction.ValidateReview(draft, values); err != nil {
 		writeError(w, r, 422, "invalid_review", "Review required fields and amounts")
@@ -125,6 +223,10 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 	review := extraction.Review{ID: id, OrganizationID: membership.OrganizationID, DocumentID: r.PathValue("document"), OCRJobID: ocrJob,
 		DocumentType: draft.DocumentType, Values: values, ConfirmedBy: session.UserID, ConfirmedAt: s.config.Now().UTC(),
 		ObjectKey: "extraction/" + membership.OrganizationID + "/" + id + ".json"}
+	if s.config.ReviewEnabled {
+		review.DraftRevision, _ = strconv.Atoi(r.PostForm.Get("expected_draft_revision"))
+	}
+	review.RequestID = requestID(r)
 	data, err := json.Marshal(review)
 	if err != nil || len(data) > maxReviewBytes {
 		writeError(w, r, 422, "invalid_review", "Review exceeds limit")
@@ -154,6 +256,20 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 	keep = true
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, 200, map[string]any{"status": "Confirmed", "revision": review.Revision})
+}
+
+func (s *server) originalAvailable(ctx context.Context, user, org, doc string) bool {
+	if s.config.Documents == nil {
+		return false
+	}
+	_, original, err := s.config.Documents.Open(ctx, user, org, doc)
+	if err != nil {
+		return false
+	}
+	defer original.Close()
+	var first [1]byte
+	_, err = io.ReadFull(original, first[:])
+	return err == nil
 }
 
 func (s *server) readReview(ctx context.Context, meta extraction.Review) (*extraction.Review, error) {
@@ -198,7 +314,12 @@ func (s *server) exportExtractions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ponytail: synchronous private-blob reads are capped at 100 rows; use a durable export job before raising this limit.
-	metas, err := s.config.Extraction.ListCurrentReviews(r.Context(), session.UserID, membership.OrganizationID, 100)
+	var metas []extraction.Review
+	if s.config.ReviewEnabled {
+		metas, err = s.config.Extraction.ListCurrentReviewsFiltered(r.Context(), session.UserID, membership.OrganizationID, 100, "Available")
+	} else {
+		metas, err = s.config.Extraction.ListCurrentReviews(r.Context(), session.UserID, membership.OrganizationID, 100)
+	}
 	if err != nil {
 		writeError(w, r, 503, "extraction_export_unavailable", "Export is unavailable")
 		return
@@ -210,10 +331,7 @@ func (s *server) exportExtractions(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, 503, "extraction_export_unavailable", "Export is unavailable")
 			return
 		}
-		v := review.Values
-		rows = append(rows, []string{review.DocumentID, review.DocumentType, v["issue_date"], v["document_number"], v["seller_name"],
-			v["seller_tax_id"], v["buyer_name"], v["buyer_tax_id"], v["currency"], v["subtotal"], v["vat_amount"],
-			v["total_amount"], review.ConfirmedAt.UTC().Format(time.RFC3339), review.ConfirmedBy, strconv.Itoa(extraction.SchemaVersion)})
+		rows = append(rows, structuredExportValues(*review))
 	}
 	var output bytes.Buffer
 	if err := document.WriteTable(&output, format, structuredHeader, rows); err != nil || output.Len() > 128<<20 {

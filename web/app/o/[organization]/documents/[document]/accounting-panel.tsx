@@ -14,7 +14,7 @@ type Suggestion = {
     vendor_id?: string; rule_set_version: number; status: string; approved?: Approval };
 };
 
-export default async function AccountingPanel({ organization, document }: { organization: string; document: string }) {
+export default async function AccountingPanel({ organization, document, nextHref = "" }: { organization: string; document: string; nextHref?: string }) {
   const path = `/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(document)}`;
   const api = `/v1${path}/accounting`;
   const [suggestionResponse, categoriesResponse, membershipResponse] = await Promise.all([
@@ -46,6 +46,7 @@ export default async function AccountingPanel({ organization, document }: { orga
     const result = await sessionPOST(`${api}/approve`, body);
     if (!result?.ok) redirect(`${path}?accounting=${result?.status === 409 ? "changed" : "approval-error"}`);
     revalidatePath(path);
+    if (formData.get("approve_next") === "1" && nextHref) redirect(nextHref);
     redirect(`${path}?accounting=approved`);
   }
 
@@ -124,6 +125,7 @@ export default async function AccountingPanel({ organization, document }: { orga
         </label>}
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" required className="mt-1" />ฉันตรวจเอกสารและยืนยันหมวดนี้แล้ว</label>
         <button className="button w-fit" type="submit" disabled={active.length === 0}>อนุมัติข้อเสนอ</button>
+        {nextHref && <button className="secondary-button w-fit" name="approve_next" value="1" type="submit" disabled={active.length === 0}>อนุมัติและไป{nextHref.includes("/review?") ? "คิว" : "เอกสารถัดไป"}</button>}
       </form>
       <form action={createCategory} className="mt-5 flex max-w-xl flex-wrap items-end gap-3 border-t border-line pt-4">
         <label className="grid flex-1 gap-1">เพิ่มหมวดค่าใช้จ่ายของทีม

@@ -48,6 +48,9 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+	if os.Getenv("REVIEW_ENABLED") == "true" {
+		store.EnableReview()
+	}
 	authService, err := auth.NewService(auth.ServiceConfig{WebOrigin: settings.WebBaseURL, Providers: []auth.Provider{
 		auth.NewLINEProvider(auth.ProviderConfig{ClientID: settings.LineLoginChannel, ClientSecret: settings.LineLoginSecret, RedirectURI: lineCallback}),
 		auth.NewGoogleProvider(auth.ProviderConfig{ClientID: settings.GoogleClientID, ClientSecret: settings.GoogleClientSecret, RedirectURI: googleCallback}),
@@ -142,8 +145,8 @@ func main() {
 			Gate: plan.Gate{Store: store}, Drive: driveService, Documents: documentService,
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
-			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true",
-			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true",
+			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
+			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}

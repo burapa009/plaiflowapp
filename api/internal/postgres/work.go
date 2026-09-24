@@ -84,6 +84,19 @@ func (s *Store) GetTask(ctx context.Context, userID, organizationID, taskID stri
 	if err != nil {
 		return work.Task{}, err
 	}
+	if s.reviewEnabled {
+		err = tx.QueryRow(ctx, `SELECT d.id FROM document_review_tasks rt
+			JOIN documents d ON d.organization_id=rt.organization_id AND d.id=rt.document_id
+			WHERE rt.organization_id=$1 AND rt.task_id=$2 AND d.status IN ('Available','Archived')
+			AND (organization_role($3::uuid,$1::uuid) IN ('Owner','Admin')
+				OR (d.submitted_by_user_id=$3::uuid AND NOT d.group_restricted) OR d.assignee_user_id=$3::uuid
+				OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id
+					AND ds.document_id=d.id AND ds.submitted_by_user_id=$3::uuid AND NOT ds.group_source))`,
+			organizationID, taskID, userID).Scan(&task.ReviewDocumentID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return work.Task{}, err
+		}
+	}
 	return task, tx.Commit(ctx)
 }
 
@@ -185,6 +198,27 @@ func (s *Store) UpdateTask(ctx context.Context, command work.UpdateTask) (work.T
 	}
 	if command.AssigneeUserID != "" && !memberExists(ctx, tx, command.OrganizationID, command.AssigneeUserID) {
 		return work.Task{}, work.ErrNotFound
+	}
+	if s.reviewEnabled && command.AssigneeSet && command.AssigneeUserID != "" {
+		var reviewDocument string
+		err = tx.QueryRow(ctx, `SELECT document_id FROM document_review_tasks WHERE organization_id=$1 AND task_id=$2`,
+			command.OrganizationID, command.ID).Scan(&reviewDocument)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return work.Task{}, err
+		}
+		if err == nil {
+			var allowed bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM documents d JOIN memberships m ON m.organization_id=d.organization_id
+				AND m.user_id=$3 WHERE d.organization_id=$1 AND d.id=$2 AND d.status IN ('Available','Archived')
+				AND (m.role IN ('Owner','Admin') OR (d.submitted_by_user_id=m.user_id AND NOT d.group_restricted)
+					OR d.assignee_user_id=m.user_id OR EXISTS (SELECT 1 FROM document_sources ds
+						WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id
+						AND ds.submitted_by_user_id=m.user_id AND NOT ds.group_source)))`,
+				command.OrganizationID, reviewDocument, command.AssigneeUserID).Scan(&allowed)
+			if err != nil || !allowed {
+				return work.Task{}, work.ErrForbidden
+			}
+		}
 	}
 	completedAt := any(nil)
 	completedBy := any(nil)

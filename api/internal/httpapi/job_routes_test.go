@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"plaiflow/api/internal/extraction"
 	"plaiflow/api/internal/job"
 )
 
@@ -16,6 +18,7 @@ type jobStoreDouble struct {
 	claim      job.ClaimCommand
 	claimCalls int
 	claimed    []job.Claimed
+	page       job.ExportPage
 }
 
 func (s *jobStoreDouble) ClaimJobs(_ context.Context, command job.ClaimCommand) ([]job.Claimed, error) {
@@ -27,8 +30,43 @@ func (*jobStoreDouble) HeartbeatJob(context.Context, job.LeaseCommand, time.Dura
 	return time.Time{}, nil
 }
 func (*jobStoreDouble) FailJob(context.Context, job.FailureCommand) error { return nil }
-func (*jobStoreDouble) ReadExportPage(context.Context, job.LeaseCommand, string, int) (job.ExportPage, error) {
-	return job.ExportPage{}, nil
+func (s *jobStoreDouble) ReadExportPage(context.Context, job.LeaseCommand, string, int) (job.ExportPage, error) {
+	return s.page, nil
+}
+
+func TestWorkerApprovedExportPageContainsOnlyVerifiedRow(t *testing.T) {
+	now := time.Date(2026, 9, 24, 8, 0, 0, 0, time.UTC)
+	approvedReview := extraction.Review{ID: "review-1", OrganizationID: "org-1", DocumentID: "doc-1", OCRJobID: "ocr-1",
+		Revision: 2, DocumentType: "tax_invoice", Values: map[string]string{"seller_name": "บริษัท ตัวอย่าง จำกัด",
+			"seller_tax_id": "0123456789012", "total_amount": "1070.00"}}
+	content, _ := json.Marshal(approvedReview)
+	store := &jobStoreDouble{page: job.ExportPage{Product: "approved_suggestions", Done: true,
+		Entries: []job.DocumentExportEntry{{Review: job.ReviewExportMeta{ID: "review-1", OrganizationID: "org-1",
+			DocumentID: "doc-1", OCRJobID: "ocr-1", Revision: 2, ObjectKey: "review.json", ConfirmedAt: now},
+			Approval: job.ApprovalExportMeta{ID: "approval-1", DocumentID: "doc-1", ReviewID: "review-1", ReviewRevision: 2,
+				CategoryID: "cat-1", CategoryName: "ค่าเดินทาง", Basis: "human_reviewed", ApprovedAt: now}}}}}
+	auth, _ := job.NewWorkerAuth([]byte("01234567890123456789012345678901"), "staging", []string{"jobs:read"})
+	handler := New(Config{Jobs: store, JobWorkerAuth: auth, ReviewEnabled: true,
+		OCRStorage: &extractionBlobs{objects: map[string][]byte{"review.json": content}}, Now: func() time.Time { return now }}, &fakeStore{})
+	token, _ := auth.Sign("worker-1", []string{"jobs:read"}, now, time.Minute)
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/jobs/job-1/export-rows", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-Job-Attempt", "attempt-1")
+	request.Header.Set("X-Job-Lease", "lease-1")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != 200 {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var page job.ExportPage
+	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Header) != 21 || len(page.Values) != 1 || page.Values[0][6] != "บริษัท ตัวอย่าง จำกัด" ||
+		page.Values[0][7] != "0123456789012" || page.Values[0][15] != "1070.00" ||
+		!strings.Contains(response.Body.String(), "accounting_suggestions_v1") {
+		t.Fatalf("wrong approved row: %+v", page)
+	}
 }
 func (*jobStoreDouble) CompleteExport(context.Context, job.CompleteExportCommand) (job.ExportArtifact, error) {
 	return job.ExportArtifact{}, nil

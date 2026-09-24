@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"plaiflow/api/internal/config"
+	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/work"
 )
@@ -136,7 +137,9 @@ func (w apiWorker) processExport(ctx context.Context, item job.Claimed) error {
 		return w.fail(ctx, item, "unsupported_format")
 	}
 	var payload struct {
-		Format string `json:"format"`
+		Format     string `json:"format"`
+		ExportType string `json:"export_type"`
+		RowCount   int64  `json:"row_count"`
 	}
 	if json.Unmarshal(item.Job.Payload, &payload) != nil || payload.Format != "csv" && payload.Format != "xlsx" {
 		return w.fail(ctx, item, "unsupported_format")
@@ -147,20 +150,25 @@ func (w apiWorker) processExport(ctx context.Context, item job.Claimed) error {
 	}
 	defer os.Remove(file.Name())
 	defer file.Close()
+	documentExport := payload.ExportType == "raw_documents" || payload.ExportType == "confirmed_values" || payload.ExportType == "approved_suggestions"
 	var exportWriter interface {
 		Write(work.ExportRow) error
 		Close() error
 	}
-	if payload.Format == "xlsx" {
-		exportWriter, err = work.NewXLSXWriter(file)
-	} else {
-		exportWriter, err = work.NewCSVWriter(file)
-	}
-	if err != nil {
-		return w.fail(ctx, item, "artifact_upload_failed")
+	if !documentExport {
+		if payload.Format == "xlsx" {
+			exportWriter, err = work.NewXLSXWriter(file)
+		} else {
+			exportWriter, err = work.NewCSVWriter(file)
+		}
+		if err != nil {
+			return w.fail(ctx, item, "artifact_upload_failed")
+		}
 	}
 	cursor := ""
 	var count int64
+	var header []string
+	var values [][]string
 	for {
 		if err = w.heartbeat(ctx, item); err != nil {
 			return err
@@ -169,18 +177,34 @@ func (w apiWorker) processExport(ctx context.Context, item job.Claimed) error {
 		if readErr != nil {
 			return w.fail(ctx, item, "temporary_upstream")
 		}
-		for _, row := range page.Rows {
-			if err = exportWriter.Write(row); err != nil {
-				return w.fail(ctx, item, "artifact_upload_failed")
+		if documentExport {
+			if page.Product != payload.ExportType || len(page.Header) == 0 || header != nil && !sameHeader(header, page.Header) || count+int64(len(page.Values)) > payload.RowCount {
+				return w.fail(ctx, item, "invalid_input")
 			}
-			count++
+			header = page.Header
+			values = append(values, page.Values...)
+			count += int64(len(page.Values))
+		} else {
+			for _, row := range page.Rows {
+				if err = exportWriter.Write(row); err != nil {
+					return w.fail(ctx, item, "artifact_upload_failed")
+				}
+				count++
+			}
 		}
 		if page.Done {
 			break
 		}
 		cursor = page.NextCursor
 	}
-	if err = exportWriter.Close(); err != nil {
+	if documentExport {
+		if count != payload.RowCount || count > 20000 || header == nil {
+			return w.fail(ctx, item, "invalid_input")
+		}
+		if err = document.WriteTable(file, payload.Format, header, values); err != nil {
+			return w.fail(ctx, item, "artifact_upload_failed")
+		}
+	} else if err = exportWriter.Close(); err != nil {
 		return w.fail(ctx, item, "artifact_upload_failed")
 	}
 	if _, err = file.Seek(0, io.SeekStart); err != nil {
@@ -198,6 +222,18 @@ func (w apiWorker) processExport(ctx context.Context, item job.Claimed) error {
 	}
 	w.logger.Info("job_completed", "job_id", item.Job.ID, "attempt_id", item.Job.AttemptID, "rows", count)
 	return nil
+}
+
+func sameHeader(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 func (w apiWorker) heartbeat(ctx context.Context, item job.Claimed) error {
 	response, err := w.request(ctx, http.MethodPost, "/internal/v1/jobs/"+url.PathEscape(item.Job.ID)+"/heartbeat", "jobs:heartbeat", nil, &item)

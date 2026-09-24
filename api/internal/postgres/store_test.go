@@ -18,6 +18,20 @@ func TestBusinessDuplicateKeysUseTaxAndContactCode(t *testing.T) {
 	}
 }
 
+func TestReviewOffKeepsPhase7ReadsOnMigration11(t *testing.T) {
+	store, ctx := isolatedTestStore(t, 11)
+	user, org := postgresUUID(), postgresUUID()
+	if _, err := store.pool.Exec(ctx, `INSERT INTO users(id) VALUES($1)`, user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateOrganization(ctx, user, org, "Review gate", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ListCurrentReviews(ctx, user, org, 100); err != nil {
+		t.Fatalf("Phase 7 read requires Phase 9 tables while review is disabled: %v", err)
+	}
+}
+
 func TestIdempotentInsertAndWorkerLifecycle(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {

@@ -121,6 +121,11 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .field { @apply grid min-w-0 gap-[.35rem]; }
 .field label { @apply font-semibold; }
 .field input, .field select, .field textarea { @apply min-h-11 w-full rounded-[.7rem] border border-line bg-surface px-3 py-[.65rem] text-fg; font: inherit; }
+.field .document-file-input { @apply min-h-16 cursor-pointer rounded-xl border-2 border-dashed border-line bg-surface-soft p-3 text-sm text-muted transition-colors; }
+.document-file-input::file-selector-button { @apply mr-4 min-h-10 cursor-pointer rounded-lg border-0 bg-brand-strong px-4 font-semibold text-white; }
+.field .document-file-input:hover { @apply border-brand-strong bg-surface; }
+.field .document-file-input:focus-visible { @apply outline-2 outline-offset-2 outline-brand-strong; }
+.field .document-file-input:disabled, .document-file-input:disabled::file-selector-button { @apply cursor-not-allowed opacity-60; }
 .field textarea { resize: vertical; }
 .form-row { @apply grid gap-4; }
 .secondary-button, .text-button { font: inherit; @apply inline-flex min-h-11 cursor-pointer items-center justify-center rounded-[.7rem] border border-line bg-surface px-[.8rem] py-[.55rem] font-semibold text-fg; }
@@ -133,6 +138,7 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .empty-state p { margin: 0; }
 .notification-card { @apply flex flex-wrap items-center justify-between gap-4; }
 .card-actions { @apply flex flex-wrap items-center gap-2; }
+.document-actions { align-items: flex-start; }
 .card-actions form { margin: 0; }
 .task-detail { @apply grid gap-6; }
 .back-link { @apply inline-flex min-h-11 w-fit items-center font-semibold text-brand-strong; }
@@ -512,6 +518,9 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .preview-table th, .preview-table td { @apply whitespace-nowrap border-b border-line p-[.65rem] text-left; }
 .connection-card { @apply mt-8 flex flex-wrap items-center justify-between gap-8; }
 .danger-button { font: inherit; @apply min-h-11 cursor-pointer rounded-[.7rem] border border-danger bg-surface px-[.8rem] py-[.55rem] font-bold text-danger; }
+.danger-button.document-trash-button { @apply bg-danger text-white transition-all; }
+.danger-button.document-trash-button:hover { background: color-mix(in oklch, var(--danger) 78%, black); box-shadow: 0 5px 14px color-mix(in oklch, var(--danger) 28%, transparent); transform: translateY(-2px); }
+.danger-button.document-trash-button:focus-visible { outline: 3px solid var(--danger); outline-offset: 3px; }
 
 @media (min-width: 48rem) {
   .pricing-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

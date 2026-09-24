@@ -89,4 +89,5 @@ type Store interface {
 	CompleteOCR(context.Context, job.LeaseCommand, string, Result, string, string, int64) (string, error)
 	OCRState(context.Context, string, string, string) (State, error)
 	RetryOCR(context.Context, string, string, string, time.Time) (State, error)
+	ReprocessOCR(context.Context, string, string, string, string, int, string, string, string, time.Time) (State, error)
 }

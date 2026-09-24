@@ -171,11 +171,19 @@ func TestOCRIsolatedDatabaseLifecycle(t *testing.T) {
 	if _, err = store.OCRState(ctx, postgresUUID(), org, accepted.Document.ID); err == nil {
 		t.Fatal("unauthorized retrieval")
 	}
-	if _, err = store.ChangeDocumentStatus(ctx, user, org, accepted.Document.ID, "trash", time.Now()); err != nil {
+	trashAt := time.Now().UTC()
+	if _, err = store.ChangeDocumentStatus(ctx, user, org, accepted.Document.ID, "trash", trashAt); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = store.CompleteOCR(ctx, lease, "ocr-test", result, "test/late", "abc", 10); !errors.Is(err, job.ErrLeaseLost) {
 		t.Fatalf("late completion %v", err)
+	}
+	if _, err = store.ChangeDocumentStatus(ctx, user, org, accepted.Document.ID, "restore", trashAt.Add(30*24*time.Hour)); !errors.Is(err, document.ErrStatusConflict) {
+		t.Fatalf("expired restore err=%v", err)
+	}
+	restored, err := store.ChangeDocumentStatus(ctx, user, org, accepted.Document.ID, "restore", trashAt.Add(24*time.Hour))
+	if err != nil || restored.Status != "Available" {
+		t.Fatalf("restore=%+v err=%v", restored, err)
 	}
 	if _, err = store.pool.Exec(ctx, string(down)); err == nil {
 		t.Fatal("destructive rollback accepted with history")

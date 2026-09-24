@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/work"
 )
 
@@ -25,6 +26,8 @@ const (
 	Queued    Status = "Queued"
 	Running   Status = "Running"
 	Completed Status = "Completed"
+	Ready     Status = "Ready"
+	Expired   Status = "Expired"
 	Failed    Status = "Failed"
 	Cancelled Status = "Cancelled"
 )
@@ -68,13 +71,56 @@ type FailureCommand struct {
 }
 
 type ExportPage struct {
-	Rows       []work.ExportRow `json:"rows"`
-	NextCursor string           `json:"next_cursor,omitempty"`
-	Done       bool             `json:"done"`
+	Rows       []work.ExportRow      `json:"rows"`
+	Product    string                `json:"product,omitempty"`
+	Header     []string              `json:"header,omitempty"`
+	Values     [][]string            `json:"values,omitempty"`
+	Entries    []DocumentExportEntry `json:"-"`
+	NextCursor string                `json:"next_cursor,omitempty"`
+	Done       bool                  `json:"done"`
+}
+
+type DocumentExportRequest struct {
+	ID, OrganizationID, RequesterUserID, Product, Status, Format, DateFrom, DateTo, RequestID string
+	Now                                                                                       time.Time
+}
+
+type DocumentExportState struct {
+	ID          string    `json:"id"`
+	Product     string    `json:"product"`
+	Status      Status    `json:"status"`
+	RowCount    int64     `json:"row_count"`
+	FailureCode string    `json:"failure_code,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type DocumentExportStore interface {
+	CountDocumentExport(context.Context, string, string, string, string, string, string) (int64, error)
+	QueueDocumentExport(context.Context, DocumentExportRequest) (DocumentExportState, error)
+	GetDocumentExport(context.Context, string, string, string) (DocumentExportState, error)
+}
+
+type DocumentExportEntry struct {
+	Document document.ExportRow
+	Review   ReviewExportMeta
+	Approval ApprovalExportMeta
+}
+
+type ReviewExportMeta struct {
+	ID, OrganizationID, DocumentID, OCRJobID, ObjectKey, ConfirmedBy string
+	Revision                                                         int
+	ConfirmedAt                                                      time.Time
+}
+
+type ApprovalExportMeta struct {
+	ID, DocumentID, ReviewID, CategoryID, CategoryName, VendorID, ContactCode, Basis string
+	Revision, ReviewRevision, RuleVersion                                            int
+	ApprovedAt                                                                       time.Time
 }
 
 type ExportArtifact struct {
 	JobID, OrganizationID, ObjectKey, Format, SHA256 string
+	Product                                          string
 	RowCount, ByteCount                              int64
 	ExpiresAt                                        time.Time
 }

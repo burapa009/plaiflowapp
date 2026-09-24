@@ -16,10 +16,12 @@ import (
 
 var exportHeader = []string{"document_id", "display_filename", "detected_type", "byte_size", "status", "first_source_channel", "source_count", "submitter", "assignee", "received_at", "updated_at"}
 
+var ExportHeader = exportHeader
+
 func WriteExport(output io.Writer, format string, rows []ExportRow) error {
 	values := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		values = append(values, exportValues(row))
+		values = append(values, ExportValues(row))
 	}
 	return WriteTable(output, format, exportHeader, values)
 }
@@ -60,7 +62,7 @@ func writeCSV(output io.Writer, header []string, rows [][]string) error {
 	return w.Error()
 }
 
-func exportValues(row ExportRow) []string {
+func ExportValues(row ExportRow) []string {
 	return []string{row.ID, row.Filename, row.MIME, strconv.FormatInt(row.Size, 10), row.Status, row.SourceChannel,
 		strconv.FormatInt(row.SourceCount, 10), row.SubmitterName, row.AssigneeName, row.AcceptedAt.UTC().Format("2006-01-02T15:04:05Z"), row.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z")}
 }

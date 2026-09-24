@@ -279,6 +279,12 @@ func (s *server) approveAccounting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
 		return
 	}
+	if s.config.ReviewEnabled {
+		if !s.originalAvailable(r.Context(), session.UserID, membership.OrganizationID, input.DocumentID) {
+			writeError(w, r, 409, "original_unavailable", "Open the original before approving")
+			return
+		}
+	}
 	evaluation, err := s.config.Accounting.Evaluate(r.Context(), session.UserID, membership.OrganizationID, *review)
 	if err != nil || evaluation.RuleSetVersion != input.RuleSetVersion {
 		writeError(w, r, 409, "suggestion_changed", "Suggestion changed; reload before approving")

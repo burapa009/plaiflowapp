@@ -51,6 +51,15 @@ func (s *Store) SaveReview(ctx context.Context, review extraction.Review, expect
         AND published_at IS NOT NULL AND superseded_at IS NULL AND deleted_at IS NULL`, review.OrganizationID, review.DocumentID).Scan(&currentOCR); err != nil || currentOCR != review.OCRJobID {
 		return extraction.Review{}, extraction.ErrConflict
 	}
+	if review.DraftRevision > 0 {
+		var currentDraftRevision int
+		var draftOCR string
+		err = tx.QueryRow(ctx, `SELECT revision,ocr_job_id FROM document_review_drafts
+			WHERE organization_id=$1 AND document_id=$2 FOR UPDATE`, review.OrganizationID, review.DocumentID).Scan(&currentDraftRevision, &draftOCR)
+		if err != nil || currentDraftRevision != review.DraftRevision || draftOCR != review.OCRJobID {
+			return extraction.Review{}, extraction.ErrConflict
+		}
+	}
 	var previousID string
 	var revision int
 	err = tx.QueryRow(ctx, `SELECT id,revision FROM document_extraction_reviews WHERE organization_id=$1 AND document_id=$2
@@ -67,22 +76,40 @@ func (s *Store) SaveReview(ctx context.Context, review extraction.Review, expect
 		}
 	}
 	review.Revision = revision + 1
-	_, err = tx.Exec(ctx, `INSERT INTO document_extraction_reviews
-        (id,organization_id,document_id,ocr_job_id,revision,object_key,confirmed_by,confirmed_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, review.ID, review.OrganizationID, review.DocumentID, review.OCRJobID,
-		review.Revision, review.ObjectKey, review.ConfirmedBy, review.ConfirmedAt)
+	if s.reviewEnabled {
+		_, err = tx.Exec(ctx, `INSERT INTO document_extraction_reviews
+            (id,organization_id,document_id,ocr_job_id,revision,object_key,confirmed_by,confirmed_at,draft_revision)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, review.ID, review.OrganizationID, review.DocumentID, review.OCRJobID,
+			review.Revision, review.ObjectKey, review.ConfirmedBy, review.ConfirmedAt, review.DraftRevision)
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO document_extraction_reviews
+            (id,organization_id,document_id,ocr_job_id,revision,object_key,confirmed_by,confirmed_at)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, review.ID, review.OrganizationID, review.DocumentID, review.OCRJobID,
+			review.Revision, review.ObjectKey, review.ConfirmedBy, review.ConfirmedAt)
+	}
 	if err != nil {
 		return extraction.Review{}, err
 	}
-	if err = auditTenant(ctx, tx, review.OrganizationID, review.ConfirmedBy, "extraction.confirm", "document", review.DocumentID, review.ConfirmedAt); err != nil {
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,actor_user_id,event_type,target_type,target_id,
+		request_id,outcome,occurred_at,metadata) VALUES($1,$2,'extraction.confirm','document',$3,$4,'success',$5,
+		jsonb_build_object('review_revision',$6,'draft_revision',$7))`, review.OrganizationID, review.ConfirmedBy,
+		review.DocumentID, review.RequestID, review.ConfirmedAt, review.Revision, review.DraftRevision)
+	if err != nil {
 		return extraction.Review{}, err
 	}
 	return review, tx.Commit(ctx)
 }
 
 func (s *Store) ListCurrentReviews(ctx context.Context, user, org string, limit int) ([]extraction.Review, error) {
+	return s.ListCurrentReviewsFiltered(ctx, user, org, limit, "")
+}
+
+func (s *Store) ListCurrentReviewsFiltered(ctx context.Context, user, org string, limit int, status string) ([]extraction.Review, error) {
 	if limit < 1 || limit > 5000 {
 		return nil, errors.New("invalid extraction export limit")
+	}
+	if status != "" && status != "Available" && status != "Archived" {
+		return nil, errors.New("invalid extraction export status")
 	}
 	tx, err := s.organizationTx(ctx, user, org)
 	if err != nil {
@@ -93,12 +120,16 @@ func (s *Store) ListCurrentReviews(ctx context.Context, user, org string, limit 
 	if err != nil || role != tenant.Owner && role != tenant.Admin {
 		return nil, tenant.ErrForbidden
 	}
-	rows, err := tx.Query(ctx, `SELECT e.id,e.organization_id,e.document_id,e.ocr_job_id,e.revision,e.object_key,e.confirmed_by,e.confirmed_at
+	query := `SELECT e.id,e.organization_id,e.document_id,e.ocr_job_id,e.revision,e.object_key,e.confirmed_by,e.confirmed_at
         FROM document_extraction_reviews e JOIN documents d ON d.organization_id=e.organization_id AND d.id=e.document_id
-        WHERE e.organization_id=$1 AND e.superseded_at IS NULL AND d.status IN ('Available','Archived')
+		WHERE e.organization_id=$1 AND e.superseded_at IS NULL AND d.status IN ('Available','Archived')
+		AND ($3='' OR d.status=$3)`
+	query += s.currentDraftSQL()
+	query += `
         AND EXISTS (SELECT 1 FROM document_ocr_runs o WHERE o.job_id=e.ocr_job_id AND o.organization_id=e.organization_id
             AND o.document_id=e.document_id AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL)
-        ORDER BY e.confirmed_at DESC,e.id DESC LIMIT $2`, org, limit+1)
+		ORDER BY e.confirmed_at DESC,e.id DESC LIMIT $2`
+	rows, err := tx.Query(ctx, query, org, limit+1, status)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,6 @@
 # Phase 8 isolated staging release checklist
 
-Status: on hold at local checks by user request (2026-09-23); this is a procedure, not deployment evidence.
+Status: staging proof and feature activation on hold. The default-off code in `0b1fc8f` passed local Go/web checks and was deployed to the existing public topology on 2026-09-23: Railway API `f08c7c05-28c5-42c5-a173-633ea5d2606c` reached `SUCCESS` and `/readyz` returned 200; Vercel `dpl_FsYm9u4DRqJJeLh78fsV6cDQxonU` reached `READY` and the public homepage returned 200. No migration or feature activation occurred. These checks do not prove the Phase 8 workflow or its release gates.
 
 The existing Railway `staging` environment is connected to the public PlaiFlow site. Never apply migration 10 or enable `ACCOUNTING_ENABLED` there without a separately approved public-site cutover, backup, and maintenance plan. The user has paused the separation work and asked to keep one website for now. An empty Railway project `plaiflow-phase8-staging` and environment `staging` were created before that change of direction; PostgreSQL provisioning was refused by the Railway Free plan limit. No DB, API, web deployment, migration, or LINE callback was changed in that project. Do not resume provisioning or deployment without a new direction.
 

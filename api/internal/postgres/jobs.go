@@ -179,10 +179,11 @@ func (s *Store) FailJob(ctx context.Context, command job.FailureCommand) error {
 }
 
 type exportPayload struct {
-	Format   string          `json:"format"`
-	Filters  work.TaskFilter `json:"filters"`
-	RowCount int64           `json:"row_count"`
-	DataAsOf time.Time       `json:"data_as_of"`
+	ExportType string          `json:"export_type"`
+	Format     string          `json:"format"`
+	Filters    work.TaskFilter `json:"filters"`
+	RowCount   int64           `json:"row_count"`
+	DataAsOf   time.Time       `json:"data_as_of"`
 }
 
 func (s *Store) ReadExportPage(ctx context.Context, command job.LeaseCommand, cursor string, limit int) (job.ExportPage, error) {
@@ -200,7 +201,13 @@ func (s *Store) ReadExportPage(ctx context.Context, command job.LeaseCommand, cu
 		return job.ExportPage{}, err
 	}
 	var payload exportPayload
-	if json.Unmarshal(payloadBytes, &payload) != nil || payload.Format != "csv" && payload.Format != "xlsx" || payload.DataAsOf.IsZero() {
+	if json.Unmarshal(payloadBytes, &payload) != nil || payload.Format != "csv" && payload.Format != "xlsx" {
+		return job.ExportPage{}, errors.New("invalid export payload")
+	}
+	if payload.ExportType == "raw_documents" || payload.ExportType == "confirmed_values" || payload.ExportType == "approved_suggestions" {
+		return s.readDocumentExportPage(ctx, command.JobID, organizationID, payload.ExportType, cursor, limit)
+	}
+	if payload.DataAsOf.IsZero() {
 		return job.ExportPage{}, errors.New("invalid export payload")
 	}
 	args := exportArgs(organizationID, payload.Filters)
@@ -269,8 +276,16 @@ func (s *Store) CompleteExport(ctx context.Context, command job.CompleteExportCo
 	if command.Format == "xlsx" {
 		maxBytes = 128 << 20
 	}
-	if json.Unmarshal(payloadBytes, &payload) != nil || payload.Format != command.Format || command.RowCount > payload.RowCount || command.ByteCount < 1 || command.ByteCount > maxBytes || command.ExpiresAt.Sub(command.Now.UTC()) > 24*time.Hour+time.Minute {
+	if json.Unmarshal(payloadBytes, &payload) != nil || payload.Format != command.Format || command.RowCount > payload.RowCount ||
+		(payload.ExportType == "raw_documents" || payload.ExportType == "confirmed_values" || payload.ExportType == "approved_suggestions") && command.RowCount != payload.RowCount ||
+		command.ByteCount < 1 || command.ByteCount > maxBytes || command.ExpiresAt.Sub(command.Now.UTC()) > 24*time.Hour+time.Minute {
 		return job.ExportArtifact{}, errors.New("artifact metadata mismatch")
+	}
+	if payload.ExportType == "raw_documents" || payload.ExportType == "confirmed_values" || payload.ExportType == "approved_suggestions" {
+		valid, checkErr := validDocumentExportSnapshot(ctx, tx, command.JobID, organizationID)
+		if checkErr != nil || !valid {
+			return job.ExportArtifact{}, errors.New("document export snapshot changed")
+		}
 	}
 	var valid bool
 	err = tx.QueryRow(ctx, `SELECT status='Running' AND current_attempt_id=$2 AND lease_token_hash=$3 AND lease_expires_at>$4 FROM durable_jobs WHERE id=$1`, command.JobID, command.AttemptID, leaseHash(command.LeaseToken), command.Now.UTC()).Scan(&valid)
@@ -308,7 +323,15 @@ func (s *Store) CompleteExport(ctx context.Context, command job.CompleteExportCo
 func (s *Store) AuthorizeExportArtifact(ctx context.Context, userID, organizationID, jobID string) (job.ExportArtifact, error) {
 	var artifact job.ExportArtifact
 	var hash []byte
-	err := s.pool.QueryRow(ctx, `SELECT a.job_id,a.organization_id,a.object_key,a.format,a.row_count,a.byte_count,a.sha256,a.expires_at FROM durable_job_artifacts a JOIN durable_jobs j ON j.id=a.job_id JOIN memberships m ON m.organization_id=j.organization_id AND m.user_id=$1 WHERE a.job_id=$2 AND a.organization_id=$3 AND a.deleted_at IS NULL AND a.expires_at>now() AND (j.requester_user_id=$1 OR m.role IN ('Owner','Admin'))`, userID, jobID, organizationID).Scan(&artifact.JobID, &artifact.OrganizationID, &artifact.ObjectKey, &artifact.Format, &artifact.RowCount, &artifact.ByteCount, &hash, &artifact.ExpiresAt)
+	err := s.pool.QueryRow(ctx, `SELECT a.job_id,a.organization_id,a.object_key,a.format,a.row_count,a.byte_count,a.sha256,a.expires_at,
+		coalesce(j.payload->>'export_type','tasks') FROM durable_job_artifacts a JOIN durable_jobs j ON j.id=a.job_id
+		JOIN memberships m ON m.organization_id=j.organization_id AND m.user_id=$1
+		WHERE a.job_id=$2 AND a.organization_id=$3 AND a.deleted_at IS NULL AND a.expires_at>now()
+		AND (j.payload->>'export_type' IN ('raw_documents','confirmed_values','approved_suggestions')
+			AND m.role IN ('Owner','Admin') OR coalesce(j.payload->>'export_type','tasks') NOT IN ('raw_documents','confirmed_values','approved_suggestions')
+			AND (j.requester_user_id=$1 OR m.role IN ('Owner','Admin')))`, userID, jobID, organizationID).Scan(
+		&artifact.JobID, &artifact.OrganizationID, &artifact.ObjectKey, &artifact.Format, &artifact.RowCount,
+		&artifact.ByteCount, &hash, &artifact.ExpiresAt, &artifact.Product)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return job.ExportArtifact{}, work.ErrNotFound
 	}
@@ -316,6 +339,15 @@ func (s *Store) AuthorizeExportArtifact(ctx context.Context, userID, organizatio
 		return job.ExportArtifact{}, err
 	}
 	artifact.SHA256 = hex.EncodeToString(hash)
+	if artifact.Product == "raw_documents" || artifact.Product == "confirmed_values" || artifact.Product == "approved_suggestions" {
+		if !s.reviewEnabled {
+			return job.ExportArtifact{}, work.ErrNotFound
+		}
+		valid, checkErr := validDocumentExportSnapshot(ctx, s.pool, jobID, organizationID)
+		if checkErr != nil || !valid {
+			return job.ExportArtifact{}, work.ErrNotFound
+		}
+	}
 	return artifact, nil
 }
 

@@ -13,11 +13,22 @@ import (
 )
 
 type Store struct {
-	pool   *pgxpool.Pool
-	logger *slog.Logger
+	pool          *pgxpool.Pool
+	logger        *slog.Logger
+	reviewEnabled bool
 }
 
 const requiredMigrationVersion = 11
+
+func (s *Store) EnableReview() { s.reviewEnabled = true }
+
+func (s *Store) currentDraftSQL() string {
+	if !s.reviewEnabled {
+		return ""
+	}
+	return ` AND NOT EXISTS (SELECT 1 FROM document_review_drafts rd WHERE rd.organization_id=e.organization_id
+		AND rd.document_id=e.document_id AND rd.revision>e.draft_revision)`
+}
 
 func New(ctx context.Context, databaseURL string, maxConnections int32, logger *slog.Logger) (*Store, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
@@ -42,7 +53,11 @@ func (s *Store) Ready(ctx context.Context) error {
 	defer s.slow(started, "ready")
 	var version int
 	var dirty bool
-	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < requiredMigrationVersion {
+	minimum := requiredMigrationVersion
+	if s.reviewEnabled {
+		minimum = 12
+	}
+	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < minimum {
 		return errors.New("database migration is not ready")
 	}
 	return nil

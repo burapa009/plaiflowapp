@@ -54,7 +54,7 @@ export function UploadForm({ organization }: { organization: string }) {
   }
 
   return <form onSubmit={upload} className="work-form">
-    <div className="field"><label htmlFor="document-file">เลือกเอกสาร</label><input id="document-file" name="file" type="file" accept="application/pdf,image/jpeg,image/png" required disabled={busy} /><p className="field-help">PDF, JPEG หรือ PNG ไม่เกิน 20 MiB</p></div>
+    <div className="field"><label htmlFor="document-file">เลือกเอกสาร</label><input className="document-file-input" id="document-file" name="file" type="file" accept="application/pdf,image/jpeg,image/png" required disabled={busy} /><p className="field-help">PDF, JPEG หรือ PNG ไม่เกิน 20 MiB</p></div>
     <button className="button" type="submit" disabled={busy}>{busy ? "กำลังส่ง…" : "ส่งเอกสาร"}</button>
     {message && <p role="status" aria-live="polite">{message}</p>}
   </form>;

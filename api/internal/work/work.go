@@ -44,6 +44,7 @@ type Task struct {
 	ID, OrganizationID, Title, Description, CreatorUserID string
 	AssigneeUserID                                        string
 	AssigneeName                                          string
+	ReviewDocumentID                                      string
 	WatcherNames                                          []string
 	Status                                                Status
 	Priority                                              Priority

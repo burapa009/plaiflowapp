@@ -220,7 +220,9 @@ func (s *server) exportDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", map[string]string{"csv": "text/csv; charset=utf-8", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[format])
-	w.Header().Set("Content-Disposition", `attachment; filename="documents-`+s.config.Now().UTC().Format("20060102")+`.`+format+`"`)
+	filename := "documents-"
+	if s.config.ReviewEnabled { filename = "unverified-documents-" }
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+s.config.Now().UTC().Format("20060102")+`.`+format+`"`)
 	_, _ = w.Write(output.Bytes())
 }
 
@@ -303,7 +305,12 @@ func (s *server) openDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	defer body.Close()
 	w.Header().Set("Content-Type", doc.MIME)
-	w.Header().Set("Content-Disposition", "attachment; filename=\"document\"")
+	if r.URL.Query().Get("preview") == "1" {
+		w.Header().Set("Content-Disposition", "inline; filename=\"document\"")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	} else {
+		w.Header().Set("Content-Disposition", "attachment; filename=\"document\"")
+	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Security-Policy", "sandbox")

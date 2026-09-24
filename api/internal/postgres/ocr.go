@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"plaiflow/api/internal/extraction"
 	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/tenant"
@@ -143,6 +145,92 @@ func (s *Store) RetryOCR(ctx context.Context, user, org, doc string, now time.Ti
 		return ocr.State{}, err
 	}
 	if err = auditTenant(ctx, tx, org, user, "ocr.retry", "document", doc, now); err != nil {
+		return ocr.State{}, err
+	}
+	return ocr.State{JobID: id, Status: "Queued"}, tx.Commit(ctx)
+}
+
+func (s *Store) ReprocessOCR(ctx context.Context, user, org, doc, expectedOCR string, expectedDraft int, reason, note, requestID string, now time.Time) (ocr.State, error) {
+	if reason != "quality_issue" && reason != "missing_page" && reason != "other" || len([]rune(note)) > 1000 ||
+		!documentUUID.MatchString(expectedOCR) || expectedDraft < 0 {
+		return ocr.State{}, tenant.ErrForbidden
+	}
+	tx, err := s.organizationTx(ctx, user, org)
+	if err != nil {
+		return ocr.State{}, err
+	}
+	defer tx.Rollback(ctx)
+	role, err := currentRole(ctx, tx, user, org)
+	if err != nil || role != tenant.Owner && role != tenant.Admin {
+		return ocr.State{}, tenant.ErrForbidden
+	}
+	var sha, status, model, pre string
+	err = tx.QueryRow(ctx, `SELECT encode(content_sha256,'hex'),status FROM documents WHERE organization_id=$1 AND id=$2 FOR UPDATE`, org, doc).Scan(&sha, &status)
+	if err != nil || status != "Available" && status != "Archived" {
+		return ocr.State{}, tenant.ErrNotFound
+	}
+	err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM ocr_settings WHERE singleton AND enabled`).Scan(&model, &pre)
+	if err != nil {
+		return ocr.State{}, tenant.ErrForbidden
+	}
+	var currentOCR string
+	err = tx.QueryRow(ctx, `SELECT job_id FROM document_ocr_runs WHERE organization_id=$1 AND document_id=$2
+		AND published_at IS NOT NULL AND superseded_at IS NULL AND deleted_at IS NULL
+		ORDER BY published_at DESC LIMIT 1`, org, doc).Scan(&currentOCR)
+	if err != nil || currentOCR != expectedOCR {
+		return ocr.State{}, extraction.ErrConflict
+	}
+	var pending bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM document_ocr_runs o JOIN durable_jobs j ON j.id=o.job_id
+		WHERE o.organization_id=$1 AND o.document_id=$2 AND j.status IN ('Queued','Running'))`, org, doc).Scan(&pending)
+	if err != nil || pending {
+		return ocr.State{}, tenant.ErrForbidden
+	}
+	id := postgresUUID()
+	fingerprint := doc + ":" + sha + ":" + model + ":" + pre + ":reprocess:" + id
+	payload, _ := json.Marshal(map[string]string{"document_id": doc, "sha256": sha, "model_version": model, "preprocessing_version": pre})
+	_, err = tx.Exec(ctx, `INSERT INTO durable_jobs(id,organization_id,requester_user_id,kind,status,payload,idempotency_key,
+		request_id,max_attempts,available_at,created_at) VALUES($1,$2,$3,'ocr','Queued',$4,$1,$5,3,$6,$6)`, id, org, user, payload, requestID, now)
+	if err != nil {
+		return ocr.State{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO document_ocr_runs(job_id,organization_id,document_id,fingerprint,retry_of)
+		VALUES($1,$2,$3,$4,$5)`, id, org, doc, fingerprint, currentOCR)
+	if err != nil {
+		return ocr.State{}, err
+	}
+	var draftRevision int
+	err = tx.QueryRow(ctx, `SELECT revision FROM document_review_drafts WHERE organization_id=$1 AND document_id=$2 FOR UPDATE`, org, doc).Scan(&draftRevision)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return ocr.State{}, err
+	}
+	if draftRevision != expectedDraft {
+		return ocr.State{}, extraction.ErrConflict
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO document_review_drafts(organization_id,document_id,ocr_job_id,revision,
+		values,decisions,updated_by,updated_at) VALUES($1,$2,$3,$4,'{}'::jsonb,'{}'::jsonb,$5,$6)
+		ON CONFLICT(organization_id,document_id) DO UPDATE SET ocr_job_id=excluded.ocr_job_id,
+		revision=excluded.revision,values='{}'::jsonb,decisions='{}'::jsonb,updated_by=excluded.updated_by,
+		updated_at=excluded.updated_at`, org, doc, id, draftRevision+1, user, now)
+	if err != nil {
+		return ocr.State{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO document_review_draft_history(organization_id,document_id,revision,ocr_job_id,
+		values,decisions,updated_by,updated_at) VALUES($1,$2,$3,$4,'{}'::jsonb,'{}'::jsonb,$5,$6)`, org, doc, draftRevision+1, id, user, now)
+	if err != nil {
+		return ocr.State{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO document_review_returns(id,organization_id,document_id,ocr_job_id,action,
+		reason_code,private_note,returned_by,returned_at) VALUES($1,$2,$3,$4,'Reprocess',$5,$6,$7,$8)`,
+		postgresUUID(), org, doc, currentOCR, reason, strings.TrimSpace(note), user, now)
+	if err != nil {
+		return ocr.State{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,actor_user_id,event_type,target_type,target_id,
+		request_id,outcome,reason_code,occurred_at,metadata) VALUES($1,$2,'review.reprocess','document',$3,$4,
+		'queued',$5,$6,jsonb_build_object('old_ocr_job_id',$7,'new_ocr_job_id',$8,'draft_revision',$9))`,
+		org, user, doc, requestID, reason, now, currentOCR, id, draftRevision+1)
+	if err != nil {
 		return ocr.State{}, err
 	}
 	return ocr.State{JobID: id, Status: "Queued"}, tx.Commit(ctx)

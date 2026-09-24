@@ -26,6 +26,7 @@ func (extractionOCR) OCRState(context.Context, string, string, string) (ocr.Stat
 type extractionStore struct {
 	extraction.Store
 	review extraction.Review
+	draft  extraction.ReviewDraft
 }
 
 func (s *extractionStore) CurrentReview(context.Context, string, string, string) (extraction.Review, error) {
@@ -44,6 +45,60 @@ func (s *extractionStore) ListCurrentReviews(context.Context, string, string, in
 		return nil, nil
 	}
 	return []extraction.Review{s.review}, nil
+}
+func (s *extractionStore) CurrentDraft(context.Context, string, string, string) (extraction.ReviewDraft, error) {
+	return s.draft, nil
+}
+func (s *extractionStore) SaveDraft(_ context.Context, draft extraction.ReviewDraft, expected int, _ string) (extraction.ReviewDraft, error) {
+	if expected != s.draft.Revision {
+		return extraction.ReviewDraft{}, extraction.ErrConflict
+	}
+	draft.Revision = expected + 1
+	s.draft = draft
+	return draft, nil
+}
+
+func TestReviewerCanSaveDraftWithoutConfirmingAndStaleSaveConflicts(t *testing.T) {
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	authService, err := newTestAuth(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sample, _ := json.Marshal(ocr.Result{SchemaVersion: 1, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{{Text: "INV-42", Confidence: .98}}}}})
+	blobs := &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}}
+	store := &extractionStore{}
+	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{}, OCRStorage: blobs,
+		Extraction: store, ExtractionEnabled: true, ReviewEnabled: true, Now: func() time.Time { return now }}, &fakeStore{})
+	base := "https://app.example/v1/o/org-1/documents/doc-1/extraction"
+	form := url.Values{"csrf_token": {"csrf"}, "ocr_job_id": {"ocr-1"}, "expected_draft_revision": {"0"},
+		"document_number": {"INV-42"}, "document_number_decision": {"corrected"}}
+	request := httptest.NewRequest(http.MethodPost, base+"/draft", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", "https://app.example")
+	request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != 200 || store.draft.Revision != 1 || store.review.ID != "" {
+		t.Fatalf("save status=%d draft=%+v review=%+v body=%s", response.Code, store.draft, store.review, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, base+"/draft", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", "https://app.example")
+	request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != 409 || store.draft.Revision != 1 {
+		t.Fatalf("stale save status=%d body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "https://app.example/v1/o/other-org/documents/doc-1/extraction/draft", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", "https://app.example")
+	request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != 404 {
+		t.Fatalf("cross-tenant save status=%d", response.Code)
+	}
 }
 
 type extractionBlobs struct{ objects map[string][]byte }

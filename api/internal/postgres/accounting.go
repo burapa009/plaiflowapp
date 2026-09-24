@@ -160,10 +160,11 @@ func (s *Store) Evaluate(ctx context.Context, user, org string, review extractio
 	}
 	defer tx.Rollback(ctx)
 	var currentID string
-	err = tx.QueryRow(ctx, `SELECT e.id FROM document_extraction_reviews e JOIN documents d ON d.organization_id=e.organization_id AND d.id=e.document_id
+	query := `SELECT e.id FROM document_extraction_reviews e JOIN documents d ON d.organization_id=e.organization_id AND d.id=e.document_id
 		JOIN document_ocr_runs o ON o.job_id=e.ocr_job_id AND o.organization_id=e.organization_id AND o.document_id=e.document_id
 		WHERE e.organization_id=$1 AND e.document_id=$2 AND e.superseded_at IS NULL AND d.status IN ('Available','Archived')
-		AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL`, org, review.DocumentID).Scan(&currentID)
+		AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL` + s.currentDraftSQL()
+	err = tx.QueryRow(ctx, query, org, review.DocumentID).Scan(&currentID)
 	if errors.Is(err, pgx.ErrNoRows) || currentID != review.ID {
 		return accounting.Evaluation{}, accounting.ErrConflict
 	}
@@ -269,10 +270,11 @@ func (s *Store) Approve(ctx context.Context, input accounting.ApproveInput) (acc
 	}
 	var currentReviewID string
 	var currentRevision int
-	err = tx.QueryRow(ctx, `SELECT e.id,e.revision FROM document_extraction_reviews e JOIN document_ocr_runs o
+	query := `SELECT e.id,e.revision FROM document_extraction_reviews e JOIN document_ocr_runs o
 		ON o.job_id=e.ocr_job_id AND o.organization_id=e.organization_id AND o.document_id=e.document_id
 		WHERE e.organization_id=$1 AND e.document_id=$2 AND e.superseded_at IS NULL
-		AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL FOR UPDATE OF e`, input.OrganizationID, input.DocumentID).Scan(&currentReviewID, &currentRevision)
+		AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL` + s.currentDraftSQL() + ` FOR UPDATE OF e`
+	err = tx.QueryRow(ctx, query, input.OrganizationID, input.DocumentID).Scan(&currentReviewID, &currentRevision)
 	if err != nil || currentReviewID != input.ReviewID || currentRevision != input.ReviewRevision {
 		return accounting.Approval{}, accounting.ErrConflict
 	}
@@ -360,14 +362,15 @@ func (s *Store) ListApproved(ctx context.Context, user, org string, limit int, d
 	if err != nil || role != tenant.Owner && role != tenant.Admin {
 		return nil, tenant.ErrForbidden
 	}
-	rows, err := tx.Query(ctx, `SELECT a.id,a.revision,a.document_id,a.review_id,a.review_revision,a.category_id,a.category_name,
+	query := `SELECT a.id,a.revision,a.document_id,a.review_id,a.review_revision,a.category_id,a.category_name,
 		coalesce(a.vendor_id::text,''),a.vendor_contact_code,a.suggestion_basis,coalesce(a.rule_version,0),a.approved_at
 		FROM accounting_suggestions a JOIN document_extraction_reviews e ON e.organization_id=a.organization_id AND e.id=a.review_id
 		JOIN documents d ON d.organization_id=a.organization_id AND d.id=a.document_id
 		JOIN document_ocr_runs o ON o.job_id=e.ocr_job_id AND o.organization_id=e.organization_id AND o.document_id=e.document_id
 		WHERE a.organization_id=$1 AND ($3='' OR a.document_id::text=$3) AND a.superseded_at IS NULL AND e.superseded_at IS NULL AND d.status='Available'
-		AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL
-		ORDER BY a.approved_at DESC,a.id DESC LIMIT $2`, org, limit+1, documentID)
+		AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL` + s.currentDraftSQL() + `
+		ORDER BY a.approved_at DESC,a.id DESC LIMIT $2`
+	rows, err := tx.Query(ctx, query, org, limit+1, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -412,14 +415,14 @@ func (s *Store) ValidateApprovedSnapshot(ctx context.Context, user, org string, 
 	// ponytail: bounded per-row recheck avoids a dynamic SQL builder; replace if 100-row latency breaches the measured target.
 	for _, item := range items {
 		var valid bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM accounting_suggestions a
+		query := `SELECT EXISTS(SELECT 1 FROM accounting_suggestions a
 			JOIN document_extraction_reviews e ON e.organization_id=a.organization_id AND e.id=a.review_id
 			JOIN documents d ON d.organization_id=a.organization_id AND d.id=a.document_id
 			JOIN document_ocr_runs o ON o.job_id=e.ocr_job_id AND o.organization_id=e.organization_id AND o.document_id=e.document_id
 			WHERE a.organization_id=$1 AND a.id=$2 AND a.document_id=$3 AND a.review_id=$4 AND a.review_revision=$5
 			AND a.superseded_at IS NULL AND e.superseded_at IS NULL AND d.status='Available'
-			AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL)`,
-			org, item.ID, item.DocumentID, item.ReviewID, item.ReviewRevision).Scan(&valid)
+			AND o.published_at IS NOT NULL AND o.superseded_at IS NULL AND o.deleted_at IS NULL` + s.currentDraftSQL() + `)`
+		err = tx.QueryRow(ctx, query, org, item.ID, item.DocumentID, item.ReviewID, item.ReviewRevision).Scan(&valid)
 		if err != nil || !valid {
 			return accounting.ErrConflict
 		}

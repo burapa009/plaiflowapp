@@ -11,7 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"plaiflow/api/internal/accounting"
+	"plaiflow/api/internal/document"
+	"plaiflow/api/internal/extraction"
 	"plaiflow/api/internal/job"
+	"plaiflow/api/internal/plan"
 )
 
 func (s *server) registerJobRoutes(mux *http.ServeMux) {
@@ -38,6 +42,17 @@ func (s *server) retrieveArtifact(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if artifact.Product == "raw_documents" || artifact.Product == "confirmed_values" || artifact.Product == "approved_suggestions" {
+		capability := plan.ExportCSV
+		if artifact.Format == "xlsx" {
+			capability = plan.ExportXLSX
+		}
+		decision, gateErr := s.config.Gate.Check(r.Context(), organizationID, capability, 0)
+		if gateErr != nil || !decision.Allowed {
+			http.NotFound(w, r)
+			return
+		}
+	}
 	if err := s.config.Jobs.RecordArtifactDownload(r.Context(), userID, organizationID, jobID, s.config.Now().UTC()); err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "artifact_unavailable", "Artifact is unavailable")
 		return
@@ -53,7 +68,17 @@ func (s *server) retrieveArtifact(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", `attachment; filename="plaiflow-export.`+artifact.Format+`"`)
+	filename := "plaiflow-export"
+	if artifact.Product == "raw_documents" {
+		filename = "unverified-documents"
+	}
+	if artifact.Product == "confirmed_values" {
+		filename = "structured-documents-v1"
+	}
+	if artifact.Product == "approved_suggestions" {
+		filename = "accounting_suggestions_v1-generic"
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`.`+artifact.Format+`"`)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Length", strconv.FormatInt(artifact.ByteCount, 10))
 	_, _ = io.Copy(w, body)
@@ -131,7 +156,62 @@ func (s *server) exportRows(w http.ResponseWriter, r *http.Request) {
 		s.writeJobError(w, r, err)
 		return
 	}
+	if page.Product != "" {
+		if !s.config.ReviewEnabled {
+			writeError(w, r, 503, "review_unavailable", "Review export is disabled")
+			return
+		}
+		switch page.Product {
+		case "raw_documents":
+			page.Header = document.ExportHeader
+		case "confirmed_values":
+			page.Header = structuredHeader
+		case "approved_suggestions":
+			page.Header = accounting.ExportHeader
+		default:
+			writeError(w, r, 503, "export_unavailable", "Export product is invalid")
+			return
+		}
+		page.Values = make([][]string, 0, len(page.Entries))
+		for _, item := range page.Entries {
+			if page.Product == "raw_documents" {
+				page.Values = append(page.Values, document.ExportValues(item.Document))
+				continue
+			}
+			meta := extraction.Review{ID: item.Review.ID, OrganizationID: item.Review.OrganizationID,
+				DocumentID: item.Review.DocumentID, OCRJobID: item.Review.OCRJobID, Revision: item.Review.Revision,
+				ObjectKey: item.Review.ObjectKey, ConfirmedBy: item.Review.ConfirmedBy, ConfirmedAt: item.Review.ConfirmedAt}
+			review, readErr := s.readReview(r.Context(), meta)
+			if readErr != nil {
+				writeError(w, r, 503, "export_unavailable", "Reviewed values are unavailable")
+				return
+			}
+			if page.Product == "approved_suggestions" {
+				approved := accounting.Approval{ID: item.Approval.ID, Revision: item.Approval.Revision,
+					DocumentID: item.Approval.DocumentID, ReviewID: item.Approval.ReviewID,
+					ReviewRevision: item.Approval.ReviewRevision, CategoryID: item.Approval.CategoryID,
+					CategoryName: item.Approval.CategoryName, VendorID: item.Approval.VendorID,
+					ContactCode: item.Approval.ContactCode, Basis: item.Approval.Basis,
+					RuleVersion: item.Approval.RuleVersion, ApprovedAt: item.Approval.ApprovedAt, Warnings: []string{}}
+				row, rowErr := accounting.ExportRow(approved, *review)
+				if rowErr != nil {
+					writeError(w, r, 409, "source_changed", "Source changed; request a new export")
+					return
+				}
+				page.Values = append(page.Values, row)
+			} else {
+				page.Values = append(page.Values, structuredExportValues(*review))
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func structuredExportValues(review extraction.Review) []string {
+	v := review.Values
+	return []string{review.DocumentID, review.DocumentType, v["issue_date"], v["document_number"], v["seller_name"],
+		v["seller_tax_id"], v["buyer_name"], v["buyer_tax_id"], v["currency"], v["subtotal"], v["vat_amount"],
+		v["total_amount"], review.ConfirmedAt.UTC().Format(time.RFC3339), review.ConfirmedBy, strconv.Itoa(extraction.SchemaVersion)}
 }
 
 func (s *server) uploadArtifact(w http.ResponseWriter, r *http.Request) {
