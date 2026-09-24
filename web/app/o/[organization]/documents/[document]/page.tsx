@@ -1,4 +1,4 @@
-import { sessionGET } from "@/lib/session-api";
+import { sessionGET, sessionPOST } from "@/lib/session-api";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import OCRPanel from "./ocr-panel";
@@ -24,6 +24,13 @@ type Detail = {
   sources: Source[];
 };
 
+async function archiveDocument(organization: string, document: string) {
+  "use server";
+  const response = await sessionPOST(`/v1/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(document)}/archive`, new URLSearchParams());
+  if (response?.status === 401) redirect("/");
+  redirect(`/o/${encodeURIComponent(organization)}/documents?${response?.ok ? "updated=1" : "error=status"}`);
+}
+
 export default async function DocumentDetailPage({ params, searchParams }: {
   params: Promise<{ organization: string; document: string }>;
   searchParams: Promise<{ ocr?: string; queue_cursor?: string; queue_view?: string; queue_status?: string; previous?: string }>;
@@ -31,11 +38,15 @@ export default async function DocumentDetailPage({ params, searchParams }: {
   const { organization, document } = await params;
   const { ocr, queue_cursor, queue_view, queue_status, previous } = await searchParams;
   const base = `/o/${encodeURIComponent(organization)}/documents`;
-  const response = await sessionGET(`/v1${base}/${encodeURIComponent(document)}/sources`);
+  const [response, organizationResponse] = await Promise.all([
+    sessionGET(`/v1${base}/${encodeURIComponent(document)}/sources`),
+    sessionGET(`/v1/o/${encodeURIComponent(organization)}`),
+  ]);
   if (response?.status === 401) redirect("/");
   if (response?.status === 404) notFound();
   if (!response?.ok) return <section className="error-state" role="alert"><h1>ยังเปิดรายละเอียดเอกสารไม่ได้</h1><Link href={base}>กลับไปรายการเอกสาร</Link></section>;
   const { document: item, sources } = await response.json() as Detail;
+  const membership = organizationResponse?.ok ? (await organizationResponse.json() as { membership: { role: string } }).membership : null;
   let nextDocument = "";
   let nextAcceptedAt = "";
   let queueLoaded = false;
@@ -63,7 +74,7 @@ export default async function DocumentDetailPage({ params, searchParams }: {
       <svg aria-hidden="true" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M5 12h14" /></svg>
       กลับไปรายการเอกสาร
     </Link>
-    <header className="work-header"><div><p className="eyebrow">DOCUMENT</p><h1>{item.filename}</h1><p className="intro">{item.status} · {item.mime} · {Math.ceil(item.size / 1024)} KB · รับเมื่อ {date(item.accepted_at)}</p></div>{item.status !== "Trash" && <a className="secondary-button" href={`/api/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(item.id)}/original`}>ดาวน์โหลดต้นฉบับ</a>}</header>
+    <header className="work-header"><div><p className="eyebrow">DOCUMENT</p><h1>{item.filename}</h1><p className="intro">{item.status} · {item.mime} · {Math.ceil(item.size / 1024)} KB · รับเมื่อ {date(item.accepted_at)}</p></div><div className="card-actions">{item.status !== "Trash" && <a className="secondary-button" href={`/api/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(item.id)}/original`}>ดาวน์โหลดต้นฉบับ</a>}{item.status === "Available" && (membership?.role === "Owner" || membership?.role === "Admin") && <form action={archiveDocument.bind(null, organization, document)}><button className="secondary-button" type="submit">เก็บถาวร</button></form>}</div></header>
     <section className="rounded-[1.2rem] border border-line bg-surface p-5 shadow-panel" aria-labelledby="source-heading"><h2 id="source-heading">แหล่งที่มา</h2>
       {sources.length === 0 ? <p>ไม่มีแหล่งที่มาที่คุณมีสิทธิ์ดู</p> : <ol className="grid gap-4 pl-6 [&>li]:break-words [&>li]:border-b [&>li]:border-line [&>li]:pb-4 [&>li:last-child]:border-0 [&_span]:block [&_span]:text-muted">{sources.map((source) => <li key={source.id}>
         <strong>{source.channel}</strong><span>รับเมื่อ {date(source.accepted_at)}</span>{source.submitted_by && <span>ส่งโดย {source.submitted_by}</span>}
