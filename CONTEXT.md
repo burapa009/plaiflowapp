@@ -13,8 +13,24 @@ _Avoid_: Account, LINE user, Google user
 _Avoid_: User, social account
 
 **Organization**:
-ขอบเขต tenant ที่เป็นเจ้าของข้อมูลและการตั้งค่าของธุรกิจ โดย User เข้าถึง Organization ผ่าน Membership เท่านั้น
+ขอบเขต tenant ที่เป็นเจ้าของข้อมูลและการตั้งค่าของธุรกิจ โดย User เข้าถึงผ่าน Membership ของ Organization นั้น หรือสิทธิ์สำนักงานบัญชีที่ Client Organization อนุมัติอย่างชัดเจน
 _Avoid_: Account, workspace, tenant
+
+**Accounting Firm Organization**:
+Organization ที่เป็นตัวแทนสำนักงานบัญชี มี Membership ของบุคลากรสำนักงานเอง และไม่เป็นเจ้าของข้อมูลของ Organization ลูกค้า
+_Avoid_: Firm entity, shared client tenant
+
+**Client Organization**:
+Organization ที่เป็นเจ้าของข้อมูลธุรกิจของตนเองและอาจอนุญาตให้ Accounting Firm Organization ทำงานให้ โดยไม่เปลี่ยนเจ้าของข้อมูล
+_Avoid_: Customer, Business Contact, firm-owned client record
+
+**Firm Access Grant**:
+สิทธิ์ที่ Client Organization อนุมัติให้ Accounting Firm Organization ทำงานกับข้อมูลลูกค้าภายในขอบเขตที่กำหนด โดยไม่ให้สิทธิ์แก่พนักงานสำนักงานทุกคนโดยอัตโนมัติ
+_Avoid_: Firm Plan, client Membership, blanket tenant access
+
+**Client Assignment**:
+ความสัมพันธ์ที่ Accounting Firm Organization ระบุว่าบุคลากรคนใดรับผิดชอบ Client Organization ที่ได้รับ Firm Access Grant โดย Assignment ไม่ขยายขอบเขตสิทธิ์ของ Grant
+_Avoid_: Client Membership, access grant, Task Assignee
 
 **Membership**:
 ความสัมพันธ์ระหว่าง User กับ Organization ซึ่งระบุสิทธิ์ของ User ภายใน Organization นั้น
@@ -88,6 +104,10 @@ _Avoid_: Browser timezone, UTC offset
 คู่ของ User และ Organization ที่ระบบยืนยัน Membership แล้วเพื่อใช้เป็นขอบเขต authorization และข้อมูลของคำขอหนึ่งรายการ
 _Avoid_: Active Organization, client organization
 
+**Firm Client Context**:
+ขอบเขตการทำงานหนึ่งรายการที่ยืนยัน Membership ใน Accounting Firm Organization, Client Assignment และ Firm Access Grant ปัจจุบัน พร้อมสิทธิ์ต่อข้อมูลของ Client Organization ที่เกี่ยวข้อง
+_Avoid_: Organization Context, firm-wide access, implicit client Membership
+
 **Operations Dashboard**:
 มุมมองสุขภาพทางเทคนิคของ PlaiFlow สำหรับ operator เช่น API, database, worker และการประมวลผล Inbound Event
 _Avoid_: Work Dashboard, Organization Dashboard
@@ -104,6 +124,10 @@ _Avoid_: Autonomous agent, Task command
 การส่งออก Task หรือ Business Master Data ที่ผ่าน authorization แล้วจาก Organization เดียวตาม Export Template และตัวกรองของคำขอ โดยไม่รวม raw event, Notification history, LINE identifier หรือข้อมูล Membership
 _Avoid_: Database dump, audit export
 
+**Multi-Client Export**:
+workbook ที่มีเวอร์ชันซึ่งรวม Approved Export Rows ปัจจุบันของ Client Organization ที่ผู้ขอมีสิทธิ์เท่านั้น โดยมี Summary และ sheet แยกตามลูกค้า
+_Avoid_: CSV Export, database dump, accounting-system import template
+
 **Entitlement**:
 สิทธิ์เชิงพาณิชย์ของ Organization ในการใช้ capability หนึ่ง ซึ่งแยกจาก Membership และไม่สามารถให้สิทธิ์เข้าถึงข้อมูลแทน authorization ได้
 _Avoid_: Role, permission, frontend plan state
@@ -117,8 +141,56 @@ _Avoid_: Permission, authorization
 _Avoid_: Authorization, completed Usage, client-side counter
 
 **Plan**:
-แพ็กเกจเชิงพาณิชย์ของ Organization จาก catalog ที่ระบบฝั่ง server เชื่อถือ ซึ่งจัดกลุ่ม Entitlement และ Usage Limit โดยชุดเริ่มต้นคือ Free, Starter และ Business
+แพ็กเกจเชิงพาณิชย์ของ Organization จาก catalog ที่ระบบฝั่ง server เชื่อถือ ซึ่งจัดกลุ่ม Entitlement และ Usage Limit โดยมี Free, Starter, Business และ Accounting Firm
 _Avoid_: Role, client-selected price, Trial
+
+**Billing Price**:
+ยอดเงินที่ Organization ต้องชำระสำหรับ Plan และ Billing Interval หนึ่งตาม catalog ที่เชื่อถือได้ โดยราคาเฉลี่ยต่อเดือนเป็นเพียงข้อมูลเปรียบเทียบ ไม่ใช่ยอดที่จะเรียกเก็บ
+_Avoid_: effective monthly price, client-supplied amount, Entitlement
+
+**Billing Interval**:
+ระยะเวลาระหว่างการต่ออายุและชำระเงินของ Subscription ซึ่งมีรายเดือน ทุก 6 เดือน หรือรายปี
+_Avoid_: monthly usage period, Trial duration
+
+**Billing Customer**:
+ตัวตนผู้ชำระเงินของ Organization หนึ่งแห่งกับผู้ให้บริการชำระเงิน โดยไม่แทน User, Membership หรือ Client Organization ที่สำนักงานบัญชีดูแล
+_Avoid_: User, Business Contact, Accounting Firm client
+
+**Billing Contact Email**:
+อีเมลที่ Owner ระบุและยืนยันสำหรับรับข้อมูลการชำระเงินของ Organization ซึ่งอาจต่างจากอีเมลของ External Identity ที่ใช้ลงชื่อเข้าใช้
+_Avoid_: unverified provider email, User identity, LINE contact
+
+**Billing Profile**:
+ข้อมูลชื่อ ที่อยู่ และเลขผู้เสียภาษีของผู้ซื้อที่ Owner ตรวจทานก่อนชำระเงิน โดยข้อมูล ณ วันที่ชำระถูกบันทึกกับใบเสร็จของผู้ขาย และการแก้ไข Profile มีผลกับใบเสร็จใหม่เท่านั้น
+_Avoid_: live Organization display name, Stripe Customer identity, editable issued receipt
+
+**Seller Receipt**:
+ใบรับเงินของผู้ขายที่ออกหลังยืนยันว่าชำระสำเร็จ โดยมีเลขลำดับ ข้อมูลผู้ขาย ผู้ซื้อ และยอดเงินที่บันทึกไว้ ณ วันออกใบรับ แยกจากหลักฐานการชำระเงินหรือ invoice ของ Stripe และไม่ใช่ใบกำกับภาษี VAT
+_Avoid_: Stripe payment receipt, VAT tax invoice, unverified checkout redirect
+
+**Scan Credit**:
+หน่วยสิทธิ์เสริมที่ Organization ซื้อเพื่อใช้สแกนหน้าเอกสารอัตโนมัติ โดยหนึ่งหน้าที่สแกนใช้หนึ่งเครดิต และไฟล์หลายหน้าใช้ตามจำนวนหน้า ยอดที่เหลือยกไปเดือนถัดไปโดยไม่หมดอายุ แยกจากโควตารับ Document และไม่ใช่เงินคงเหลือ
+_Avoid_: Stripe Billing Credit, Document quota, OCR retry attempt
+
+**Document Allowance**:
+จำนวน Document ใหม่ที่ Organization ยังรับได้จากโควตารายเดือนของ Plan โดยยอดที่ยังไม่ใช้ของ Plan ชำระเงินยกไปเดือนถัดไปและแต่ละยอดหมดอายุหลังได้รับสองปี ส่วน Free ไม่สะสมยอดรายเดือน การผิดนัดชำระเงินอาจพักยอดชั่วคราวตามช่วงกู้คืน และ Scan Credit เป็นสิทธิ์แยกต่างหาก
+_Avoid_: Scan Credit, OCR pages, historical Document count
+
+**Subscription**:
+ความสัมพันธ์การชำระเงินของ Organization หนึ่งแห่งสำหรับ Plan และ Billing Interval ที่เลือก โดยสถานะที่ตรวจยืนยันแล้วเป็นข้อมูลสำหรับกำหนดสิทธิ์เชิงพาณิชย์
+_Avoid_: Trial, Firm Access Grant, browser checkout result
+
+**Grace Period**:
+ช่วงเจ็ดวันหลังการชำระเงินต่ออายุล้มเหลวที่ Organization ยังใช้ Entitlement ของ Plan ที่ชำระไว้ได้ ระหว่างรอแก้การชำระเงิน โดยไม่ลบข้อมูลเมื่อช่วงนี้สิ้นสุด
+_Avoid_: Trial, free extension, data retention deadline
+
+**Scheduled Cancellation**:
+การหยุดต่ออายุ Subscription ณ สิ้นสุดรอบที่ชำระแล้ว โดย Entitlement เดิมคงอยู่จนถึงวันสิ้นสุดนั้นและ Owner ยกเลิกคำขอนี้ได้ก่อนถึงวันดังกล่าว
+_Avoid_: immediate revocation, refund request
+
+**Accounting Firm Plan**:
+Plan ของ Accounting Firm Organization ที่กำหนด capability และขีดจำกัดการใช้งานของสำนักงาน โดยไม่ให้สิทธิ์เข้าถึงข้อมูลของ Client Organization แทน Firm Access Grant
+_Avoid_: Client Organization Plan, Firm Access Grant, staff role
 
 **Trial**:
 สถานะชั่วคราวที่ Owner เปิดให้ Organization ได้รับ capability แบบ Business พร้อม Usage Limit เฉพาะ Trial เป็นเวลา 14 วันหนึ่งครั้งโดยไม่ต้องใช้บัตร เมื่อสิ้นสุด Organization กลับสู่ Free โดยยังอ่านข้อมูลเดิมและใช้การควบคุมความปลอดภัยได้
@@ -133,7 +205,7 @@ _Avoid_: Subscription, checkout, plan assignment
 _Avoid_: Account suspension, data deletion, automatic member removal
 
 **Document Quota Exhausted**:
-สถานะที่จำนวน Document ที่รับสำเร็จในรอบเดือนของ Organization ถึงขีดจำกัดของ Plan ปัจจุบัน จึงหยุดรับ Document ใหม่ที่ไม่ซ้ำ แต่ยังอ่าน ส่งออก และทำงานอื่นตามสิทธิ์เดิมได้
+สถานะที่ยอดโควตารับ Document ที่ใช้ได้ของ Organization หมดลง จึงหยุดรับ Document ใหม่ที่ไม่ซ้ำ แต่ยังอ่าน ส่งออก และทำงานอื่นตามสิทธิ์เดิมได้ โดยโควตารายเดือนที่ยังไม่ใช้สามารถยกไปเดือนถัดไปตามกติกาของ Plan
 _Avoid_: Plan Over Limit, account suspension, overage billing
 
 **Document**:
@@ -147,6 +219,18 @@ _Avoid_: Document copy, provider authorization, rejected intake attempt
 **Document Intake Attempt**:
 คำขอรับไฟล์หนึ่งครั้งที่อาจกำลังตรวจ ผ่านเป็น Document หรือถูกปฏิเสธ โดยรายการที่ถูกปฏิเสธไม่ใช่ Document และไม่ใช้โควตา Document
 _Avoid_: Document, Document Source, accepted original
+
+**Expected Document Item**:
+รายการเอกสารที่บุคคลกำหนดว่าควรได้รับจาก Client Organization สำหรับรอบบัญชีหนึ่ง ซึ่งยังไม่ใช่ Document และจะถือว่าขาดหลัง Due Date ตาม timezone ลูกค้าเมื่อยังไม่มี Document ที่บุคคลผูกไว้
+_Avoid_: Document, OCR prediction, missing-file inference
+
+**Checklist Follow-up Assignment**:
+ความรับผิดชอบของบุคลากรสำนักงานในการติดตาม Expected Document Item หนึ่งรายการ ซึ่งไม่ใช่ Client Assignment และไม่เปลี่ยนสถานะว่าลูกค้าส่งเอกสารครบแล้วหรือยัง
+_Avoid_: Client Assignment, Task Assignee, Document match
+
+**Expected Document Template**:
+รายการที่คาดหวังซ้ำตามรอบบัญชีของ Client Organization ซึ่งสร้าง Expected Document Item สำหรับแต่ละรอบและยังแก้ไขรายการของรอบนั้นได้
+_Avoid_: OCR prediction, Document, automatic file match
 
 **Document Trash**:
 สถานะเอกสารที่ Owner หรือ Admin นำออกจากงานปัจจุบันและกู้คืนได้ภายใน 30 วัน ก่อนลบต้นฉบับถาวร โดยไม่คืน Document Usage ที่เคยใช้

@@ -122,6 +122,33 @@ func (s *Store) CreateInvitation(ctx context.Context, invitation tenant.InviteCr
 	if err != nil || !role.Allows(tenant.InviteMember) {
 		return tenant.ErrForbidden
 	}
+	var firmEver bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM organization_plan_periods
+		WHERE organization_id=$1 AND plan_key='AccountingFirm')`, invitation.OrganizationID).Scan(&firmEver); err != nil {
+		return err
+	}
+	if firmEver {
+		var effective string
+		if err := tx.QueryRow(ctx, `SELECT effective_organization_plan($1::uuid)`, invitation.OrganizationID).Scan(&effective); err != nil {
+			return err
+		}
+		if effective != "AccountingFirm" {
+			return tenant.ErrForbidden
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, invitation.OrganizationID); err != nil {
+			return err
+		}
+		var seats int
+		if err := tx.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM memberships WHERE organization_id=$1)
+			+ (SELECT count(*) FROM invitations WHERE organization_id=$1 AND revoked_at IS NULL
+				AND accepted_at IS NULL AND expires_at>$2)`, invitation.OrganizationID, invitation.Now).Scan(&seats); err != nil {
+			return err
+		}
+		if seats >= 5 {
+			return tenant.ErrConflict
+		}
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO invitations
         (id,organization_id,inviter_user_id,token_hash,created_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6)`,
 		invitation.ID, invitation.OrganizationID, invitation.ActorUserID, invitation.TokenHash, invitation.Now, invitation.ExpiresAt)

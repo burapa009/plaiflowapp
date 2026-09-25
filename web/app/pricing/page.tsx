@@ -30,24 +30,26 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
   const catalog = await loadCatalog();
 
   return <section className="pricing-page">
-    <div className="work-header"><div><p className="eyebrow">Early Access</p><h1>แพ็กเกจ PlaiFlow</h1><p className="intro">เปรียบเทียบสิทธิ์และยอดชำระล่วงหน้าจากข้อมูลเดียวกับที่เซิร์ฟเวอร์ใช้อนุญาตฟีเจอร์</p></div><Link className="secondary-button" href="/">กลับหน้าหลัก</Link></div>
+    <div className="work-header"><div><p className="eyebrow">แพ็กเกจ PlaiFlow</p><h1>ราคาและรอบใช้งาน</h1><p className="intro">เลือกช่วงเวลาแล้วดูยอดเต็มที่ต้องชำระผ่าน PromptPay แต่ละรอบ</p></div><Link className="secondary-button" href="/">กลับหน้าหลัก</Link></div>
     <nav aria-label="เลือกรอบแพ็กเกจ" className="interval-tabs">{intervals.map((item) => <Link key={item} aria-current={item === interval ? "page" : undefined} href={`/pricing?interval=${item}`}>{intervalLabel(item)}</Link>)}</nav>
     {!catalog ? <div className="notice" role="alert"><h2>ยังโหลดแพ็กเกจไม่ได้</h2><p>กรุณาลองใหม่อีกครั้ง</p></div> : <>
-      <div className="pricing-grid">{catalog.plans.map((plan) => <PlanCard key={plan.key} plan={plan} interval={interval} />)}</div>
-      <p className="pricing-note">ราคาที่แสดงเป็นยอดตามรอบแพ็กเกจ ยังไม่เปิดรับชำระเงินในช่วง Early Access</p>
+      <div className="pricing-grid">{catalog.plans.map((plan) => <PlanCard key={plan.key} plan={plan} interval={interval} available={catalog.billing_enabled} />)}</div>
+      <p className="pricing-note">PromptPay ต้องสแกนและยืนยันการชำระใหม่ทุกงวด ไม่มีการหักเงินอัตโนมัติ · ผู้ขายยังไม่จด VAT จึงไม่คิด VAT เพิ่มจากราคาที่แสดง</p>
+      {!catalog.billing_enabled && <p className="pricing-note">ยังไม่เปิดรับชำระเงินจริง</p>}
     </>}
   </section>;
 }
 
-function PlanCard({ plan, interval }: { plan: PlanDefinition; interval: BillingInterval }) {
+function PlanCard({ plan, interval, available }: { plan: PlanDefinition; interval: BillingInterval; available: boolean }) {
   const price = plan.prices[interval];
   const features = Object.entries(plan.entitlements).filter(([key, enabled]) => enabled && featureLabels[key]).map(([key]) => featureLabels[key]);
   return <article className={`plan-card${plan.recommended ? " recommended" : ""}`}>
     {plan.recommended && <span className="status-pill">แนะนำ</span>}
     <h2>{plan.name}</h2>
     <p className="plan-price"><strong>{formatSatang(price.total_satang)}</strong><span> / {intervalLabel(interval)}</span></p>
+    {plan.key !== "Free" && <p className="field-help">ยอดเต็มสำหรับ {intervalLabel(interval)} · เมื่อครบกำหนด ต้องชำระรอบใหม่ด้วยตนเอง</p>}
     {price.months > 1 && <p className="field-help">เฉลี่ย {formatSatang(price.effective_month_satang)} / เดือน{price.saving_percent > 0 ? ` · ประหยัด ${price.saving_percent}%` : ""}</p>}
     <ul>{features.map((feature) => <li key={feature}><span aria-hidden="true">✓</span>{feature}</li>)}</ul>
-    <Link className="button inline-button" href="/">{plan.key === "Free" ? "เริ่มใช้งาน" : "แจ้งความสนใจ"}</Link>
+    {plan.key === "Free" ? <Link className="button inline-button" href="/organizations">เริ่มใช้งานฟรี</Link> : available ? <Link className="button inline-button" href={`/billing/start?plan=${plan.key}&interval=${interval}`}>เลือกแพ็กเกจ</Link> : <span className="secondary-button inline-button" aria-disabled="true">รอเปิดชำระเงิน</span>}
   </article>;
 }

@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"plaiflow/api/internal/auth"
+	"plaiflow/api/internal/billing"
 	"plaiflow/api/internal/config"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
@@ -50,6 +53,22 @@ func main() {
 	defer store.Close()
 	if os.Getenv("REVIEW_ENABLED") == "true" {
 		store.EnableReview()
+	}
+	billingEnabled := os.Getenv("BILLING_ENABLED") == "true"
+	var billingService *billing.Service
+	if billingEnabled {
+		secretKey, webhookSecret := os.Getenv("OMISE_SECRET_KEY"), os.Getenv("OMISE_WEBHOOK_SECRET")
+		decodedSecret, decodeErr := base64.StdEncoding.DecodeString(webhookSecret)
+		validKey := (settings.Environment == "production" && strings.HasPrefix(secretKey, "skey_live_")) ||
+			(settings.Environment != "production" && strings.HasPrefix(secretKey, "skey_test_"))
+		if !validKey || decodeErr != nil || len(decodedSecret) < 16 {
+			logger.Error("billing_configuration_invalid")
+			os.Exit(1)
+		}
+		store.EnableBilling()
+		billingService = &billing.Service{Store: store, Provider: billing.Omise{SecretKey: secretKey},
+			Live: settings.Environment == "production", Now: time.Now}
+		go runBilling(ctx, *billingService, logger)
 	}
 	authService, err := auth.NewService(auth.ServiceConfig{WebOrigin: settings.WebBaseURL, Providers: []auth.Provider{
 		auth.NewLINEProvider(auth.ProviderConfig{ClientID: settings.LineLoginChannel, ClientSecret: settings.LineLoginSecret, RedirectURI: lineCallback}),
@@ -147,6 +166,8 @@ func main() {
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
+			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
+			Billing: billingService, BillingEnabled: billingEnabled, OmiseWebhookSecret: os.Getenv("OMISE_WEBHOOK_SECRET"),
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
@@ -161,4 +182,35 @@ func main() {
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = server.Shutdown(shutdown)
+}
+
+func runBilling(ctx context.Context, service billing.Service, logger *slog.Logger) {
+	events := time.NewTicker(5 * time.Second)
+	reconcile := time.NewTicker(15 * time.Minute)
+	defer events.Stop()
+	defer reconcile.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-events.C:
+			work, cancel := context.WithTimeout(ctx, 20*time.Second)
+			count, err := service.ProcessDue(work)
+			cancel()
+			if err != nil {
+				logger.Warn("billing_event_processing_unavailable")
+			} else if count > 0 {
+				logger.Info("billing_events_processed", "count", count)
+			}
+		case <-reconcile.C:
+			work, cancel := context.WithTimeout(ctx, 30*time.Second)
+			count, err := service.ReconcilePending(work)
+			cancel()
+			if err != nil {
+				logger.Warn("billing_reconciliation_unavailable")
+			} else {
+				logger.Info("billing_reconciliation", "checked", count)
+			}
+		}
+	}
 }

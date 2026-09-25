@@ -11,9 +11,10 @@ type Key string
 type Interval string
 
 const (
-	Free     Key = "Free"
-	Starter  Key = "Starter"
-	Business Key = "Business"
+	Free           Key = "Free"
+	Starter        Key = "Starter"
+	Business       Key = "Business"
+	AccountingFirm Key = "AccountingFirm"
 
 	Monthly   Interval = "monthly"
 	SixMonths Interval = "six_months"
@@ -24,6 +25,10 @@ const (
 	ExportCSV              work.Capability = "business_contacts.export.csv"
 	ExportXLSX             work.Capability = "business_contacts.export.xlsx"
 	ExportDrive            work.Capability = "business_contacts.export.drive"
+	ManageFirm             work.Capability = "firm.manage"
+	FirmPortfolio          work.Capability = "firm.portfolio"
+	FirmReview             work.Capability = "firm.review"
+	FirmApprovedExport     work.Capability = "firm.export.approved"
 )
 
 type Price struct {
@@ -46,14 +51,14 @@ func (d Definition) Allows(capability work.Capability) bool { return d.Entitleme
 
 var catalog = []Definition{
 	{Key: Free, Name: "Free", Prices: prices(0, 0, 0), Entitlements: entitlements(false, false, false)},
-	{Key: Starter, Name: "Starter", Prices: prices(19900, 109848, 199000), Entitlements: entitlements(true, true, false)},
-	{Key: Business, Name: "Business", Recommended: true, Prices: prices(49900, 275448, 499000), Entitlements: entitlements(true, true, true)},
+	{Key: Starter, Name: "Starter", Prices: prices(15000, 85500, 153000), Entitlements: entitlements(true, true, false)},
+	{Key: Business, Name: "Business", Recommended: true, Prices: prices(25000, 142500, 255000), Entitlements: entitlements(true, true, true)},
 }
 
 func prices(monthly, sixMonths, yearly int64) map[Interval]Price {
 	sixMonthSaving, yearlySaving := 0, 0
 	if monthly > 0 {
-		sixMonthSaving, yearlySaving = 8, 17
+		sixMonthSaving, yearlySaving = 5, 15
 	}
 	return map[Interval]Price{
 		Monthly:   {Interval: Monthly, Months: 1, TotalSatang: monthly, EffectiveMonthSatang: monthly},
@@ -80,6 +85,12 @@ func entitlements(importContacts, exportXLSX, exportDrive bool) map[work.Capabil
 func Catalog() []Definition { return append([]Definition(nil), catalog...) }
 
 func Lookup(key Key) (Definition, bool) {
+	if key == AccountingFirm {
+		return Definition{Key: AccountingFirm, Name: "Accounting Firm", Entitlements: map[work.Capability]bool{
+			ManageFirm: true, FirmPortfolio: true, FirmReview: true, FirmApprovedExport: true,
+			work.CreateTasks: true, work.UseAssistant: true,
+		}}, true
+	}
 	for _, definition := range catalog {
 		if definition.Key == key {
 			return definition, true

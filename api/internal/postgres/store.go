@@ -13,14 +13,16 @@ import (
 )
 
 type Store struct {
-	pool          *pgxpool.Pool
-	logger        *slog.Logger
-	reviewEnabled bool
+	pool           *pgxpool.Pool
+	logger         *slog.Logger
+	reviewEnabled  bool
+	billingEnabled bool
 }
 
 const requiredMigrationVersion = 11
 
-func (s *Store) EnableReview() { s.reviewEnabled = true }
+func (s *Store) EnableReview()  { s.reviewEnabled = true }
+func (s *Store) EnableBilling() { s.billingEnabled = true }
 
 func (s *Store) currentDraftSQL() string {
 	if !s.reviewEnabled {
@@ -56,6 +58,9 @@ func (s *Store) Ready(ctx context.Context) error {
 	minimum := requiredMigrationVersion
 	if s.reviewEnabled {
 		minimum = 12
+	}
+	if s.billingEnabled {
+		minimum = 14
 	}
 	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < minimum {
 		return errors.New("database migration is not ready")

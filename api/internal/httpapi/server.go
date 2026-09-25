@@ -17,10 +17,12 @@ import (
 
 	"plaiflow/api/internal/accounting"
 	"plaiflow/api/internal/auth"
+	"plaiflow/api/internal/billing"
 	"plaiflow/api/internal/business"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/extraction"
+	"plaiflow/api/internal/firm"
 	"plaiflow/api/internal/inbound"
 	"plaiflow/api/internal/job"
 	lineadapter "plaiflow/api/internal/line"
@@ -39,34 +41,39 @@ type Store interface {
 }
 
 type Config struct {
-	OCR               ocr.Store
-	OCRJobs           job.Store
-	OCRAuth           *job.WorkerAuth
-	OCRTokens         *job.ArtifactToken
-	OCRStorage        job.ArtifactStore
-	Extraction        extraction.Store
-	ExtractionEnabled bool
-	ReviewEnabled     bool
-	Accounting        accounting.Store
-	AccountingEnabled bool
-	LineSecret        string
-	LineChannel       string
-	DashboardTokens   []string
-	Logger            *slog.Logger
-	Auth              *auth.Service
-	Tenants           tenant.Store
-	Work              work.Store
-	Business          business.Store
-	PlanStore         plan.Store
-	Drive             *drive.Service
-	Documents         *document.Service
-	Jobs              job.Store
-	ReviewExports     job.DocumentExportStore
-	JobWorkerAuth     *job.WorkerAuth
-	JobArtifacts      job.ArtifactStore
-	ArtifactTokens    *job.ArtifactToken
-	Gate              work.Gate
-	Now               func() time.Time
+	OCR                ocr.Store
+	OCRJobs            job.Store
+	OCRAuth            *job.WorkerAuth
+	OCRTokens          *job.ArtifactToken
+	OCRStorage         job.ArtifactStore
+	Extraction         extraction.Store
+	ExtractionEnabled  bool
+	ReviewEnabled      bool
+	FirmEnabled        bool
+	Firm               firm.Store
+	Accounting         accounting.Store
+	AccountingEnabled  bool
+	LineSecret         string
+	LineChannel        string
+	DashboardTokens    []string
+	Logger             *slog.Logger
+	Auth               *auth.Service
+	Tenants            tenant.Store
+	Work               work.Store
+	Business           business.Store
+	PlanStore          plan.Store
+	Billing            *billing.Service
+	BillingEnabled     bool
+	OmiseWebhookSecret string
+	Drive              *drive.Service
+	Documents          *document.Service
+	Jobs               job.Store
+	ReviewExports      job.DocumentExportStore
+	JobWorkerAuth      *job.WorkerAuth
+	JobArtifacts       job.ArtifactStore
+	ArtifactTokens     *job.ArtifactToken
+	Gate               work.Gate
+	Now                func() time.Time
 }
 
 type server struct {
@@ -91,6 +98,9 @@ func New(config Config, store Store) http.Handler {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("POST /webhooks/line", s.webhook)
+	if config.BillingEnabled && config.Billing != nil {
+		mux.HandleFunc("POST /webhooks/omise", s.omiseWebhook)
+	}
 	mux.HandleFunc("GET /v1/dashboard", s.dashboard)
 	mux.HandleFunc("GET /v1/plans", s.listPlans)
 	if config.OCR != nil && config.OCRAuth != nil {
@@ -154,6 +164,12 @@ func New(config Config, store Store) http.Handler {
 		if config.Business != nil && config.PlanStore != nil {
 			s.registerBusinessRoutes(mux)
 		}
+		if config.BillingEnabled && config.Billing != nil {
+			s.registerBillingRoutes(mux)
+		}
+		if config.FirmEnabled && config.Firm != nil {
+			s.registerFirmRoutes(mux)
+		}
 	}
 	return s.observe(mux)
 }
@@ -163,6 +179,12 @@ func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) ready(w http.ResponseWriter, r *http.Request) {
+	if s.config.FirmEnabled {
+		if s.config.Firm == nil || s.config.Firm.ReadyFirm(r.Context()) != nil {
+			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Firm schema is not ready")
+			return
+		}
+	}
 	if s.config.ReviewEnabled && (!s.config.ExtractionEnabled || !s.config.AccountingEnabled) {
 		writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Review dependencies are disabled")
 		return

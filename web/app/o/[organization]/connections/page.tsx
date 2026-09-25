@@ -45,7 +45,7 @@ export default async function ConnectionsPage({ params, searchParams }: { params
   const { membership } = await membershipResponse.json() as { membership: Membership };
   const { configured, connection } = await driveResponse.json() as { configured: boolean; connection: Connection };
   const { effective_plan } = await planResponse.json() as { effective_plan: Plan };
-  const owner = membership.role === "Owner";
+  const manager = membership.role === "Owner" || membership.role === "Admin";
   const included = effective_plan.entitlements["business_contacts.export.drive"] === true;
 
   return <section className="connections-page">
@@ -53,7 +53,7 @@ export default async function ConnectionsPage({ params, searchParams }: { params
     {query.drive && <p className="success-message" role="status">{query.drive === "connected" ? "เชื่อมต่อ Google Drive แล้ว" : query.drive === "disconnected" ? "ยกเลิกการเชื่อมต่อแล้ว PlaiFlow หยุดใช้สิทธิ์เดิมทันที" : query.drive === "checked" ? "ตรวจสอบสิทธิ์แล้ว" : "สิทธิ์หมดอายุ กรุณาเชื่อมต่อใหม่ ระบบสร้างงานแจ้ง Owner แล้ว"}</p>}
     {query.error && <p className="form-error" role="alert">{connectionError(query.error)}</p>}
     <article className="card connection-card"><div><p className="field-help">Google Drive · แพ็กเกจ {effective_plan.name}</p><h2>{connection.status}</h2>{connection.google_email && <p>{connection.google_email}</p>}<p className="field-help">ขอบเขตสิทธิ์: drive.file, email และ openid เท่านั้น</p></div>
-      {!owner ? <p className="field-help">เฉพาะ Owner เท่านั้นที่เปลี่ยนการเชื่อมต่อได้</p> : !configured ? <p className="form-error">Staging ยังไม่ได้ตั้งค่า Google Drive OAuth</p> : !included ? <div><p className="field-help">แพ็กเกจนี้ยังไม่รวม Google Drive</p><Link className="secondary-button" href="/pricing">ดูแพ็กเกจ</Link></div> : connection.status === "Connected" ? <div className="card-actions"><form action={checkDrive.bind(null, organization)}><button className="secondary-button" type="submit">ตรวจสอบสิทธิ์</button></form><form action={disconnectDrive.bind(null, organization)}><button className="danger-button" type="submit">ยกเลิกการเชื่อมต่อ</button></form></div> : <form action={connectDrive.bind(null, organization)}><button className="button" type="submit">{connection.status === "Reauthorization Required" ? "เชื่อมต่อใหม่" : "เชื่อมต่อ Google Drive"}</button></form>}
+      {!manager ? <p className="field-help">เฉพาะ Owner หรือ Admin ของลูกค้าที่เปลี่ยนการเชื่อมต่อได้</p> : !configured ? <p className="form-error">Staging ยังไม่ได้ตั้งค่า Google Drive OAuth</p> : !included ? <div><p className="field-help">แพ็กเกจนี้ยังไม่รวม Google Drive</p><Link className="secondary-button" href="/pricing">ดูแพ็กเกจ</Link></div> : connection.status === "Connected" ? <div className="card-actions"><form action={checkDrive.bind(null, organization)}><button className="secondary-button" type="submit">ตรวจสอบสิทธิ์</button></form><form action={disconnectDrive.bind(null, organization)}><button className="danger-button" type="submit">ยกเลิกการเชื่อมต่อ</button></form></div> : <form action={connectDrive.bind(null, organization)}><button className="button" type="submit">{connection.status === "Reauthorization Required" ? "เชื่อมต่อใหม่" : "เชื่อมต่อ Google Drive"}</button></form>}
     </article>
   </section>;
 }

@@ -43,8 +43,8 @@ func (s *server) connectDrive(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if membership.Role != tenant.Owner {
-		writeError(w, r, http.StatusForbidden, "forbidden", "Only the Owner can connect Google Drive")
+	if membership.Role != tenant.Owner && membership.Role != tenant.Admin {
+		writeError(w, r, http.StatusForbidden, "forbidden", "Only a client manager can connect Google Drive")
 		return
 	}
 	if s.config.Now().UTC().Sub(session.AuthenticatedAt) > 10*time.Minute {
@@ -102,8 +102,8 @@ func (s *server) disconnectDrive(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if membership.Role != tenant.Owner {
-		writeError(w, r, http.StatusForbidden, "forbidden", "Only the Owner can disconnect Google Drive")
+	if membership.Role != tenant.Owner && membership.Role != tenant.Admin {
+		writeError(w, r, http.StatusForbidden, "forbidden", "Only a client manager can disconnect Google Drive")
 		return
 	}
 	if s.config.Drive == nil {
@@ -122,8 +122,8 @@ func (s *server) checkDrive(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if membership.Role != tenant.Owner {
-		writeError(w, r, http.StatusForbidden, "forbidden", "Only the Owner can check Google Drive")
+	if membership.Role != tenant.Owner && membership.Role != tenant.Admin {
+		writeError(w, r, http.StatusForbidden, "forbidden", "Only a client manager can check Google Drive")
 		return
 	}
 	if s.config.Drive == nil {

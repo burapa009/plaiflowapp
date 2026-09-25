@@ -67,6 +67,7 @@ jobs:
       - run: go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
       - run: migrate -path api/migrations -database "$TEST_DATABASE_URL" up
       - run: cd api && go test -p 1 ./internal/postgres ./internal/httpapi
+      - run: cd api && OCR_TEST_ADMIN_URL="$TEST_DATABASE_URL" go test ./internal/postgres -run '^TestFirmGrantAssignmentAndImmediateRevoke$' -count=1
 
   secrets:
     runs-on: ubuntu-latest
