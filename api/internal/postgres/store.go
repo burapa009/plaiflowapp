@@ -60,7 +60,7 @@ func (s *Store) Ready(ctx context.Context) error {
 		minimum = 12
 	}
 	if s.billingEnabled {
-		minimum = 14
+		minimum = 15
 	}
 	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < minimum {
 		return errors.New("database migration is not ready")

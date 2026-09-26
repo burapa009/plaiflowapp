@@ -596,6 +596,7 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .interval-tabs a { @apply inline-flex min-h-11 min-w-max items-center rounded-full px-4 py-[.55rem] font-bold; }
 .interval-tabs a[aria-current="page"] { background: var(--button-background); color: var(--button-foreground); }
 .pricing-grid { @apply grid gap-4; }
+.pricing-firm { @apply mt-4; }
 .plan-card { @apply min-w-0 rounded-2xl border border-line bg-surface p-6 shadow-panel; }
 .plan-card.recommended { border-color: var(--primary); }
 .plan-card h2 { margin: 1rem 0 .5rem; }
@@ -629,7 +630,7 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .danger-button.document-trash-button:focus-visible { outline: 3px solid var(--danger); outline-offset: 3px; }
 
 @media (min-width: 48rem) {
-  .pricing-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .master-layout { grid-template-columns: minmax(18rem, .8fr) minmax(0, 1.4fr); align-items: start; }
 }
 

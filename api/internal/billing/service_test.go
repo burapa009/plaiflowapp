@@ -110,6 +110,9 @@ func TestTamperedAmountAndPlanDoNotGrant(t *testing.T) {
 	if _, err := service.Start(context.Background(), "owner", "org", "bad", plan.Free, plan.Monthly); !errors.Is(err, ErrInvalidPlan) {
 		t.Fatalf("free checkout: %v", err)
 	}
+	if _, err := service.Start(context.Background(), "owner", "org", "firm", plan.AccountingFirm, plan.Monthly); !errors.Is(err, ErrInvalidPlan) {
+		t.Fatalf("firm checkout: %v", err)
+	}
 	if _, err := service.Start(context.Background(), "owner", "org", "good", plan.Business, plan.Monthly); err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +122,14 @@ func TestTamperedAmountAndPlanDoNotGrant(t *testing.T) {
 	provider.charge.Amount++
 	if err := service.ProcessCharge(context.Background(), provider.charge.ID); !errors.Is(err, ErrProvider) || store.grants != 0 {
 		t.Fatalf("tampered amount granted: %v %d", err, store.grants)
+	}
+}
+
+func TestGrowthChargeUsesCatalogPrice(t *testing.T) {
+	service := Service{Store: &testStore{}, Provider: &testProvider{}}
+	intent, err := service.Start(context.Background(), "owner", "org", "growth", plan.Growth, plan.SixMonths)
+	if err != nil || intent.AmountSatang != 285000 {
+		t.Fatalf("growth intent=%+v err=%v", intent, err)
 	}
 }
 

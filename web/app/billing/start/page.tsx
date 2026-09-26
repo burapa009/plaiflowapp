@@ -7,7 +7,7 @@ type Organization = { id: string; name: string; role: string };
 
 export default async function BillingStart({ searchParams }: { searchParams: Promise<{ plan?: string; interval?: string }> }) {
   const query = await searchParams;
-  const plan = query.plan === "Starter" || query.plan === "Business" ? query.plan : null;
+  const plan = query.plan === "Starter" || query.plan === "Business" || query.plan === "Growth" ? query.plan : null;
   const interval: BillingInterval | null = isBillingInterval(query.interval) ? query.interval : null;
   if (!plan || !interval) redirect("/pricing");
   const [plansResponse, organizationsResponse] = await Promise.all([sessionGET("/v1/plans"), sessionGET("/v1/organizations")]);

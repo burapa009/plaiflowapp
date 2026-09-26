@@ -11,7 +11,7 @@ func (s fixedPlanStore) EffectivePlan(context.Context, string) (Key, error) { re
 
 func TestCatalogOwnsPricesAndEntitlements(t *testing.T) {
 	catalog := Catalog()
-	if len(catalog) != 3 {
+	if len(catalog) != 5 {
 		t.Fatalf("plans=%d", len(catalog))
 	}
 	starter, ok := Lookup(Starter)
@@ -25,6 +25,10 @@ func TestCatalogOwnsPricesAndEntitlements(t *testing.T) {
 	if !business.Allows(ExportDrive) {
 		t.Fatal("business must include Drive export")
 	}
+	growth, _ := Lookup(Growth)
+	if growth.Prices[Monthly].TotalSatang != 50000 || growth.Prices[SixMonths].TotalSatang != 285000 || growth.Prices[Yearly].TotalSatang != 510000 || growth.Limits.DocumentsPerMonth != 2000 || !growth.Allows(ExportDrive) {
+		t.Fatalf("growth=%+v", growth)
+	}
 }
 
 func TestGateUsesStoredPlanNotSubmittedIdentifiers(t *testing.T) {
@@ -35,16 +39,13 @@ func TestGateUsesStoredPlanNotSubmittedIdentifiers(t *testing.T) {
 	}
 }
 
-func TestFirmPlanIsTrustedAndNotPubliclyPriced(t *testing.T) {
-	if len(Catalog()) != 3 {
-		t.Fatal("firm plan must not appear in the public price catalog")
-	}
+func TestFirmPlanIsTrustedAndPubliclyPriced(t *testing.T) {
 	firm, ok := Lookup(AccountingFirm)
 	if !ok || !firm.Allows(ManageFirm) || !firm.Allows(FirmPortfolio) || !firm.Allows(FirmApprovedExport) {
 		t.Fatalf("firm entitlements=%+v found=%v", firm, ok)
 	}
-	if len(firm.Prices) != 0 || firm.Allows(ExportDrive) {
-		t.Fatalf("firm plan unexpectedly priced or gained client Drive entitlement: %+v", firm)
+	if firm.Prices[Monthly].TotalSatang != 100000 || firm.Prices[SixMonths].TotalSatang != 570000 || firm.Prices[Yearly].TotalSatang != 1020000 || firm.Limits.ClientRelationships != 20 || firm.Allows(ExportDrive) {
+		t.Fatalf("firm price, limits or entitlement: %+v", firm)
 	}
 	decision, err := (Gate{Store: fixedPlanStore(AccountingFirm)}).Check(context.Background(), "firm", FirmPortfolio, 0)
 	if err != nil || !decision.Allowed {

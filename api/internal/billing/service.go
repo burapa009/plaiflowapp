@@ -77,7 +77,7 @@ func (s Service) clock() time.Time {
 
 func (s Service) Start(ctx context.Context, actorUserID, organizationID, intentID string, key plan.Key, interval plan.Interval) (Intent, error) {
 	definition, ok := plan.Lookup(key)
-	if !ok || (key != plan.Starter && key != plan.Business) {
+	if !ok || (key != plan.Starter && key != plan.Business && key != plan.Growth) {
 		return Intent{}, ErrInvalidPlan
 	}
 	price, ok := definition.Prices[interval]

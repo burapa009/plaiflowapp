@@ -1,7 +1,7 @@
 export type BillingInterval = "monthly" | "six_months" | "yearly";
 
 export type PlanDefinition = {
-  key: "Free" | "Starter" | "Business";
+  key: "Free" | "Starter" | "Business" | "Growth" | "AccountingFirm";
   name: string;
   recommended?: boolean;
   prices: Record<BillingInterval, {
@@ -12,6 +12,7 @@ export type PlanDefinition = {
     saving_percent: number;
   }>;
   entitlements: Record<string, boolean>;
+  limits: { members: number; line_groups: number; documents_per_month: number; client_relationships?: number };
 };
 
 export function formatSatang(satang: number) {

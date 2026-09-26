@@ -38,7 +38,7 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
   const catalog = await catalogResponse.json() as Catalog;
   const { membership } = await membershipResponse.json() as { membership: { organization_name: string; role: string } };
   if ((!catalog.billing_enabled && !catalog.billing_test_mode) || membership.role !== "Owner") return <section className="error-state"><h1>ยังไม่เปิดรับชำระเงิน</h1><Link href="/pricing">ดูราคา</Link></section>;
-  const selectedPlan = query.plan === "Starter" || query.plan === "Business" ? query.plan : summary.plan === "Starter" || summary.plan === "Business" ? summary.plan : "Starter";
+  const selectedPlan = query.plan === "Starter" || query.plan === "Business" || query.plan === "Growth" ? query.plan : summary.plan === "Starter" || summary.plan === "Business" || summary.plan === "Growth" ? summary.plan : "Starter";
   const selectedInterval = isBillingInterval(query.interval) ? query.interval : summary.interval ?? "monthly";
   const chosen = catalog.plans.find((item) => item.key === selectedPlan);
   const price = chosen?.prices[selectedInterval];

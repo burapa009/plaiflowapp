@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
 )
 
@@ -127,27 +128,29 @@ func (s *Store) CreateInvitation(ctx context.Context, invitation tenant.InviteCr
 		WHERE organization_id=$1 AND plan_key='AccountingFirm')`, invitation.OrganizationID).Scan(&firmEver); err != nil {
 		return err
 	}
-	if firmEver {
-		var effective string
-		if err := tx.QueryRow(ctx, `SELECT effective_organization_plan($1::uuid)`, invitation.OrganizationID).Scan(&effective); err != nil {
-			return err
-		}
-		if effective != "AccountingFirm" {
-			return tenant.ErrForbidden
-		}
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, invitation.OrganizationID); err != nil {
-			return err
-		}
-		var seats int
-		if err := tx.QueryRow(ctx, `SELECT
-			(SELECT count(*) FROM memberships WHERE organization_id=$1)
-			+ (SELECT count(*) FROM invitations WHERE organization_id=$1 AND revoked_at IS NULL
-				AND accepted_at IS NULL AND expires_at>$2)`, invitation.OrganizationID, invitation.Now).Scan(&seats); err != nil {
-			return err
-		}
-		if seats >= 5 {
-			return tenant.ErrConflict
-		}
+	var effective string
+	if err := tx.QueryRow(ctx, `SELECT effective_organization_plan($1::uuid)`, invitation.OrganizationID).Scan(&effective); err != nil {
+		return err
+	}
+	if firmEver && effective != string(plan.AccountingFirm) {
+		return tenant.ErrForbidden
+	}
+	definition, ok := plan.Lookup(plan.Key(effective))
+	if !ok {
+		return tenant.ErrForbidden
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, invitation.OrganizationID); err != nil {
+		return err
+	}
+	var seats int
+	if err := tx.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM memberships WHERE organization_id=$1)
+		+ (SELECT count(*) FROM invitations WHERE organization_id=$1 AND revoked_at IS NULL
+			AND accepted_at IS NULL AND expires_at>$2)`, invitation.OrganizationID, invitation.Now).Scan(&seats); err != nil {
+		return err
+	}
+	if seats >= definition.Limits.Members {
+		return tenant.ErrConflict
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO invitations
         (id,organization_id,inviter_user_id,token_hash,created_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -322,6 +325,21 @@ func (s *Store) CreateLineLinkCode(ctx context.Context, code tenant.LineCodeCrea
 	role, err := currentRole(ctx, tx, code.ActorUserID, code.OrganizationID)
 	if err != nil || !role.Allows(tenant.ManageGroup) {
 		return tenant.ErrForbidden
+	}
+	var effective string
+	if err := tx.QueryRow(ctx, `SELECT effective_organization_plan($1::uuid)`, code.OrganizationID).Scan(&effective); err != nil {
+		return err
+	}
+	definition, ok := plan.Lookup(plan.Key(effective))
+	if !ok {
+		return tenant.ErrForbidden
+	}
+	var groups int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM line_group_connections WHERE organization_id=$1 AND status='connected'`, code.OrganizationID).Scan(&groups); err != nil {
+		return err
+	}
+	if groups >= definition.Limits.LINEGroups {
+		return tenant.ErrConflict
 	}
 	var subject string
 	err = tx.QueryRow(ctx, `SELECT subject FROM auth_identities

@@ -4,6 +4,18 @@ Status: Agreed payment direction, 2026-09-25. This supersedes the Stripe-specifi
 
 ## Decisions
 
+### Public packages (2026-09-26)
+
+| Plan | Monthly | Six months | Yearly | Members | LINE groups | Accepted documents/month | Client relationships |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Free | ฿0 | ฿0 | ฿0 | 1 | 1 | 30 | — |
+| Starter | ฿150 | ฿855 | ฿1,530 | 3 | 2 | 300 | — |
+| Business | ฿250 | ฿1,425 | ฿2,550 | 10 | 5 | 1,000 | — |
+| Growth | ฿500 | ฿2,850 | ฿5,100 | 20 | 10 | 2,000 | — |
+| Accounting Firm | ฿1,000 | ฿5,700 | ฿10,200 | 5 staff seats | 5 | 1,000 own documents | 20 |
+
+Growth includes Business capabilities. Accounting Firm is shown for comparison but cannot be bought through PromptPay until Phase 10 release gates pass; its grants remain manual. All packages include zero OCR scan credits. The member, group, and firm relationship figures are package terms; group linking and some limit enforcement remain release work and must be verified before live sales.
+
 - Stripe is canceled. Accept THB through PromptPay QR only for the first commercial version. Each monthly, six-month, or annual period is a separate customer-approved payment. Do not describe this as automatic debit or store a reusable payment method.
 - Keep the approved Plan prices, intervals, grants, credit packs, Owner-only billing authority, tenant isolation, seven-day grace, receipt rules, and data retention unless changed below. The displayed charge is the full amount for the selected period. Show the period end and when the next manual payment will be due.
 - A paid period begins only after a verified provider payment. A browser return, QR display, receipt screenshot, or a client's claim of payment does not grant rights.

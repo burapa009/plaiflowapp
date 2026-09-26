@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"plaiflow/api/internal/document"
+	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
 )
 
@@ -261,11 +262,8 @@ func documentLimit(ctx context.Context, tx pgx.Tx, organizationID string, now ti
 	if source == "trial" {
 		return 100, start, end, nil
 	}
-	if key == "Starter" {
-		return 300, time.Time{}, time.Time{}, nil
-	}
-	if key == "Business" {
-		return 1000, time.Time{}, time.Time{}, nil
+	if definition, ok := plan.Lookup(plan.Key(key)); ok {
+		return definition.Limits.DocumentsPerMonth, time.Time{}, time.Time{}, nil
 	}
 	return 0, time.Time{}, time.Time{}, errors.New("invalid document plan")
 }
