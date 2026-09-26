@@ -123,6 +123,11 @@ func (s *Store) Activate(ctx context.Context, intent billing.Intent, charge bill
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// Match CreateIntent's lock order so checkout and payment confirmation cannot deadlock.
+	var lockedOrganization string
+	if err := tx.QueryRow(ctx, `SELECT id FROM organizations WHERE id=$1 FOR UPDATE`, intent.OrganizationID).Scan(&lockedOrganization); err != nil {
+		return err
+	}
 	var id, organizationID, status, planKey, interval string
 	var amount int64
 	err = tx.QueryRow(ctx, `SELECT id,organization_id,status,plan_key,billing_interval,amount_satang FROM billing_intents
@@ -138,10 +143,6 @@ func (s *Store) Activate(ctx context.Context, intent billing.Intent, charge bill
 	}
 	if status != "awaiting_payment" && status != "expired" {
 		return billing.ErrConflict
-	}
-	var lockedOrganization string
-	if err := tx.QueryRow(ctx, `SELECT id FROM organizations WHERE id=$1 FOR UPDATE`, organizationID).Scan(&lockedOrganization); err != nil {
-		return err
 	}
 	var currentPlan plan.Key
 	var currentInterval plan.Interval
