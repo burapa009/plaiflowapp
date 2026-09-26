@@ -42,7 +42,8 @@ func (s *server) getVendorImportPreview(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *server) listPlans(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"plans": plan.Catalog(), "billing_enabled": s.config.BillingEnabled})
+	writeJSON(w, http.StatusOK, map[string]any{"plans": plan.Catalog(), "billing_enabled": s.config.BillingEnabled && s.config.Billing != nil && s.config.Billing.Live,
+		"billing_test_mode": s.config.BillingEnabled && s.config.Billing != nil && !s.config.Billing.Live})
 }
 
 func (s *server) organizationPlan(w http.ResponseWriter, r *http.Request) {

@@ -41,39 +41,40 @@ type Store interface {
 }
 
 type Config struct {
-	OCR                ocr.Store
-	OCRJobs            job.Store
-	OCRAuth            *job.WorkerAuth
-	OCRTokens          *job.ArtifactToken
-	OCRStorage         job.ArtifactStore
-	Extraction         extraction.Store
-	ExtractionEnabled  bool
-	ReviewEnabled      bool
-	FirmEnabled        bool
-	Firm               firm.Store
-	Accounting         accounting.Store
-	AccountingEnabled  bool
-	LineSecret         string
-	LineChannel        string
-	DashboardTokens    []string
-	Logger             *slog.Logger
-	Auth               *auth.Service
-	Tenants            tenant.Store
-	Work               work.Store
-	Business           business.Store
-	PlanStore          plan.Store
-	Billing            *billing.Service
-	BillingEnabled     bool
-	OmiseWebhookSecret string
-	Drive              *drive.Service
-	Documents          *document.Service
-	Jobs               job.Store
-	ReviewExports      job.DocumentExportStore
-	JobWorkerAuth      *job.WorkerAuth
-	JobArtifacts       job.ArtifactStore
-	ArtifactTokens     *job.ArtifactToken
-	Gate               work.Gate
-	Now                func() time.Time
+	OCR                       ocr.Store
+	OCRJobs                   job.Store
+	OCRAuth                   *job.WorkerAuth
+	OCRTokens                 *job.ArtifactToken
+	OCRStorage                job.ArtifactStore
+	Extraction                extraction.Store
+	ExtractionEnabled         bool
+	ReviewEnabled             bool
+	FirmEnabled               bool
+	Firm                      firm.Store
+	Accounting                accounting.Store
+	AccountingEnabled         bool
+	LineSecret                string
+	LineChannel               string
+	DashboardTokens           []string
+	Logger                    *slog.Logger
+	Auth                      *auth.Service
+	Tenants                   tenant.Store
+	Work                      work.Store
+	Business                  business.Store
+	PlanStore                 plan.Store
+	Billing                   *billing.Service
+	BillingEnabled            bool
+	BillingTestOrganizationID string
+	OmiseWebhookSecret        string
+	Drive                     *drive.Service
+	Documents                 *document.Service
+	Jobs                      job.Store
+	ReviewExports             job.DocumentExportStore
+	JobWorkerAuth             *job.WorkerAuth
+	JobArtifacts              job.ArtifactStore
+	ArtifactTokens            *job.ArtifactToken
+	Gate                      work.Gate
+	Now                       func() time.Time
 }
 
 type server struct {

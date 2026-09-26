@@ -45,21 +45,26 @@ func (billingHTTPProvider) CreateCharge(_ context.Context, id string, amount int
 	return c, nil
 }
 
-func billingHandler(t *testing.T, role tenant.Role, store *billingHTTPStore, now time.Time) http.Handler {
+func billingHandler(t *testing.T, role tenant.Role, store *billingHTTPStore, now time.Time, testOrganization string) http.Handler {
 	t.Helper()
 	authService, err := newTestAuth(now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := &billing.Service{Store: store, Provider: billingHTTPProvider{}, Now: func() time.Time { return now }}
-	return New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1", role: role}, Billing: service, BillingEnabled: true,
+	return New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1", role: role}, Billing: service, BillingEnabled: true, BillingTestOrganizationID: testOrganization,
 		OmiseWebhookSecret: base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")), Now: func() time.Time { return now }}, &fakeStore{})
 }
 
 func TestBillingCheckoutRequiresOwnerAndTrustedCatalog(t *testing.T) {
 	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
 	store := &billingHTTPStore{}
-	handler := billingHandler(t, tenant.Owner, store, now)
+	handler := billingHandler(t, tenant.Owner, store, now, "org-1")
+	plans := httptest.NewRecorder()
+	handler.ServeHTTP(plans, httptest.NewRequest(http.MethodGet, "https://app.example/v1/plans", nil))
+	if plans.Code != http.StatusOK || !strings.Contains(plans.Body.String(), `"billing_test_mode":true`) || !strings.Contains(plans.Body.String(), `"billing_enabled":false`) {
+		t.Fatalf("test billing mode not disclosed: %s", plans.Body.String())
+	}
 	request := authenticatedForm(http.MethodPost, "https://app.example/v1/o/org-1/billing/intents", "plan=Starter&interval=six_months&amount_satang=1&csrf_token=csrf")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -75,7 +80,7 @@ func TestBillingCheckoutRequiresOwnerAndTrustedCatalog(t *testing.T) {
 		{tenant.Owner, "/v1/o/org-2/billing/intents", "plan=Starter&interval=monthly&csrf_token=csrf", http.StatusNotFound},
 		{tenant.Owner, "/v1/o/org-1/billing/intents", "plan=Free&interval=monthly&csrf_token=csrf", http.StatusUnprocessableEntity},
 	} {
-		h := billingHandler(t, tc.role, store, now)
+		h := billingHandler(t, tc.role, store, now, "org-1")
 		r := authenticatedForm(http.MethodPost, "https://app.example"+tc.path, tc.body)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -88,10 +93,31 @@ func TestBillingCheckoutRequiresOwnerAndTrustedCatalog(t *testing.T) {
 	}
 }
 
+func TestBillingTestModeOnlyAllowsSelectedOrganization(t *testing.T) {
+	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
+	store := &billingHTTPStore{}
+	handler := billingHandler(t, tenant.Owner, store, now, "org-2")
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodGet, "/v1/o/org-1/billing", ""},
+		{http.MethodPost, "/v1/o/org-1/billing/intents", "plan=Starter&interval=monthly&csrf_token=csrf"},
+		{http.MethodPost, "/v1/o/org-1/billing/cancel", "confirm=cancel&csrf_token=csrf"},
+	} {
+		request := authenticatedForm(tc.method, "https://app.example"+tc.path, tc.body)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s: %d", tc.method, tc.path, response.Code)
+		}
+	}
+	if store.created != 0 {
+		t.Fatal("test checkout reached the store for another organization")
+	}
+}
+
 func TestOmiseWebhookForgeryIsRejected(t *testing.T) {
 	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
 	store := &billingHTTPStore{}
-	handler := billingHandler(t, tenant.Owner, store, now)
+	handler := billingHandler(t, tenant.Owner, store, now, "org-1")
 	body := `{"id":"evnt_test_1","key":"charge.complete","data":{"id":"chrg_test_1"}}`
 	request := httptest.NewRequest(http.MethodPost, "https://api.example/webhooks/omise", strings.NewReader(body))
 	request.Header.Set("Omise-Signature-Timestamp", fmt.Sprint(now.Unix()))

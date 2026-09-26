@@ -20,6 +20,10 @@ func (s *server) registerBillingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/o/{organization}/billing/resume", s.resumeBilling)
 }
 
+func (s *server) billingAllowed(organizationID string) bool {
+	return s.config.Billing.Live || (s.config.BillingTestOrganizationID != "" && organizationID == s.config.BillingTestOrganizationID)
+}
+
 func (s *server) getBilling(w http.ResponseWriter, r *http.Request) {
 	session, membership, ok := s.workContext(w, r, false)
 	if !ok {
@@ -27,6 +31,10 @@ func (s *server) getBilling(w http.ResponseWriter, r *http.Request) {
 	}
 	if membership.Role != tenant.Owner {
 		writeError(w, r, http.StatusForbidden, "forbidden", "Billing is Owner-only")
+		return
+	}
+	if !s.billingAllowed(membership.OrganizationID) {
+		writeError(w, r, http.StatusNotFound, "not_found", "Billing is unavailable")
 		return
 	}
 	summary, err := s.config.Billing.Store.Summary(r.Context(), session.UserID, membership.OrganizationID, s.config.Now().UTC())
@@ -45,6 +53,10 @@ func (s *server) startBilling(w http.ResponseWriter, r *http.Request) {
 	}
 	if membership.Role != tenant.Owner {
 		writeError(w, r, http.StatusForbidden, "forbidden", "Billing is Owner-only")
+		return
+	}
+	if !s.billingAllowed(membership.OrganizationID) {
+		writeError(w, r, http.StatusNotFound, "not_found", "Billing is unavailable")
 		return
 	}
 	intent, err := s.config.Billing.Start(r.Context(), session.UserID, membership.OrganizationID, newUUID(),
@@ -70,6 +82,10 @@ func (s *server) setBillingCancellation(w http.ResponseWriter, r *http.Request, 
 	}
 	if membership.Role != tenant.Owner {
 		writeError(w, r, http.StatusForbidden, "forbidden", "Billing is Owner-only")
+		return
+	}
+	if !s.billingAllowed(membership.OrganizationID) {
+		writeError(w, r, http.StatusNotFound, "not_found", "Billing is unavailable")
 		return
 	}
 	if cancel && r.FormValue("confirm") != "cancel" {

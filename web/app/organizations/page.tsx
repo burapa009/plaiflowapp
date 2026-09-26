@@ -106,6 +106,8 @@ export default async function Organizations({ searchParams }: { searchParams: Pr
               <strong>{membership?.role}</strong>
             </Card>
             <Link className="button inline-button" href={`/o/${encodeURIComponent(organizations[0].id)}/tasks`}>เปิดพื้นที่งาน</Link>
+            {organizations.slice(1).map((organization) => <Link key={organization.id} className="task-card" href={`/o/${encodeURIComponent(organization.id)}/tasks`}><strong>{organization.name}</strong><span className="field-help">{organization.role}</span></Link>)}
+            <details><summary>สร้าง Organization ใหม่</summary><form action={createOrganization} className="setup-form"><label htmlFor="new-organization-name">ชื่อ Organization</label><input id="new-organization-name" name="name" maxLength={160} required autoComplete="organization" /><button className="button" type="submit">สร้าง Organization</button></form></details>
           </>
         )}
       </div>

@@ -167,7 +167,7 @@ func main() {
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
 			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
-			Billing: billingService, BillingEnabled: billingEnabled, OmiseWebhookSecret: os.Getenv("OMISE_WEBHOOK_SECRET"),
+			Billing: billingService, BillingEnabled: billingEnabled, BillingTestOrganizationID: os.Getenv("BILLING_TEST_ORGANIZATION_ID"), OmiseWebhookSecret: os.Getenv("OMISE_WEBHOOK_SECRET"),
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
