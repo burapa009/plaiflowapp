@@ -62,7 +62,8 @@ function PlanCard({ plan, interval, available }: { plan: PlanDefinition; interva
   const firm = plan.key === "AccountingFirm";
   return <article className={`plan-card plan-${plan.key.toLowerCase()}${plan.recommended ? " recommended" : ""}`}>
     {plan.recommended && <span className="plan-ribbon"><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="m12 2 2.9 6.3 6.8.8-5 4.7 1.3 6.7-6-3.3-6 3.3 1.3-6.7-5-4.7 6.8-.8z" /></svg>แนะนำ</span>}
-    <div className="plan-card-copy"><h2>{plan.name}</h2><p className="plan-description">{descriptions[plan.key]}</p><p className="plan-price"><strong>{formatSatang(price.total_satang)}</strong><span> / {intervalLabel(interval)}</span></p>{plan.key !== "Free" && <p className="plan-period-note">ยอดเต็มสำหรับ {intervalLabel(interval)} · เมื่อครบกำหนดต้องชำระรอบใหม่ด้วยตนเอง</p>}{price.months > 1 && <p className="plan-saving">เฉลี่ย {formatSatang(price.effective_month_satang)} / เดือน · ประหยัด {price.saving_percent}%</p>}</div>
+    <div className="plan-card-copy"><h2>{plan.name}</h2><p className="plan-description">{descriptions[plan.key]}</p><p className="plan-price"><strong>{formatSatang(price.total_satang)}</strong><span> / {plan.key === "Free" ? "ฟรีตลอด" : intervalLabel(interval)}</span></p>{plan.key !== "Free" && <p className="plan-period-note">ชำระยอดเต็มครั้งเดียวสำหรับ {intervalLabel(interval)} · ต่อรอบด้วยตนเอง</p>}</div>
+    {plan.key !== "Free" && price.months > 1 && <div className="plan-comparison"><span>เฉลี่ย <strong>{formatSatang(price.effective_month_satang)}</strong> / เดือน</span><span className="plan-discount">ประหยัด {price.saving_percent}%</span></div>}
     {!firm && <PlanArtwork name={plan.key} />}
     <ul className="plan-features">
       <li><span aria-hidden="true">✓</span>{plan.limits.members} {firm ? "ที่นั่งสำนักงาน" : "สมาชิก"}</li>
