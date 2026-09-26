@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getAPIBaseURL } from "@/lib/api-config";
 import { formatSatang, intervalLabel, isBillingInterval, type BillingInterval, type PlanDefinition } from "@/lib/pricing";
 import { PlanArtwork } from "./plan-artwork";
+import { PlanCarousel } from "./plan-carousel";
 
 const intervals: BillingInterval[] = ["monthly", "six_months", "yearly"];
 const scanPacks = [
@@ -47,7 +48,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
     <div className="work-header pricing-header"><div><p className="eyebrow">แพ็กเกจ PLAIFLOW</p><h1>ราคาและรอบใช้งาน</h1><p className="intro">เลือกช่วงเวลาแล้วดูยอดเต็มที่ต้องชำระผ่าน PromptPay แต่ละรอบ</p></div><Link className="secondary-button pricing-home" href="/"><svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z" /></svg>กลับหน้าหลัก</Link></div>
     <nav aria-label="เลือกรอบแพ็กเกจ" className="interval-tabs pricing-tabs">{intervals.map((item) => <Link key={item} aria-current={item === interval ? "page" : undefined} href={`/pricing?interval=${item}`}>{intervalLabel(item)}</Link>)}</nav>
     {!catalog ? <div className="notice" role="alert"><h2>ยังโหลดแพ็กเกจไม่ได้</h2><p>กรุณาลองใหม่อีกครั้ง</p></div> : <>
-      <div className="pricing-grid">{catalog.plans.filter((plan) => plan.key !== "AccountingFirm").map((plan) => <PlanCard key={plan.key} plan={plan} interval={interval} available={catalog.billing_enabled} />)}</div>
+      <PlanCarousel key={interval}>{catalog.plans.filter((plan) => plan.key !== "AccountingFirm").map((plan) => <PlanCard key={plan.key} plan={plan} interval={interval} available={catalog.billing_enabled} />)}</PlanCarousel>
       <p className="pricing-note">PromptPay ต้องชำระใหม่ทุกงวด ไม่มีการหักเงินอัตโนมัติ · ราคาที่แสดงเป็นยอดเต็มต่อรอบ</p>
       {!catalog.billing_enabled && <p className="pricing-note">ยังไม่เปิดรับชำระเงินจริง</p>}
       <section className="scan-packs" aria-labelledby="scan-packs-title"><div className="scan-packs-heading"><div><p className="eyebrow">เครดิตสแกนเอกสาร</p><h2 id="scan-packs-title">ซื้อเครดิตเพิ่มเมื่อพร้อมใช้งาน</h2><p className="intro">1 ภาพหรือ 1 หน้า PDF ใช้ 1 เครดิต · เครดิตที่ซื้อไม่หมดอายุและไม่เพิ่มโควตารับเอกสาร</p></div><span className="scan-status">รอเปิดใช้ OCR</span></div><div className="scan-pack-grid">{scanPacks.map((pack) => <article className="scan-pack" key={pack.pages}><strong>{pack.pages.toLocaleString("th-TH")} หน้า</strong><p>{formatSatang(pack.satang)} <span>/ ซื้อครั้งเดียว</span></p><span className="secondary-button inline-button" aria-disabled="true">รอเปิดซื้อเครดิต</span></article>)}</div><p className="field-help">ยังไม่รับชำระค่าเครดิตสแกน จนกว่าระบบ OCR จะผ่านการทดสอบความแม่นยำและรองรับปริมาณงาน</p></section>

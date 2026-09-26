@@ -603,7 +603,14 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .pricing-tabs { margin-block: 1.3rem 1rem; box-shadow: 0 7px 20px #2563eb10; }
 .pricing-tabs a { min-width: 6.5rem; justify-content: center; }
 .pricing-tabs a[aria-current="page"] { background: linear-gradient(110deg, #1261e9, #2599f7); box-shadow: 0 6px 14px #2563eb26; }
-.pricing-grid { display: grid; gap: 1rem; }
+.pricing-carousel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: .2rem 0 .4rem; }
+.pricing-carousel-toolbar p { margin: 0; color: #617a9e; font-size: .85rem; }
+.pricing-carousel-controls { display: flex; gap: .5rem; }
+.pricing-carousel-controls button { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border: 1px solid #cfe3f6; border-radius: 50%; background: #fff; color: #1257b5; box-shadow: 0 4px 12px #2563eb12; cursor: pointer; }
+.pricing-carousel-controls button:disabled { opacity: .4; cursor: default; }
+.pricing-carousel-controls button:focus-visible, .pricing-track:focus-visible { outline: 3px solid #1261e9; outline-offset: 3px; }
+.pricing-track { display: grid; grid-auto-flow: column; grid-auto-columns: calc(100% - 2.5rem); gap: 1rem; overflow-x: auto; padding: .4rem 2.5rem 1rem .15rem; scroll-snap-type: x mandatory; scroll-padding-inline: .15rem; scroll-behavior: smooth; scrollbar-width: thin; }
+.pricing-track > .plan-card { scroll-snap-align: start; }
 .plan-card { position: relative; display: flex; min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid #e2edf7; border-radius: 1.1rem; padding: 1.65rem 1.8rem 1.3rem; background: #fff; box-shadow: 0 8px 28px #2563eb0c; }
 .plan-card.recommended { border: 2px solid #1686f6; background: linear-gradient(155deg, #f3fbff, #fff 76%); padding: calc(1.65rem - 1px) calc(1.8rem - 1px) calc(1.3rem - 1px); }
 .plan-card h2 { margin: 0; font-size: 1.35rem; line-height: 1.3; }
@@ -667,14 +674,15 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .danger-button.document-trash-button:focus-visible { outline: 3px solid var(--danger); outline-offset: 3px; }
 
 @media (min-width: 48rem) {
-  .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scan-pack-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .master-layout { grid-template-columns: minmax(18rem, .8fr) minmax(0, 1.4fr); align-items: start; }
 }
 @media (min-width: 78rem) {
+  .pricing-track { grid-auto-columns: calc((100% - 1rem) / 2); padding-right: .15rem; }
   .plan-card:not(.plan-free) .plan-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scan-pack-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+@media (prefers-reduced-motion: reduce) { .pricing-track { scroll-behavior: auto; } }
 @media (max-width: 40rem) {
   .plan-card { padding: 1.25rem; }
   .plan-card.recommended { padding: calc(1.25rem - 1px); }
