@@ -56,6 +56,7 @@ func main() {
 		documents := &document.Service{Intake: document.Intake{Temporary: encrypted, Scanner: document.ClamAV{Address: settings.ClamDAddress}, SkipScan: settings.SkipDocumentScan}, Committer: store}
 		process = worker.NewLINEDocumentProcessor(documents, store, downloader)
 	}
+	process = worker.NewLINEGroupProcessor(process, store)
 	poll := time.NewTicker(time.Second)
 	heartbeat := time.NewTicker(30 * time.Second)
 	cleanup := time.NewTicker(24 * time.Hour)

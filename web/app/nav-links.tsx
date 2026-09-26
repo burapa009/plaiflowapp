@@ -9,6 +9,8 @@ function NavIcon({ href }: { href: string }) {
   const path = href.endsWith("/tasks") ? "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" :
     href.endsWith("/documents") ? "M7 3h7l4 4v14H7zM14 3v5h5M10 13h5M10 17h5" :
     href.endsWith("/vendors") ? "M3 21h18M5 21V7l7-4 7 4v14M9 10h.01M12 10h.01M15 10h.01M9 14h.01M12 14h.01M15 14h.01" :
+    href.endsWith("/members") ? "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" :
+    href.endsWith("/line-groups") ? "M4 5h16v11H8l-4 4V5ZM8 9h8M8 12h5" :
     href.endsWith("/connections") ? "M10 13a5 5 0 0 0 7.54.54l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15M14 11a5 5 0 0 0-7.54-.54l-2 2a5 5 0 0 0 7.07 7.07l1.15-1.15" :
     href === "/organizations" ? "M4 21v-7h16v7M7 14V7l5-4 5 4v7M9 10h.01M12 10h.01M15 10h.01" :
     href === "/system-status" ? "M4 14h4l2-8 4 12 2-7h4" :
@@ -19,6 +21,6 @@ function NavIcon({ href }: { href: string }) {
 export function NavLinks() {
   const pathname = usePathname();
   const organization = pathname.match(/^\/o\/([^/]+)/)?.[1];
-  const workspaceLinks = organization ? [["งานของทีม", `/o/${organization}/tasks`], ["เอกสาร", `/o/${organization}/documents`], ["คู่ค้า", `/o/${organization}/vendors`], ["การจัดการธุรกิจ", `/o/${organization}/business`], ["Connections", `/o/${organization}/connections`], ["เปลี่ยน Organization", "/organizations"]] as const : pathname === "/design-preview" ? [["งานของทีม", "/design-preview"], ["หน้าแรก", "/"], ["สถานะระบบ", "/system-status"]] as const : links;
+  const workspaceLinks = organization ? [["งานของทีม", `/o/${organization}/tasks`], ["เอกสาร", `/o/${organization}/documents`], ["คู่ค้า", `/o/${organization}/vendors`], ["การจัดการธุรกิจ", `/o/${organization}/business`], ["สมาชิกและสิทธิ์", `/o/${organization}/members`], ["กลุ่ม LINE", `/o/${organization}/line-groups`], ["Connections", `/o/${organization}/connections`], ["เปลี่ยนองค์กร", "/organizations"]] as const : pathname === "/design-preview" ? [["งานของทีม", "/design-preview"], ["หน้าแรก", "/"], ["สถานะระบบ", "/system-status"]] as const : links;
   return <nav aria-label="เมนูหลัก"><ul className="nav-list">{workspaceLinks.map(([label, href]) => <li key={href}><Link aria-current={pathname === href ? "page" : undefined} className="nav-link" href={href}><NavIcon href={href} /><span>{label}</span></Link></li>)}{process.env.NEXT_PUBLIC_BILLING_ENABLED === "true" && organization && <li><Link aria-current={pathname === `/o/${organization}/billing` ? "page" : undefined} className="nav-link" href={`/o/${organization}/billing`}><NavIcon href="/billing" /><span>การชำระเงิน</span></Link></li>}{process.env.NEXT_PUBLIC_FIRM_ENABLED === "true" && organization && <li><Link aria-current={pathname === `/o/${organization}/firm` ? "page" : undefined} className="nav-link" href={`/o/${organization}/firm`}><NavIcon href="/firm" /><span>สำนักงานบัญชี</span></Link></li>}</ul></nav>;
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"plaiflow/api/internal/inbound"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
 )
@@ -111,6 +112,35 @@ func (s *Store) ListMemberships(ctx context.Context, userID, organizationID stri
 		return nil, err
 	}
 	return memberships, tx.Commit(ctx)
+}
+
+func (s *Store) ListPendingInvitations(ctx context.Context, userID, organizationID string) ([]tenant.PendingInvitation, error) {
+	tx, err := s.organizationTx(ctx, userID, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	role, err := currentRole(ctx, tx, userID, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	if !role.Allows(tenant.InviteMember) {
+		return nil, tenant.ErrForbidden
+	}
+	rows, err := tx.Query(ctx, `SELECT id,expires_at FROM invitations WHERE organization_id=$1
+		AND revoked_at IS NULL AND accepted_at IS NULL AND expires_at>now() ORDER BY created_at DESC,id`, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	invitations, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (tenant.PendingInvitation, error) {
+		var invitation tenant.PendingInvitation
+		err := row.Scan(&invitation.ID, &invitation.ExpiresAt)
+		return invitation, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return invitations, tx.Commit(ctx)
 }
 
 func (s *Store) CreateInvitation(ctx context.Context, invitation tenant.InviteCreate) error {
@@ -366,6 +396,113 @@ func (s *Store) CreateLineLinkCode(ctx context.Context, code tenant.LineCodeCrea
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func (s *Store) ConsumeLINEGroupCode(ctx context.Context, event inbound.Event) (bool, error) {
+	if event.Provider != "line" || event.SourceType != "group" || event.SourceGroupID == "" || event.SourceUserID == "" || len(event.LinkCodeHash) != 32 {
+		return false, nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	now := time.Now().UTC()
+	var codeID, organizationID, actorUserID, expectedSubject string
+	err = tx.QueryRow(ctx, `SELECT id,organization_id,initiating_user_id,expected_line_subject FROM line_link_codes
+		WHERE code_hash=$1 AND messaging_channel=$2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>$3
+		FOR UPDATE`, event.LinkCodeHash, event.Channel, now).Scan(&codeID, &organizationID, &actorUserID, &expectedSubject)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if expectedSubject != event.SourceUserID {
+		return false, nil
+	}
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.user_id',$1,true),set_config('app.organization_id',$2,true)`, actorUserID, organizationID); err != nil {
+		return false, err
+	}
+	role, err := currentRole(ctx, tx, actorUserID, organizationID)
+	if errors.Is(err, tenant.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !role.Allows(tenant.ManageGroup) {
+		return false, nil
+	}
+	var identityActive bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM auth_identities WHERE user_id=$1 AND provider='line'
+		AND subject=$2 AND disabled_at IS NULL)`, actorUserID, expectedSubject).Scan(&identityActive); err != nil {
+		return false, err
+	}
+	if !identityActive {
+		return false, nil
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, organizationID); err != nil {
+		return false, err
+	}
+	var effective string
+	if err := tx.QueryRow(ctx, `SELECT effective_organization_plan($1::uuid)`, organizationID).Scan(&effective); err != nil {
+		return false, err
+	}
+	definition, ok := plan.Lookup(plan.Key(effective))
+	if !ok {
+		return false, nil
+	}
+	var groups int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM line_group_connections WHERE organization_id=$1 AND status='connected'`, organizationID).Scan(&groups); err != nil {
+		return false, err
+	}
+	if groups >= definition.Limits.LINEGroups {
+		return false, nil
+	}
+	command, err := tx.Exec(ctx, `INSERT INTO line_group_connections
+		(id,organization_id,messaging_channel,group_id,status,connected_by_user_id,connected_at)
+		VALUES (gen_random_uuid(),$1,$2,$3,'connected',$4,$5) ON CONFLICT DO NOTHING`, organizationID, event.Channel, event.SourceGroupID, actorUserID, now)
+	if err != nil {
+		return false, err
+	}
+	if command.RowsAffected() != 1 {
+		return false, nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE line_link_codes SET consumed_at=$2 WHERE id=$1`, codeID, now); err != nil {
+		return false, err
+	}
+	if err := auditTenant(ctx, tx, organizationID, actorUserID, "line.group_connect", "line_group_connection", event.SourceGroupID, now); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
+}
+
+func (s *Store) DisconnectLINEGroupBySource(ctx context.Context, event inbound.Event) (bool, error) {
+	if event.Provider != "line" || event.Type != "leave" || event.SourceType != "group" || event.SourceGroupID == "" {
+		return false, nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	now := time.Now().UTC()
+	var organizationID string
+	err = tx.QueryRow(ctx, `UPDATE line_group_connections SET status='disconnected',disconnected_at=$3
+		WHERE messaging_channel=$1 AND group_id=$2 AND status='connected' RETURNING organization_id`, event.Channel, event.SourceGroupID, now).Scan(&organizationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_events
+		(organization_id,event_type,target_type,target_id,outcome,occurred_at)
+		VALUES ($1,'line.group_bot_leave','line_group_connection',$2,'success',$3)`, organizationID, event.SourceGroupID, now); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
 }
 
 func (s *Store) ListLineConnections(ctx context.Context, organizationID, userID string) ([]tenant.LineConnection, error) {

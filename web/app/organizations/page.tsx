@@ -1,4 +1,3 @@
-import { Card } from "@/components/ui/card";
 import Image from "next/image";
 import { getAPIBaseURL } from "@/lib/api-config";
 import { cookies, headers } from "next/headers";
@@ -8,7 +7,7 @@ import { redirect } from "next/navigation";
 const csrfCookieName = "__Host-plaiflow-csrf";
 
 type Organization = { id: string; name: string; role: "Owner" | "Admin" | "Member" };
-type Membership = { organization_id: string; user_id: string; role: Organization["role"] };
+const roleName = { Owner: "เจ้าของ", Admin: "ผู้ดูแล", Member: "สมาชิก" };
 
 async function apiGET(path: string) {
   const cookieHeader = (await cookies()).toString();
@@ -70,12 +69,6 @@ export default async function Organizations({ searchParams }: { searchParams: Pr
   if (!response?.ok) return <SetupError />;
 
   const { organizations } = await response.json() as { organizations: Organization[] };
-  let membership: Membership | null = null;
-  if (organizations.length > 0) {
-    const detail = await apiGET(`/v1/o/${encodeURIComponent(organizations[0].id)}`);
-    if (!detail?.ok) return <SetupError />;
-    ({ membership } = await detail.json() as { membership: Membership });
-  }
 
   return (
     <section className="auth-page">
@@ -84,30 +77,25 @@ export default async function Organizations({ searchParams }: { searchParams: Pr
         {organizations.length === 0 ? (
           <>
             <p className="eyebrow">ขั้นตอนสุดท้าย</p>
-            <h1>ตั้งชื่อ Organization แรก</h1>
-            <p className="intro">ใช้ชื่อที่ทีมของคุณจำได้ง่าย คุณเปลี่ยนรายละเอียดอื่นภายหลังได้</p>
+            <h1>สร้างองค์กรของคุณ</h1>
+            <p className="intro">องค์กรคือพื้นที่เก็บงาน เอกสาร สมาชิก และกลุ่ม LINE ของทีมเดียวกัน</p>
             {params.error && <p className="form-error" role="alert">{params.error === "invalid_name" ? "กรุณาใส่ชื่อไม่เกิน 160 ตัวอักษร" : "ยังสร้าง Organization ไม่ได้ กรุณาลองอีกครั้ง"}</p>}
             <form action={createOrganization} className="setup-form">
-              <label htmlFor="organization-name">ชื่อ Organization</label>
+              <label htmlFor="organization-name">ชื่อองค์กร</label>
               <input id="organization-name" name="name" maxLength={160} required autoComplete="organization" aria-describedby="organization-help" />
               <p id="organization-help" className="field-help">เช่น บริษัท ปลายโฟลว์</p>
-              <button className="button" type="submit">สร้าง Organization</button>
+              <button className="button" type="submit">สร้างองค์กร</button>
             </form>
           </>
         ) : (
           <>
-            <p className="eyebrow">พร้อมใช้งาน</p>
-            <h1>{organizations[0].name}</h1>
-            <p className="intro">Organization และ Owner Membership ถูกสร้างเรียบร้อยแล้ว</p>
+            <p className="eyebrow">พื้นที่ทำงานของคุณ</p>
+            <h1>เลือกองค์กร</h1>
+            <p className="intro">เลือกทีมที่ต้องการทำงาน ข้อมูลและสิทธิ์ของแต่ละองค์กรแยกจากกัน</p>
             {params.created && <p className="success-message" role="status">สร้างพื้นที่ทำงานสำเร็จ</p>}
             {params.drive && <p className="form-error" role="alert">{params.drive === "access_denied" ? "ยกเลิกการอนุญาต Google Drive แล้ว ยังไม่มีการเชื่อมต่อใหม่" : "เชื่อมต่อ Google Drive ไม่สำเร็จ กรุณาเปิด Connections แล้วลองใหม่"}</p>}
-            <Card className="organization-card">
-              <span>สิทธิ์ของคุณ</span>
-              <strong>{membership?.role}</strong>
-            </Card>
-            <Link className="button inline-button" href={`/o/${encodeURIComponent(organizations[0].id)}/tasks`}>เปิดพื้นที่งาน</Link>
-            {organizations.slice(1).map((organization) => <Link key={organization.id} className="task-card" href={`/o/${encodeURIComponent(organization.id)}/tasks`}><strong>{organization.name}</strong><span className="field-help">{organization.role}</span></Link>)}
-            <details><summary>สร้าง Organization ใหม่</summary><form action={createOrganization} className="setup-form"><label htmlFor="new-organization-name">ชื่อ Organization</label><input id="new-organization-name" name="name" maxLength={160} required autoComplete="organization" /><button className="button" type="submit">สร้าง Organization</button></form></details>
+            <div className="organization-list">{organizations.map((organization) => <article key={organization.id} className="card organization-choice"><div><h2>{organization.name}</h2><span className="status-pill">{roleName[organization.role]}</span></div><Link className="button inline-button" href={`/o/${encodeURIComponent(organization.id)}/tasks`}>เปิดพื้นที่งาน</Link><div className="organization-shortcuts"><Link href={`/o/${encodeURIComponent(organization.id)}/members`}>สมาชิกและสิทธิ์</Link><Link href={`/o/${encodeURIComponent(organization.id)}/line-groups`}>กลุ่ม LINE</Link></div></article>)}</div>
+            <details className="organization-create"><summary>สร้างองค์กรใหม่</summary><form action={createOrganization} className="setup-form"><label htmlFor="new-organization-name">ชื่อองค์กร</label><input id="new-organization-name" name="name" maxLength={160} required autoComplete="organization" /><p className="field-help">ใช้ชื่อที่ทีมของคุณจำได้ง่าย</p><button className="button" type="submit">สร้างองค์กร</button></form></details>
           </>
         )}
       </div>

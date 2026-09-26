@@ -128,6 +128,7 @@ func New(config Config, store Store) http.Handler {
 		mux.HandleFunc("POST /v1/o/{organization}/business", s.updateBusinessProfile)
 		mux.HandleFunc("GET /v1/o/{organization}/business/logo", s.businessLogo)
 		mux.HandleFunc("GET /v1/o/{organization}/memberships", s.listMemberships)
+		mux.HandleFunc("GET /v1/o/{organization}/invitations", s.listPendingInvitations)
 		mux.HandleFunc("POST /v1/o/{organization}/invitations", s.createInvitation)
 		mux.HandleFunc("POST /v1/o/{organization}/invitations/{invitation}/revoke", s.revokeInvitation)
 		mux.HandleFunc("POST /v1/invitations/claim", s.claimInvitation)

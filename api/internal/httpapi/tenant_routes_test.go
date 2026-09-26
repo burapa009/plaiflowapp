@@ -77,6 +77,9 @@ func (s *tenantStore) ResolveMembership(_ context.Context, userID, organizationI
 func (*tenantStore) ListMemberships(context.Context, string, string) ([]tenant.Membership, error) {
 	return nil, nil
 }
+func (*tenantStore) ListPendingInvitations(context.Context, string, string) ([]tenant.PendingInvitation, error) {
+	return nil, nil
+}
 func (*tenantStore) CreateInvitation(context.Context, tenant.InviteCreate) error { return nil }
 func (*tenantStore) ClaimInvitation(context.Context, tenant.InviteClaim) (tenant.Invitation, error) {
 	return tenant.Invitation{}, nil

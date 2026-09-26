@@ -651,6 +651,33 @@ h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1.2; letter-
 .pricing-firm { margin-top: 1.5rem; }
 .pricing-firm .plan-card-copy { max-width: none; }
 .pricing-firm .plan-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.organization-choice { display: grid; gap: .85rem; padding: 1.2rem; }
+.organization-choice > div:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.organization-choice h2 { margin: 0; font-size: 1.15rem; }
+.organization-choice .button { margin: 0; }
+.organization-shortcuts { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; font-size: .88rem; }
+.organization-create { margin-top: 1.5rem; }
+.organization-create summary { cursor: pointer; color: var(--primary-strong); font-weight: 700; }
+.line-group-summary, .member-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; margin: 1.25rem 0; padding: 1rem 1.25rem; }
+.line-group-summary strong, .member-summary strong { color: #124fae; font-size: 1.35rem; }
+.line-group-summary span, .member-summary span { color: var(--muted); }
+.line-groups-layout, .member-layout { display: grid; gap: 1rem; }
+.line-group-setup, .line-group-list, .member-list, .member-invites { padding: 1.35rem; }
+.line-group-setup h2, .line-group-list h2, .member-list h2, .member-invites h2 { margin: 0 0 .8rem; }
+.line-group-setup ol { padding-left: 1.35rem; line-height: 1.7; }
+.line-group-setup ol li { margin-bottom: .45rem; }
+.line-group-setup > .secondary-button { margin-top: 1rem; }
+.line-code, .invite-result { margin-top: 1rem; border: 1px solid #b8deed; border-radius: .85rem; padding: 1rem; background: #f1fbff; }
+.line-code p:first-child, .invite-result p:first-child { margin-top: 0; font-weight: 700; }
+.line-code code { display: block; overflow-wrap: anywhere; border-radius: .5rem; padding: .75rem; background: #fff; color: #124fae; font-size: 1rem; }
+.invite-result input { display: block; width: 100%; min-height: 2.75rem; margin-bottom: .7rem; border: 1px solid #b8deed; border-radius: .55rem; padding: .55rem; background: #fff; color: #124fae; }
+.line-group-list ul, .member-list ul, .member-invites ul { display: grid; gap: .8rem; margin: 0; padding: 0; list-style: none; }
+.line-group-list li, .member-list li, .member-invites li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .7rem; border-top: 1px solid var(--border); padding-top: .8rem; }
+.line-group-list li > div, .member-list li > div:first-child { display: grid; gap: .3rem; }
+.member-list li .card-actions, .member-list li .card-actions form { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.member-list select { min-height: 2.75rem; border: 1px solid var(--border); border-radius: .6rem; padding: .5rem; background: #fff; }
+.member-invites h3 { margin: 1.5rem 0 .6rem; font-size: 1rem; }
+@media (min-width: 64rem) { .line-groups-layout, .member-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
 .billing-page { @apply grid gap-6; }
 .billing-stack { display: grid; gap: 1rem; max-width: 52rem; }
 .billing-choice { display: grid; gap: .25rem; text-decoration: none; }
