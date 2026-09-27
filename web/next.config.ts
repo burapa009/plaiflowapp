@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     const api = getAPIBaseURL(process.env);
     return [
       { source: "/api/auth/:path*", destination: `${api}/v1/auth/:path*` },
+      { source: "/api/logout", destination: `${api}/v1/logout` },
       { source: "/api/export-artifacts/:job", destination: `${api}/v1/export-artifacts/:job` },
       { source: "/api/drive/callback", destination: `${api}/v1/drive/callback` },
       { source: "/api/o/:organization/drive/:action", destination: `${api}/v1/o/:organization/drive/:action` },
