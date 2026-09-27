@@ -9,8 +9,63 @@ import (
 	"plaiflow/api/internal/plan"
 )
 
+func TestAgedChargesRotateThroughBoundedReconciliation(t *testing.T) {
+	store, ctx := isolatedTestStore(t, 17)
+	owner, org := postgresUUID(), postgresUUID()
+	if _, err := store.pool.Exec(ctx, `INSERT INTO users(id) VALUES($1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(ctx, `INSERT INTO organizations(id,name) VALUES($1,'Reconciliation test')`, org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(ctx, `INSERT INTO billing_intents
+        (id,organization_id,actor_user_id,plan_key,billing_interval,amount_satang,status,
+         omise_charge_id,created_at,expires_at)
+        SELECT gen_random_uuid(),$1,$2,'Starter','monthly',15000,'expired',
+               'chrg_test_aged_'||n,now()-interval '30 days',now()-interval '29 days'
+        FROM generate_series(1,105) n`, org, owner); err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[string]bool)
+	for _, want := range []int{100, 5, 0} {
+		ids, err := store.PendingCharges(ctx, 100)
+		if err != nil || len(ids) != want {
+			t.Fatalf("want=%d got=%d err=%v", want, len(ids), err)
+		}
+		for _, id := range ids {
+			if seen[id] {
+				t.Fatalf("charge selected twice before next due: %s", id)
+			}
+			seen[id] = true
+		}
+	}
+	if len(seen) != 105 {
+		t.Fatalf("only %d aged charges reached", len(seen))
+	}
+	var intent billing.Intent
+	intent.OrganizationID, intent.ActorUserID = org, owner
+	if err := store.pool.QueryRow(ctx, `SELECT id,omise_charge_id FROM billing_intents WHERE organization_id=$1 LIMIT 1`, org).Scan(&intent.ID, &intent.ChargeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkUnpaid(ctx, intent, "expired", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	var terminal bool
+	if err := store.pool.QueryRow(ctx, `SELECT next_reconcile_at='infinity' FROM billing_intents WHERE id=$1`, intent.ID).Scan(&terminal); err != nil || !terminal {
+		t.Fatalf("provider expiry did not stop scans: terminal=%v err=%v", terminal, err)
+	}
+	if _, err := store.pool.Exec(ctx, `UPDATE billing_intents SET next_reconcile_at=now()-interval '1 minute'
+        WHERE organization_id=$1 AND id<>$2`, org, intent.ID); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := store.PendingCharges(ctx, 105)
+	if err != nil || len(ids) != 104 {
+		t.Fatalf("terminal charge was reclaimed: count=%d err=%v", len(ids), err)
+	}
+}
+
 func TestPromptPayPeriodIsTenantScopedAndReplaySafe(t *testing.T) {
-	store, ctx := isolatedTestStore(t, 14)
+	store, ctx := isolatedTestStore(t, 17)
 	owner, member, otherOwner := postgresUUID(), postgresUUID(), postgresUUID()
 	org, other := postgresUUID(), postgresUUID()
 	now := time.Now().UTC().Truncate(time.Second)

@@ -9,10 +9,9 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 	"time"
-	"unicode"
 
+	"plaiflow/api/internal/spreadsheetsafe"
 	"plaiflow/api/internal/tenant"
 )
 
@@ -240,27 +239,23 @@ func NewCSVWriter(output io.Writer) (*CSVWriter, error) {
 	}
 	w := csv.NewWriter(output)
 	w.UseCRLF = true
-	if err := w.Write(exportHeader); err != nil {
+	if err := w.Write(spreadsheetsafe.CSVRow(exportHeader)); err != nil {
 		return nil, err
 	}
 	return &CSVWriter{writer: w}, nil
 }
 
 func (w *CSVWriter) Write(row ExportRow) error {
-	return w.writer.Write(exportRecord(row, true))
+	return w.writer.Write(spreadsheetsafe.CSVRow(exportRecord(row)))
 }
 
-func exportRecord(row ExportRow, safe bool) []string {
-	values := []string{
-		row.OrganizationID, safeCSVCell(row.OrganizationName), row.TaskID, safeCSVCell(row.Title), safeCSVCell(row.Description),
-		string(row.Status), string(row.Priority), row.DueDate, strconv.FormatBool(row.IsOverdue), safeCSVCell(row.CreatorName),
-		safeCSVCell(row.AssigneeName), safeCSVCell(row.WatcherNames), timestamp(row.CreatedAt), timestamp(row.UpdatedAt),
+func exportRecord(row ExportRow) []string {
+	return []string{
+		row.OrganizationID, row.OrganizationName, row.TaskID, row.Title, row.Description,
+		string(row.Status), string(row.Priority), row.DueDate, strconv.FormatBool(row.IsOverdue), row.CreatorName,
+		row.AssigneeName, row.WatcherNames, timestamp(row.CreatedAt), timestamp(row.UpdatedAt),
 		nullableTimestamp(row.StatusChangedAt), nullableTimestamp(row.CompletedAt),
 	}
-	if !safe {
-		values[1], values[3], values[4], values[9], values[10], values[11] = row.OrganizationName, row.Title, row.Description, row.CreatorName, row.AssigneeName, row.WatcherNames
-	}
-	return values
 }
 
 type XLSXWriter struct {
@@ -299,7 +294,7 @@ func NewXLSXWriter(output io.Writer) (*XLSXWriter, error) {
 	}
 	return w, nil
 }
-func (w *XLSXWriter) Write(row ExportRow) error { return w.write(exportRecord(row, false)) }
+func (w *XLSXWriter) Write(row ExportRow) error { return w.write(exportRecord(row)) }
 func (w *XLSXWriter) write(values []string) error {
 	w.row++
 	if _, err := fmt.Fprintf(w.sheet, `<row r="%d">`, w.row); err != nil {
@@ -309,7 +304,7 @@ func (w *XLSXWriter) write(values []string) error {
 		if _, err := fmt.Fprintf(w.sheet, `<c r="%s%d" t="inlineStr"><is><t xml:space="preserve">`, spreadsheetColumn(index), w.row); err != nil {
 			return err
 		}
-		if err := xml.EscapeText(w.sheet, []byte(value)); err != nil {
+		if err := xml.EscapeText(w.sheet, []byte(spreadsheetsafe.XMLText(value))); err != nil {
 			return err
 		}
 		if _, err := io.WriteString(w.sheet, `</t></is></c>`); err != nil {
@@ -337,15 +332,6 @@ func spreadsheetColumn(index int) string {
 func (w *CSVWriter) Close() error {
 	w.writer.Flush()
 	return w.writer.Error()
-}
-
-func safeCSVCell(value string) string {
-	trimmed := strings.TrimLeftFunc(value, unicode.IsSpace)
-	if value != "" && (value[0] == '\t' || value[0] == '\r' || value[0] == '\n') ||
-		trimmed != "" && strings.ContainsRune("=+-@", rune(trimmed[0])) {
-		return "'" + value
-	}
-	return value
 }
 
 func timestamp(value time.Time) string {

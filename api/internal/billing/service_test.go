@@ -1,9 +1,12 @@
 package billing
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,8 +60,9 @@ func (s *testStore) SetCancellation(context.Context, string, string, bool, time.
 }
 
 type testProvider struct {
-	charge     Charge
-	lateExpiry bool
+	charge      Charge
+	lateExpiry  bool
+	retrieveErr error
 }
 
 func (p *testProvider) CreateCharge(_ context.Context, id string, amount int64, expiresAt time.Time) (Charge, error) {
@@ -70,7 +74,41 @@ func (p *testProvider) CreateCharge(_ context.Context, id string, amount int64, 
 	}
 	return p.charge, nil
 }
-func (p *testProvider) RetrieveCharge(context.Context, string) (Charge, error) { return p.charge, nil }
+func (p *testProvider) RetrieveCharge(context.Context, string) (Charge, error) {
+	return p.charge, p.retrieveErr
+}
+
+type reconcileStore struct{ *testStore }
+
+func (s *reconcileStore) PendingCharges(context.Context, int) ([]string, error) {
+	return []string{s.intent.ChargeID}, nil
+}
+
+func TestAgedChargeReconciliationSignalsLagAndRepairsOnce(t *testing.T) {
+	paidAt := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
+	now := paidAt
+	store, provider := &reconcileStore{testStore: &testStore{}}, &testProvider{}
+	var logs bytes.Buffer
+	service := Service{Store: store, Provider: provider, Now: func() time.Time { return now },
+		Logger: slog.New(slog.NewJSONHandler(&logs, nil))}
+	if _, err := service.Start(context.Background(), "owner", "org", "aged", plan.Starter, plan.Monthly); err != nil {
+		t.Fatal(err)
+	}
+	now = paidAt.Add(72 * time.Hour)
+	provider.charge.Status, provider.charge.Paid, provider.charge.PaidAt = "successful", true, &paidAt
+	for i := 0; i < 2; i++ {
+		if _, err := service.ReconcilePending(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if store.grants != 1 || strings.Count(logs.String(), "billing_entitlement_lag") != 1 {
+		t.Fatalf("grants=%d logs=%s", store.grants, logs.String())
+	}
+	provider.retrieveErr = ErrProvider
+	if _, err := service.ReconcilePending(context.Background()); !errors.Is(err, ErrProvider) || store.grants != 1 {
+		t.Fatalf("provider outage: grants=%d err=%v", store.grants, err)
+	}
+}
 
 func TestEachIntervalRequiresVerifiedPromptPayAndGrantsOnce(t *testing.T) {
 	for _, tc := range []struct {

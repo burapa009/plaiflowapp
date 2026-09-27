@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -66,6 +67,7 @@ type Service struct {
 	Provider Provider
 	Live     bool
 	Now      func() time.Time
+	Logger   *slog.Logger
 }
 
 func (s Service) clock() time.Time {
@@ -134,6 +136,9 @@ func (s Service) ProcessCharge(ctx context.Context, chargeID string) error {
 	if !charge.Successful(intent.ID, intent.AmountSatang, s.Live) || charge.PaidAt == nil {
 		return ErrProvider
 	}
+	if delay := s.clock().Sub(*charge.PaidAt); intent.Status != "paid" && delay > 15*time.Minute && s.Logger != nil {
+		s.Logger.Warn("billing_entitlement_lag", "charge_id", charge.ID, "delay_seconds", int64(delay.Seconds()))
+	}
 	return s.Store.Activate(ctx, intent, charge, s.clock())
 }
 
@@ -160,13 +165,17 @@ func (s Service) ReconcilePending(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	repaired := 0
+	checked := 0
+	var firstErr error
 	for _, id := range charges {
-		if s.ProcessCharge(ctx, id) == nil {
-			repaired++
+		checked++
+		if err := s.ProcessCharge(ctx, id); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
-	return repaired, nil
+	return checked, firstErr
 }
 
 // AddMonthsClamped preserves the original renewal day across short months.

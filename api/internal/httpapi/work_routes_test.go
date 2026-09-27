@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,6 +20,7 @@ type workStore struct {
 	updated    work.UpdateTask
 	dashboard  work.Dashboard
 	exportRows []work.ExportRow
+	exportErr  error
 }
 
 func (s *workStore) CreateTask(_ context.Context, command work.CreateTask) (work.Task, error) {
@@ -63,7 +65,7 @@ func (s *workStore) ExportRows(_ context.Context, _, _ string, _ work.TaskFilter
 			return err
 		}
 	}
-	return nil
+	return s.exportErr
 }
 func (*workStore) QueueExport(context.Context, work.ExportRequest, int64) (work.ExportJob, error) {
 	return work.ExportJob{}, nil
@@ -152,6 +154,27 @@ func TestDashboardAssistantAndCSVUseAuthorizedOrganizationData(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "'=bad") || !strings.Contains(response.Body.String(), "'+formula") {
 		t.Fatalf("csv status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestTaskExportLateFailureDoesNotLeakPartialFile(t *testing.T) {
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	store := &workStore{exportRows: []work.ExportRow{{OrganizationID: "org-1", Title: "secret-row", CreatedAt: now, UpdatedAt: now}}, exportErr: errors.New("late database error")}
+	handler := workHandler(t, now, store, work.UnlimitedGate{})
+	for _, format := range []string{"", "xlsx"} {
+		form := "csrf_token=csrf"
+		if format != "" {
+			form += "&format=" + format
+		}
+		request := httptest.NewRequest(http.MethodPost, "https://app.example/v1/o/org-1/task-exports", strings.NewReader(form))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Origin", "https://app.example")
+		request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusServiceUnavailable || response.Header().Get("Content-Disposition") != "" || strings.Contains(response.Body.String(), "secret-row") || strings.HasPrefix(response.Body.String(), "\ufeff") || strings.HasPrefix(response.Body.String(), "PK") {
+			t.Fatalf("format=%q status=%d headers=%v body=%q", format, response.Code, response.Header(), response.Body.String())
+		}
 	}
 }
 

@@ -11,3 +11,17 @@ Controlled end-to-end result: The test Owner created a Starter monthly PromptPay
 5. Before any live collection, implement and verify the remaining Phase 11 requirements: seller receipt issuance/email/history, paid Document carry and Scan Credits, scheduled Plan/interval changes and upgrades, renewal/failure reminders, measured p95/latency, firm gates, Thai accountant review, and Omise live account/PromptPay approval. Record a real rollback drill that turns both billing flags off without deleting payment history.
 
 Sources: [Omise PromptPay](https://docs.omise.co/th/promptpay/thailand), [webhook verification](https://docs.omise.co/api-webhooks), [live account documents](https://docs.omise.co/th/how-do-i-enable-live-account/thailand).
+
+## Test-mode webhook-secret rotation drill
+
+1. Record the current test webhook secret securely. Roll it in the Omise **test** dashboard. Set the new value as `OMISE_WEBHOOK_SECRET` and the old value as `OMISE_WEBHOOK_PREVIOUS_SECRET` on the staging API only. Deploy the API. Do not print either value in a command, log, or evidence file.
+2. During Omise's 24-hour overlap, send a test-mode PromptPay event. Confirm the API returns 204, exactly one provider event is stored, and the worker retrieves the charge and applies at most one period. Check webhook rejection counts and pending-charge reconciliation; Omise does not guarantee failed-delivery retries.
+3. Revoke the expiring secret in Omise or wait for the provider overlap to end. Remove `OMISE_WEBHOOK_PREVIOUS_SECRET` from the staging API and redeploy. Confirm a request signed only with the retired secret returns 401, while a fresh event signed with the new secret returns 204. Reconcile pending charges and check that no paid charge is missing locally. Keep public checkout closed throughout.
+
+## Delayed paid Entitlement / missed webhook
+
+Route API log events `billing_entitlement_lag` (verified Omise `paid_at` older than 15 minutes before local activation), `billing_reconciliation_unavailable`, and `billing_reconciliation_capacity` to the billing on-call alert channel. Alert delivery and a named on-call owner must be tested before public sales; the application currently emits structured logs only.
+
+1. On alert, identify the charge ID from the structured log. Compare Omise test-mode charge status, amount, mode, PromptPay source, and intent metadata with the local intent, paid period, Subscription, Entitlement, and Seller Receipt. Never infer payment from a browser return or QR.
+2. Check API/provider errors and reconciliation cadence. Reconciliation claims at most 100 due pending or locally expired charges every 15 minutes, including charges older than two days. A provider-confirmed expired charge stops scanning; a provider outage leaves rights unchanged and retries on the next due scan. A capacity warning means the scan filled its batch and requires backlog inspection.
+3. Confirm one paid period and correct paid-through instant after repair. If a verified paid charge still has no local Entitlement, keep public checkout closed and escalate to the billing owner; do not insert a period manually. Record charge ID, earliest verified paid time, detection time, repair time, and cause without secrets or payloads.

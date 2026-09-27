@@ -143,14 +143,17 @@ func (s *server) exportVendors(w http.ResponseWriter, r *http.Request) {
 	if xlsx {
 		extension, contentType, write = "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", business.WriteXLSX
 	}
+	output := &boundedExportBuffer{}
+	if err := write(output, contacts); err != nil {
+		s.config.Logger.Error("vendor_export_failed", "request_id", requestID(r))
+		writeError(w, r, http.StatusServiceUnavailable, "vendor_export_failed", "Export is unavailable")
+		return
+	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="vendors-%s.%s"`, s.config.Now().UTC().Format("20060102"), extension))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
-	if err := write(w, contacts); err != nil {
-		s.config.Logger.Error("vendor_export_failed", "request_id", requestID(r))
-		return
-	}
+	_, _ = w.Write(output.Bytes())
 	_ = s.config.Gate.Record(r.Context(), membership.OrganizationID, capability, int64(len(contacts)), requestID(r))
 }
 

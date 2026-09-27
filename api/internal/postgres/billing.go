@@ -209,8 +209,9 @@ func (s *Store) MarkUnpaid(ctx context.Context, intent billing.Intent, status st
 		return err
 	}
 	defer tx.Rollback(ctx)
-	command, err := tx.Exec(ctx, `UPDATE billing_intents SET status=$3
-        WHERE id=$1 AND omise_charge_id=$2 AND status='awaiting_payment'`, intent.ID, intent.ChargeID, status)
+	command, err := tx.Exec(ctx, `UPDATE billing_intents SET status=$3,next_reconcile_at='infinity'
+        WHERE id=$1 AND omise_charge_id=$2 AND
+          (status='awaiting_payment' OR (status='expired' AND next_reconcile_at<>'infinity'))`, intent.ID, intent.ChargeID, status)
 	if err != nil {
 		return err
 	}
@@ -264,9 +265,12 @@ func (s *Store) FinishEvent(ctx context.Context, id string, ok bool) error {
 }
 
 func (s *Store) PendingCharges(ctx context.Context, limit int) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT omise_charge_id FROM billing_intents WHERE status IN ('awaiting_payment','expired')
-        AND omise_charge_id IS NOT NULL AND created_at>now()-interval '2 days'
-        ORDER BY created_at,id LIMIT $1`, limit)
+	rows, err := s.pool.Query(ctx, `WITH due AS (
+        SELECT id FROM billing_intents WHERE status IN ('awaiting_payment','expired')
+          AND omise_charge_id IS NOT NULL AND next_reconcile_at<=now()
+        ORDER BY next_reconcile_at,id FOR UPDATE SKIP LOCKED LIMIT $1
+    ) UPDATE billing_intents i SET next_reconcile_at=now()+interval '15 minutes'
+    FROM due WHERE i.id=due.id RETURNING i.omise_charge_id`, limit)
 	if err != nil {
 		return nil, err
 	}

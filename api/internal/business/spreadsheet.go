@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"plaiflow/api/internal/spreadsheetsafe"
 )
 
 const (
@@ -31,11 +33,11 @@ func WriteCSV(output io.Writer, contacts []Contact) error {
 	}
 	writer := csv.NewWriter(output)
 	writer.UseCRLF = true
-	if err := writer.Write(exportHeader); err != nil {
+	if err := writer.Write(spreadsheetsafe.CSVRow(exportHeader)); err != nil {
 		return err
 	}
 	for _, contact := range contacts {
-		if err := writer.Write(exportRecord(contact, true)); err != nil {
+		if err := writer.Write(spreadsheetsafe.CSVRow(exportRecord(contact))); err != nil {
 			return err
 		}
 	}
@@ -43,25 +45,16 @@ func WriteCSV(output io.Writer, contacts []Contact) error {
 	return writer.Error()
 }
 
-func exportRecord(contact Contact, protectCSV bool) []string {
+func exportRecord(contact Contact) []string {
 	roles := "Vendor"
 	if contact.Customer {
 		roles = "Customer,Vendor"
 	}
-	values := []string{contact.ID, contact.DisplayName, contact.ContactCode, contact.Country, contact.TaxID, contact.BranchCode, roles}
-	if protectCSV {
-		for index, value := range values {
-			if spreadsheetFormula(value) {
-				values[index] = "'" + value
-			}
-		}
-	}
-	return values
+	return []string{contact.ID, contact.DisplayName, contact.ContactCode, contact.Country, contact.TaxID, contact.BranchCode, roles}
 }
 
 func spreadsheetFormula(value string) bool {
-	trimmed := strings.TrimLeft(value, " \t\r\n")
-	return trimmed != "" && strings.ContainsRune("=+-@", rune(trimmed[0]))
+	return spreadsheetsafe.Formula(value)
 }
 
 func WriteXLSX(output io.Writer, contacts []Contact) error {
@@ -90,13 +83,13 @@ func WriteXLSX(output io.Writer, contacts []Contact) error {
 	rows := make([][]string, 0, len(contacts)+1)
 	rows = append(rows, exportHeader)
 	for _, contact := range contacts {
-		rows = append(rows, exportRecord(contact, false))
+		rows = append(rows, exportRecord(contact))
 	}
 	for rowIndex, row := range rows {
 		_, _ = fmt.Fprintf(buffer, `<row r="%d">`, rowIndex+1)
 		for columnIndex, value := range row {
 			_, _ = fmt.Fprintf(buffer, `<c r="%s%d" t="inlineStr"><is><t xml:space="preserve">`, columnName(columnIndex), rowIndex+1)
-			if err := xml.EscapeText(buffer, []byte(value)); err != nil {
+			if err := xml.EscapeText(buffer, []byte(spreadsheetsafe.XMLText(value))); err != nil {
 				return err
 			}
 			_, _ = io.WriteString(buffer, `</t></is></c>`)

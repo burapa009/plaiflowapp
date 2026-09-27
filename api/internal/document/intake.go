@@ -1,6 +1,7 @@
 package document
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -73,7 +74,9 @@ func (i Intake) Prepare(ctx context.Context, organizationID, attemptID string, s
 	mime := sniff(prefix[:prefixLen])
 	hash := sha256.New()
 	_, _ = hash.Write(prefix[:prefixLen])
-	rest, err := io.Copy(hash, body)
+	end := &fileEnd{}
+	_, _ = end.Write(prefix[:prefixLen])
+	rest, err := io.Copy(io.MultiWriter(hash, end), body)
 	closeErr := body.Close()
 	if err != nil {
 		return Prepared{}, err
@@ -85,7 +88,7 @@ func (i Intake) Prepare(ctx context.Context, organizationID, attemptID string, s
 	if size > MaxFileBytes {
 		return Prepared{}, ErrTooLarge
 	}
-	if mime == "" || size == 0 {
+	if mime == "" || size == 0 || !validFileEnd(mime, prefix[:prefixLen], end.data) {
 		return Prepared{}, ErrUnsupportedType
 	}
 	if !i.SkipScan {
@@ -104,6 +107,36 @@ func (i Intake) Prepare(ctx context.Context, organizationID, attemptID string, s
 	}
 	keep = true
 	return Prepared{TemporaryKey: key, SHA256: hex.EncodeToString(hash.Sum(nil)), MIME: mime, Size: size}, nil
+}
+
+type fileEnd struct{ data []byte }
+
+func (e *fileEnd) Write(p []byte) (int, error) {
+	n := len(p)
+	e.data = append(e.data, p...)
+	if len(e.data) > 1024 {
+		copy(e.data, e.data[len(e.data)-1024:])
+		e.data = e.data[:1024]
+	}
+	return n, nil
+}
+
+// ponytail: header and footer checks reject common appended polyglots; use a
+// bounded format parser if crafted internal polyglots become an observed risk.
+func validFileEnd(mime string, prefix, end []byte) bool {
+	switch mime {
+	case "application/pdf":
+		if len(prefix) < 8 || (prefix[5] != '1' && prefix[5] != '2') || prefix[6] != '.' || prefix[7] < '0' || prefix[7] > '9' {
+			return false
+		}
+		marker := bytes.LastIndex(end, []byte("%%EOF"))
+		return marker >= 0 && len(bytes.TrimSpace(end[marker+5:])) == 0
+	case "image/png":
+		return bytes.HasSuffix(end, []byte("\x00\x00\x00\x00IEND\xaeB`\x82"))
+	case "image/jpeg":
+		return bytes.HasSuffix(end, []byte("\xff\xd9"))
+	}
+	return false
 }
 
 func sniff(prefix []byte) string {

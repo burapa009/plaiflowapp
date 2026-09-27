@@ -9,6 +9,8 @@ import (
 	"io"
 	"strings"
 	"unicode/utf8"
+
+	"plaiflow/api/internal/spreadsheetsafe"
 )
 
 // WorkbookSheet streams rows into one sheet; callers must reauthorize during Rows.
@@ -113,7 +115,7 @@ type workbookLimit struct {
 
 func (l *workbookLimit) Write(p []byte) (int, error) {
 	if int64(len(p)) > l.remaining {
-		return 0, errors.New("workbook exceeds 128 MiB")
+		return 0, errors.New("export exceeds 128 MiB")
 	}
 	n, err := l.writer.Write(p)
 	l.remaining -= int64(n)
@@ -131,12 +133,7 @@ func writeWorkbookRow(output io.Writer, index int, values []string) error {
 		if _, err := fmt.Fprintf(output, `<c r="%s%d" t="inlineStr"><is><t xml:space="preserve">`, columnName(column), index); err != nil {
 			return err
 		}
-		value = strings.Map(func(r rune) rune {
-			if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
-				return '\ufffd'
-			}
-			return r
-		}, value)
+		value = spreadsheetsafe.XMLText(value)
 		if err := xml.EscapeText(output, []byte(value)); err != nil {
 			return err
 		}

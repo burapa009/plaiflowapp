@@ -58,16 +58,19 @@ func main() {
 	var billingService *billing.Service
 	if billingEnabled {
 		secretKey, webhookSecret := os.Getenv("OMISE_SECRET_KEY"), os.Getenv("OMISE_WEBHOOK_SECRET")
+		previousSecret := os.Getenv("OMISE_WEBHOOK_PREVIOUS_SECRET")
 		decodedSecret, decodeErr := base64.StdEncoding.DecodeString(webhookSecret)
+		decodedPrevious, previousErr := base64.StdEncoding.DecodeString(previousSecret)
 		validKey := (settings.Environment == "production" && strings.HasPrefix(secretKey, "skey_live_")) ||
 			(settings.Environment != "production" && strings.HasPrefix(secretKey, "skey_test_"))
-		if !validKey || decodeErr != nil || len(decodedSecret) < 16 {
+		if !validKey || decodeErr != nil || len(decodedSecret) < 16 ||
+			(previousSecret != "" && (previousErr != nil || len(decodedPrevious) < 16 || previousSecret == webhookSecret)) {
 			logger.Error("billing_configuration_invalid")
 			os.Exit(1)
 		}
 		store.EnableBilling()
 		billingService = &billing.Service{Store: store, Provider: billing.Omise{SecretKey: secretKey},
-			Live: settings.Environment == "production", Now: time.Now}
+			Live: settings.Environment == "production", Now: time.Now, Logger: logger}
 		go runBilling(ctx, *billingService, logger)
 	}
 	authService, err := auth.NewService(auth.ServiceConfig{WebOrigin: settings.WebBaseURL, Providers: []auth.Provider{
@@ -167,7 +170,8 @@ func main() {
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
 			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
-			Billing: billingService, BillingEnabled: billingEnabled, BillingTestOrganizationID: os.Getenv("BILLING_TEST_ORGANIZATION_ID"), OmiseWebhookSecret: os.Getenv("OMISE_WEBHOOK_SECRET"),
+			Billing: billingService, BillingEnabled: billingEnabled, BillingTestOrganizationID: os.Getenv("BILLING_TEST_ORGANIZATION_ID"),
+			OmiseWebhookSecret: os.Getenv("OMISE_WEBHOOK_SECRET"), OmiseWebhookPreviousSecret: os.Getenv("OMISE_WEBHOOK_PREVIOUS_SECRET"),
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
@@ -207,9 +211,12 @@ func runBilling(ctx context.Context, service billing.Service, logger *slog.Logge
 			count, err := service.ReconcilePending(work)
 			cancel()
 			if err != nil {
-				logger.Warn("billing_reconciliation_unavailable")
+				logger.Warn("billing_reconciliation_unavailable", "checked", count)
 			} else {
 				logger.Info("billing_reconciliation", "checked", count)
+			}
+			if count == 100 {
+				logger.Warn("billing_reconciliation_capacity", "checked", count)
 			}
 		}
 	}

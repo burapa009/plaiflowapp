@@ -115,24 +115,27 @@ func (o Omise) request(req *http.Request) (Charge, error) {
 }
 
 // VerifyWebhook checks Omise's base64-secret HMAC over timestamp + "." + raw body.
-func VerifyWebhook(body []byte, timestamp, signature, encodedSecret string, now time.Time) error {
+// previousSecret is accepted only while explicitly configured for rotation.
+func VerifyWebhook(body []byte, timestamp, signature, encodedSecret string, now time.Time, previousSecret ...string) error {
 	seconds, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil || seconds <= 0 || now.Sub(time.Unix(seconds, 0)) > 5*time.Minute || time.Unix(seconds, 0).Sub(now) > 5*time.Minute {
 		return ErrInvalidWebhook
 	}
-	secret, err := base64.StdEncoding.DecodeString(encodedSecret)
-	if err != nil || len(secret) < 16 {
-		return ErrInvalidWebhook
-	}
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(timestamp))
-	mac.Write([]byte("."))
-	mac.Write(body)
-	expected := mac.Sum(nil)
-	for _, value := range strings.Split(signature, ",") {
-		candidate, err := hex.DecodeString(strings.TrimSpace(value))
-		if err == nil && hmac.Equal(candidate, expected) {
-			return nil
+	for _, encoded := range append([]string{encodedSecret}, previousSecret...) {
+		secret, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil || len(secret) < 16 {
+			continue
+		}
+		mac := hmac.New(sha256.New, secret)
+		mac.Write([]byte(timestamp))
+		mac.Write([]byte("."))
+		mac.Write(body)
+		expected := mac.Sum(nil)
+		for _, value := range strings.Split(signature, ",") {
+			candidate, err := hex.DecodeString(strings.TrimSpace(value))
+			if err == nil && hmac.Equal(candidate, expected) {
+				return nil
+			}
 		}
 	}
 	return ErrInvalidWebhook

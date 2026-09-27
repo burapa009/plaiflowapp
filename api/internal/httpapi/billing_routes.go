@@ -110,7 +110,7 @@ func (s *server) omiseWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "invalid_webhook", "Invalid webhook")
 		return
 	}
-	if err := billing.VerifyWebhook(body, r.Header.Get("Omise-Signature-Timestamp"), r.Header.Get("Omise-Signature"), s.config.OmiseWebhookSecret, s.config.Now().UTC()); err != nil {
+	if err := billing.VerifyWebhook(body, r.Header.Get("Omise-Signature-Timestamp"), r.Header.Get("Omise-Signature"), s.config.OmiseWebhookSecret, s.config.Now().UTC(), s.config.OmiseWebhookPreviousSecret); err != nil {
 		writeError(w, r, http.StatusUnauthorized, "invalid_webhook", "Invalid webhook")
 		return
 	}

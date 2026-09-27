@@ -138,3 +138,47 @@ func TestOmiseWebhookForgeryIsRejected(t *testing.T) {
 		t.Fatalf("valid status=%d queued=%d", response.Code, store.queued)
 	}
 }
+
+func TestOmiseWebhookSecretRotation(t *testing.T) {
+	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
+	store := &billingHTTPStore{}
+	oldSecret := []byte("0123456789abcdef0123456789abcdef")
+	newSecret := []byte("fedcba9876543210fedcba9876543210")
+	body := `{"id":"evnt_test_rotation","key":"charge.complete","data":{"id":"chrg_test_1"}}`
+	timestamp := fmt.Sprint(now.Unix())
+	sign := func(secret []byte) string {
+		mac := hmac.New(sha256.New, secret)
+		mac.Write([]byte(timestamp + "." + body))
+		return hex.EncodeToString(mac.Sum(nil))
+	}
+	oldSignature, newSignature := sign(oldSecret), sign(newSecret)
+	handler := func(previous string) http.Handler {
+		return New(Config{Billing: &billing.Service{Store: store}, BillingEnabled: true,
+			OmiseWebhookSecret: base64.StdEncoding.EncodeToString(newSecret), OmiseWebhookPreviousSecret: previous,
+			Now: func() time.Time { return now }}, &fakeStore{})
+	}
+	send := func(h http.Handler, signature string) int {
+		r := httptest.NewRequest(http.MethodPost, "/webhooks/omise", strings.NewReader(body))
+		r.Header.Set("Omise-Signature-Timestamp", timestamp)
+		r.Header.Set("Omise-Signature", signature)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	overlap := handler(base64.StdEncoding.EncodeToString(oldSecret))
+	for _, signature := range []string{oldSignature, newSignature, oldSignature + "," + newSignature} {
+		if got := send(overlap, signature); got != http.StatusNoContent {
+			t.Fatalf("overlap response=%d", got)
+		}
+	}
+	retired := handler("")
+	if got := send(retired, oldSignature); got != http.StatusUnauthorized {
+		t.Fatalf("retired secret response=%d", got)
+	}
+	if got := send(retired, newSignature); got != http.StatusNoContent {
+		t.Fatalf("new secret response=%d", got)
+	}
+	if store.queued != 4 {
+		t.Fatalf("queued=%d", store.queued)
+	}
+}
