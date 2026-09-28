@@ -1,10 +1,15 @@
 # OCR microservice staging status — 2026-09-28
 
-**Later branch work (2026-09-29):** [RunPod OCR migration candidate](runpod-ocr.md)
-adds a GPU worker, provider routing, migration 19, and matching suggestions on
-`feat/business-management`. No RunPod GPU inference, migration 19, or RunPod
-endpoint has been verified in staging. The Railway OCR deployment and evidence
-below remain the last verified runtime state.
+**RunPod staging update (2026-09-29):** [RunPod OCR pilot](runpod-ocr.md) now
+has migration 19, a queue-based endpoint, a deployed API and OCR dispatcher,
+and one isolated sample Organization. The default provider is still Railway.
+The first RunPod job was interrupted during a routing pause and later completed
+without GPU timing metadata. A later one-page synthetic PNG completed through
+RunPod on its first attempt, and its OCR text and review draft appeared in the
+app. Five later PDFs completed 100 synthetic pages on RunPod without retries.
+The user stopped further testing at that point. The RunPod runbook records
+timings, the repaired field extraction rule, and open load and cost gates. The
+Railway OCR result below remains the last verified Railway CPU result.
 
 The OCR pilot is active through `https://plaiflowapp.vercel.app`, whose current
 web deployment uses the Railway **staging** API. Railway's existing
