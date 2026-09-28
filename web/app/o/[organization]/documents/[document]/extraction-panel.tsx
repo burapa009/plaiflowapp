@@ -1,11 +1,12 @@
 import { sessionGET, sessionPOST } from "@/lib/session-api";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import AccountingResultPanel, { type AccountingResult } from "./accounting-result";
 
 type Field = { presence: string; raw: string; normalized: string; confidence: string; evidence: { page: number; line: number }[] };
 type Warning = { code: string; field: string; severity: string };
 type Extraction = {
-  draft: { document_type: string; fields: Record<string, Field>; warnings: Warning[] };
+  draft: { document_type: string; fields: Record<string, Field>; warnings: Warning[]; accounting?: AccountingResult };
   ocr_job_id: string;
   revision: number;
   source_superseded: boolean;
@@ -98,6 +99,7 @@ export default async function ExtractionPanel({ organization, document, nextHref
 
   return <section className="mt-5 rounded-[1.2rem] border border-line bg-surface p-5 shadow-panel" aria-labelledby="extraction-heading">
     <h2 id="extraction-heading">ข้อมูลที่สกัดจากเอกสาร</h2>
+    {data.draft.accounting && <AccountingResultPanel result={data.draft.accounting} />}
     <p className="mt-2 text-sm text-muted">ชนิดที่ระบบอ่าน: {data.draft.document_type} · ค่าจาก OCR เป็นข้อเสนอ ไม่ใช่ข้อมูลที่ยืนยันแล้ว</p>
     {data.confirmed && !data.source_superseded && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-emerald-900" role="status">ยืนยันข้อมูลแล้วเมื่อ {new Date(data.confirmed.confirmed_at).toLocaleString("th-TH")}</p>}
     {data.source_superseded && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-amber-900" role="alert">OCR เปลี่ยนหลังการยืนยันครั้งก่อน กรุณาตรวจทานใหม่ก่อนส่งออก</p>}

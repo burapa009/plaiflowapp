@@ -1,63 +1,63 @@
 import hashlib
 import json
-import math
 import os
 import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any, Callable
+
+from .normalize import normalize_pages
 
 MAX_FILE = 20 << 20
 MAX_RESULT = 8 << 20
 MAX_TEMP = 512 << 20
+MODEL_VERSION = "paddleocr-3.7.0-ppocrv5-th-v2"
+PREPROCESSING_VERSION = "v2"
 
 
-def normalize(pages):
+def normalize(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not 1 <= len(pages) <= 20:
         raise ValueError("invalid_input")
-    for number, page in enumerate(pages, 1):
-        width, height = page["width"], page["height"]
-        if (
-            width <= 0
-            or height <= 0
-            or width * height > 25_000_000
-            or len(page["lines"]) > 5000
-        ):
-            raise ValueError("invalid_input")
-        page["page_number"] = number
-        for line in page["lines"]:
-            if (
-                len(line["text"].encode("utf-8")) > 16384
-                or not 0 <= line["confidence"] <= 1
-            ):
-                raise ValueError("invalid_input")
-            points = line["polygon"]
-            if len(points) != 4 or any(
-                not math.isfinite(v) for point in points for v in point
-            ):
-                raise ValueError("invalid_input")
-            # Image coordinates have y pointing down; positive signed area is clockwise.
+    canonical = normalize_pages(pages, float(os.environ.get("OCR_MIN_CONFIDENCE", "0.30")))
+    result = []
+    for source, page in zip(pages, canonical, strict=True):
+        lines = []
+        for line in page.lines:
+            points = line.polygon
+            # Preserve the existing normalized polygon contract for extraction.
             area = sum(
                 points[i][0] * points[(i + 1) % 4][1]
                 - points[(i + 1) % 4][0] * points[i][1]
                 for i in range(4)
             )
-            if area < 0:
-                points = list(reversed(points))
-            line["polygon"] = [
-                [max(0.0, min(1.0, x / width)), max(0.0, min(1.0, y / height))]
-                for x, y in points
+            ordered = points if area >= 0 else list(reversed(points))
+            item = line.model_dump()
+            item["pixel_polygon"] = item.pop("polygon")
+            item["polygon"] = [
+                [max(0.0, min(1.0, x / page.width)), max(0.0, min(1.0, y / page.height))]
+                for x, y in ordered
             ]
-        page["text"] = "\n".join(line["text"] for line in page["lines"])
-    return pages
+            lines.append(item)
+        result.append({
+            "page_number": page.page, "width": page.width, "height": page.height,
+            "rotation": page.rotation, "duration_ms": source["duration_ms"],
+            "text": page.full_text, "average_confidence": page.average_confidence,
+            "low_confidence_count": page.low_confidence_count, "line_count": page.line_count,
+            "lines": lines,
+        })
+    return result
 
 
-def run_job(protocol, claim, infer, temp_root):
+def run_job(protocol: Any, claim: dict[str, Any], infer: Callable[[Path, float], list[dict[str, Any]]], temp_root: Path) -> dict[str, int]:
+    payload = claim["job"]["payload"]
+    if payload.get("model_version") != MODEL_VERSION or payload.get("preprocessing_version") != PREPROCESSING_VERSION:
+        raise RuntimeError("incompatible_ocr_version")
     started = time.monotonic()
     stop = threading.Event()
     lease_errors = []
 
-    def heartbeat():
+    def heartbeat() -> None:
         while not stop.wait(30):
             try:
                 protocol.heartbeat(claim)
@@ -83,9 +83,8 @@ def run_job(protocol, claim, infer, temp_root):
                 raise lease_errors[0]
             if time.monotonic() > started + 900:
                 raise TimeoutError()
-            payload = claim["job"]["payload"]
             result = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "input_sha256": digest,
                 "model_version": payload["model_version"],
                 "preprocessing_version": payload["preprocessing_version"],

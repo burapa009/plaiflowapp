@@ -23,10 +23,20 @@ const maxReviewBytes = 32 << 10
 var structuredHeader = []string{"document_id", "document_type", "issue_date", "document_number", "seller_name", "seller_tax_id", "buyer_name", "buyer_tax_id", "currency", "subtotal", "vat_amount", "total_amount", "confirmed_at", "confirmed_by", "extraction_schema_version"}
 
 func (s *server) registerExtractionRoutes(m *http.ServeMux) {
-	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/extraction", s.getExtraction)
-	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/confirm", s.confirmExtraction)
-	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.csv", s.exportExtractions)
-	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.xlsx", s.exportExtractions)
+	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/extraction", s.ocrPilot(s.getExtraction))
+	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/confirm", s.ocrPilot(s.confirmExtraction))
+	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.csv", s.ocrPilot(s.exportExtractions))
+	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.xlsx", s.ocrPilot(s.exportExtractions))
+}
+
+func (s *server) ocrPilot(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.config.OCRPilotOrganizations != nil && !s.config.OCRPilotOrganizations[r.PathValue("organization")] {
+			http.NotFound(w, r)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *server) extractionDraft(ctx context.Context, user, org, doc string) (extraction.Draft, string, error) {
@@ -44,7 +54,7 @@ func (s *server) extractionDraft(ctx context.Context, user, org, doc string) (ex
 		return extraction.Draft{}, "", errors.New("OCR result exceeds limit")
 	}
 	var result ocr.Result
-	if err := json.Unmarshal(data, &result); err != nil || result.SchemaVersion != 1 || len(result.Pages) == 0 || len(result.Pages) > 20 {
+	if err := json.Unmarshal(data, &result); err != nil || (result.SchemaVersion != 1 && result.SchemaVersion != 2) || len(result.Pages) == 0 || len(result.Pages) > 20 {
 		return extraction.Draft{}, "", errors.New("OCR result is invalid")
 	}
 	return extraction.Extract(result), state.JobID, nil

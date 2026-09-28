@@ -167,7 +167,7 @@ func main() {
 			Gate: plan.Gate{Store: store}, Drive: driveService, Documents: documentService,
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
-			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
+			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", OCRPilotOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_PILOT_ORGANIZATION_IDS")), ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
 			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
 			Secretary: store, SecretaryEnabled: os.Getenv("SECRETARY_ENABLED") == "true",

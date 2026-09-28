@@ -1,6 +1,7 @@
 package extraction
 
 import (
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strconv"
@@ -34,10 +35,11 @@ type Warning struct {
 }
 
 type Draft struct {
-	SchemaVersion int              `json:"schema_version"`
-	DocumentType  string           `json:"document_type"`
-	Fields        map[string]Field `json:"fields"`
-	Warnings      []Warning        `json:"warnings"`
+	Accounting    *AccountingDocument `json:"accounting,omitempty"`
+	SchemaVersion int                 `json:"schema_version"`
+	DocumentType  string              `json:"document_type"`
+	Fields        map[string]Field    `json:"fields"`
+	Warnings      []Warning           `json:"warnings"`
 }
 
 var patterns = map[string]*regexp.Regexp{
@@ -58,6 +60,8 @@ var moneyPattern = regexp.MustCompile(`^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.
 // Extract keeps OCR candidates separate from human-reviewed values. A rule match is never a calibrated confidence score.
 func Extract(result ocr.Result) Draft {
 	draft := Draft{SchemaVersion: SchemaVersion, DocumentType: "unknown", Fields: make(map[string]Field, len(Keys))}
+	accounting := ExtractAccounting(result)
+	draft.Accounting = &accounting
 	for _, key := range Keys {
 		draft.Fields[key] = Field{Presence: "not_found", Confidence: "unrated", Evidence: []Evidence{}}
 	}
@@ -127,6 +131,33 @@ func Extract(result ocr.Result) Draft {
 	c, cok := cents(draft.Fields["total_amount"].Normalized)
 	if aok && bok && cok && (a+b-c > 1 || c-a-b > 1) {
 		draft.warn("amount_mismatch", "total_amount", "blocker")
+	}
+	// Do not prefill legacy review inputs when the stricter accounting parser disagrees.
+	beforeVAT := accounting.Summary.AmountBeforeVAT
+	if beforeVAT == nil {
+		beforeVAT = accounting.Summary.Subtotal
+	}
+	for key, value := range map[string]*json.Number{"subtotal": beforeVAT, "vat_amount": accounting.Summary.VATAmount, "total_amount": accounting.Summary.TotalAmount} {
+		field := draft.Fields[key]
+		if field.Presence == "found" && (value == nil || field.Normalized != value.String()) {
+			field.Presence, field.Normalized = "ambiguous", ""
+			draft.Fields[key] = field
+			draft.warn("multiple_candidates", key, "review")
+		}
+	}
+	for key, value := range map[string]*string{
+		"document_number": accounting.Document.DocumentNumber, "issue_date": accounting.Document.DocumentDate,
+		"seller_name": accounting.Seller.Name, "seller_tax_id": accounting.Seller.TaxID,
+		"seller_branch": accounting.Seller.Branch,
+		"buyer_name":    accounting.Buyer.Name, "buyer_tax_id": accounting.Buyer.TaxID,
+		"currency": accounting.Document.Currency,
+	} {
+		field := draft.Fields[key]
+		if field.Presence == "found" && (value == nil || field.Normalized != *value) {
+			field.Presence, field.Normalized = "ambiguous", ""
+			draft.Fields[key] = field
+			draft.warn("multiple_candidates", key, "review")
+		}
 	}
 	return draft
 }

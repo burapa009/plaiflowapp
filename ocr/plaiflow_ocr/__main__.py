@@ -8,11 +8,12 @@ import threading
 import time
 
 from .engine import Engine
+from .client import ServiceClient
 from .protocol import Protocol
 from .worker import run_job
 
 
-def main():
+def main() -> None:
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -26,7 +27,7 @@ def main():
         ):
             shutil.rmtree(entry)
     protocol = Protocol()
-    engine = Engine()
+    engine = ServiceClient() if os.environ.get("OCR_SERVICE_URL") else Engine()
     engine.start()
     delay = 1
     try:

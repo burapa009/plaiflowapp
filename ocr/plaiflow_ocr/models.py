@@ -5,14 +5,13 @@ import os
 from pathlib import Path
 
 NAMES = (
-    "PP-LCNet_x1_0_doc_ori",
     "PP-LCNet_x1_0_textline_ori",
     "PP-OCRv5_mobile_det",
     "th_PP-OCRv5_mobile_rec",
 )
 
 
-def verify():
+def verify() -> None:
     root = Path(os.environ["PADDLE_PDX_CACHE_HOME"]) / "official_models"
     manifest = Path(__file__).resolve().parent.parent / "model-manifest.json"
     expected = json.loads(manifest.read_text(encoding="utf-8"))
@@ -25,7 +24,7 @@ def verify():
                 raise RuntimeError("model_asset_checksum_mismatch")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--download", action="store_true")
     args = parser.parse_args()

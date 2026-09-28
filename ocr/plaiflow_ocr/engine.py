@@ -3,45 +3,44 @@
 import multiprocessing
 import os
 import time
+from multiprocessing.connection import Connection
 from pathlib import Path
+from typing import Any
 
 
-def create_model(download=False):
+def create_model(download: bool = False) -> Any:
     directories = {}
     if not download:
         from .models import verify, NAMES
         verify()
         root = Path(os.environ["PADDLE_PDX_CACHE_HOME"]) / "official_models"
-        for option,name in zip(("doc_orientation_classify_model_dir", "textline_orientation_model_dir", "text_detection_model_dir", "text_recognition_model_dir"), NAMES, strict=True):
+        for option,name in zip(("textline_orientation_model_dir", "text_detection_model_dir", "text_recognition_model_dir"), NAMES, strict=True):
             directories[option] = str(root / name)
     from paddleocr import PaddleOCR
 
     return PaddleOCR(
         text_detection_model_name="PP-OCRv5_mobile_det",
         text_recognition_model_name="th_PP-OCRv5_mobile_rec",
-        doc_orientation_classify_model_name="PP-LCNet_x1_0_doc_ori",
         textline_orientation_model_name="PP-LCNet_x1_0_textline_ori",
-        use_doc_orientation_classify=True,
+        use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=True,
         text_rec_score_thresh=0.0,
         text_recognition_batch_size=1,
-        device="cpu",
+        device=os.environ.get("OCR_DEVICE", "cpu"),
         cpu_threads=2,
         enable_mkldnn=False,
         **directories,
     )
 
 
-def _serve(connection):
+def _serve(connection: Connection, max_pages: int = 20) -> None:
     # Keep native crashes/timeouts isolated; the parent enforces process-tree RSS.
     from PIL import Image, ImageOps
     import numpy as np
     import pypdfium2 as pdfium
-    import cv2
 
     Image.MAX_IMAGE_PIXELS = 25_000_000
-    cv2.setNumThreads(2)
     model = create_model()
     connection.send({"ready": True})
     while True:
@@ -53,20 +52,22 @@ def _serve(connection):
         failure_code = "invalid_input"
         try:
             with path.open("rb") as source:
-                signature = source.read(8)
+                signature = source.read(12)
             if signature.startswith(b"%PDF-"):
                 document = pdfium.PdfDocument(str(path))
                 # Even an empty user password does not make an encrypted PDF acceptable.
                 if pdfium.raw.FPDF_GetSecurityHandlerRevision(document.raw) != -1:
                     raise ValueError("invalid_input")
                 count = len(document)
-            elif signature.startswith(b"\x89PNG\r\n\x1a\n") or signature.startswith(
-                b"\xff\xd8\xff"
+            elif (
+                signature.startswith(b"\x89PNG\r\n\x1a\n")
+                or signature.startswith(b"\xff\xd8\xff")
+                or (signature.startswith(b"RIFF") and signature[8:12] == b"WEBP")
             ):
                 count = 1
             else:
                 raise ValueError("invalid_input")
-            if not 1 <= count <= 20:
+            if not 1 <= count <= max_pages:
                 raise ValueError("invalid_input")
             connection.send({"count": count})
             for number in range(count):
@@ -95,41 +96,23 @@ def _serve(connection):
                         ):
                             raise ValueError("invalid_input")
                         image = ImageOps.exif_transpose(original).convert("RGB")
-                # Decoding is complete; processing failures must remain retryable.
+                # Coordinates refer to the EXIF-corrected image or rendered PDF page.
                 failure_code = "temporary_upstream"
+                original_width, original_height = image.size
                 image.thumbnail((3500, 3500))
                 array = np.array(image.convert("RGB"))[:, :, ::-1].copy()
                 image.close()
-                # Mild skew correction only; retain this corrected image's coordinate frame.
-                gray = cv2.cvtColor(array, cv2.COLOR_BGR2GRAY)
-                edges = cv2.Canny(gray, 50, 150)
-                segments = cv2.HoughLinesP(
-                    edges, 1, np.pi / 180, 80, minLineLength=100, maxLineGap=10
-                )
-                if segments is not None:
-                    angles = [
-                        np.degrees(np.arctan2(y2 - y1, x2 - x1))
-                        for x1, y1, x2, y2 in segments[:, 0]
-                    ]
-                    small = [angle for angle in angles if abs(angle) <= 5]
-                    if len(small) >= 5:
-                        angle = float(np.median(small))
-                        h, w = array.shape[:2]
-                        array = cv2.warpAffine(
-                            array,
-                            cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1),
-                            (w, h),
-                            borderValue=(255, 255, 255),
-                        )
                 output = next(iter(model.predict(array)))
                 corrected = output["doc_preprocessor_res"]["output_img"]
-                height, width = corrected.shape[:2]
-                angle = int(output["doc_preprocessor_res"].get("angle", 0))
+                if corrected.shape[:2] != array.shape[:2] or output["doc_preprocessor_res"].get("angle", 0):
+                    raise RuntimeError("unexpected_coordinate_transform")
+                scale_x = original_width / array.shape[1]
+                scale_y = original_height / array.shape[0]
                 lines = [
                     {
                         "text": str(text),
                         "confidence": float(score),
-                        "polygon": polygon.tolist(),
+                        "polygon": [[float(x * scale_x), float(y * scale_y)] for x, y in polygon],
                     }
                     for text, score, polygon in zip(
                         output["rec_texts"],
@@ -147,11 +130,17 @@ def _serve(connection):
                     {
                         "page": {
                             "page_number": number + 1,
-                            "width": width,
-                            "height": height,
-                            "rotation": angle % 360,
+                            "width": original_width,
+                            "height": original_height,
+                            "rotation": 0,
                             "duration_ms": round((time.monotonic() - started) * 1000),
                             "lines": lines,
+                            **({"raw_result": {
+                                "rec_texts": [str(text) for text in output["rec_texts"]],
+                                "rec_scores": [float(score) for score in output["rec_scores"]],
+                                "rec_boxes": output["rec_boxes"].tolist(),
+                                "rec_polys": [poly.tolist() for poly in output["rec_polys"]],
+                            }} if os.environ.get("OCR_INCLUDE_RAW_RESULT", "false").lower() == "true" else {}),
                         }
                     }
                 )
@@ -174,12 +163,13 @@ def _serve(connection):
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, max_pages: int = 20) -> None:
+        self.max_pages = max_pages
         self.process = None
         self.connection = None
         self.peak_rss = 0
 
-    def close(self):
+    def close(self) -> None:
         if self.process is not None:
             self.process.terminate()
             self.process.join(timeout=5)
@@ -191,7 +181,7 @@ class Engine:
             self.connection.close()
             self.connection = None
 
-    def _receive(self, deadline):
+    def _receive(self, deadline: float) -> dict[str, Any]:
         import psutil
 
         while time.monotonic() < deadline:
@@ -209,11 +199,11 @@ class Engine:
                 return self.connection.recv()
         raise TimeoutError("ocr_timeout")
 
-    def start(self):
+    def start(self) -> None:
         if self.process is None:
             context = multiprocessing.get_context("spawn")
             self.connection, child = context.Pipe()
-            self.process = context.Process(target=_serve, args=(child,), daemon=True)
+            self.process = context.Process(target=_serve, args=(child, self.max_pages), daemon=True)
             self.process.start()
             child.close()
             try:
@@ -223,7 +213,7 @@ class Engine:
                 self.close()
                 raise
 
-    def __call__(self, path, deadline):
+    def __call__(self, path: Path, deadline: float) -> list[dict[str, Any]]:
         self.start()
         self.peak_rss = 0
         pages = []
@@ -246,8 +236,12 @@ class Engine:
                     )
                 pages.append(message["page"])
             if not self._receive(min(deadline, time.monotonic() + 45)).get("done"):
-                raise ValueError("invalid_input")
+                raise RuntimeError("invalid_protocol_response")
             return pages
+        except ValueError as error:
+            if not str(error).startswith("invalid_input"):
+                self.close()
+            raise
         except BaseException:
             self.close()
             raise

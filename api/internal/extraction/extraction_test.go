@@ -111,3 +111,27 @@ func TestSellerBranchMustBeReviewedAndNeverDefaultsToHeadOffice(t *testing.T) {
 		t.Fatal("invalid branch accepted")
 	}
 }
+
+func TestDetailedAccountingCannotLeaveMisreadLegacyReviewDefaults(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+		{Text: "Tax Invoice", Confidence: .99},
+		{Text: "VAT 7% 70.00", Confidence: .99},
+		{Text: "ยอดรวม 1O0.00", Confidence: .99},
+	}}}})
+	if draft.Accounting == nil || draft.Accounting.Summary.VATAmount == nil || draft.Accounting.Summary.VATAmount.String() != "70.00" {
+		t.Fatal("detailed VAT amount missing")
+	}
+	if draft.Fields["vat_amount"].Normalized != "" || draft.Fields["total_amount"].Normalized != "" {
+		t.Fatal("partial numeric tokens must not become review defaults")
+	}
+}
+
+func TestBuyerBranchCannotPrefillSellerBranch(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+		{Text: "ผู้ซื้อ: บริษัท ลูกค้า จำกัด", Confidence: .99},
+		{Text: "สาขา 00001", Confidence: .99},
+	}}}})
+	if draft.Fields["seller_branch"].Normalized != "" {
+		t.Fatal("buyer branch was proposed as seller branch")
+	}
+}

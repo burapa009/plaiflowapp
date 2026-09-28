@@ -19,6 +19,24 @@ import (
 
 type extractionOCR struct{ ocr.Store }
 
+func TestOCRPilotDeniesUnlistedOrganization(t *testing.T) {
+	s := &server{config: Config{OCRPilotOrganizations: map[string]bool{"pilot": true}}}
+	handler := s.ocrPilot(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	request := httptest.NewRequest(http.MethodGet, "/v1/o/other/documents/doc/extraction", nil)
+	request.SetPathValue("organization", "other")
+	response := httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unlisted organization status=%d", response.Code)
+	}
+	request.SetPathValue("organization", "pilot")
+	response = httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("pilot organization status=%d", response.Code)
+	}
+}
+
 func (extractionOCR) OCRState(context.Context, string, string, string) (ocr.State, error) {
 	return ocr.State{JobID: "ocr-1", Status: "Completed", ObjectKey: "ocr/result.json"}, nil
 }
@@ -122,7 +140,7 @@ func TestThaiTaxInvoiceCanBeReviewedAndExportedAsOneStructuredRow(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	sample, _ := json.Marshal(ocr.Result{SchemaVersion: 1, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+	sample, _ := json.Marshal(ocr.Result{SchemaVersion: 2, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
 		{Text: "ใบกำกับภาษี", Confidence: .99}, {Text: "เลขที่ INV-42", Confidence: .98},
 		{Text: "วันที่ 23/09/2569", Confidence: .97}, {Text: "ผู้ขาย: บริษัท ตัวอย่าง จำกัด", Confidence: .95},
 		{Text: "เลขประจำตัวผู้เสียภาษี 0123456789012", Confidence: .92},
@@ -140,6 +158,20 @@ func TestThaiTaxInvoiceCanBeReviewedAndExportedAsOneStructuredRow(t *testing.T) 
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"raw":"1,070.00"`) || !strings.Contains(response.Body.String(), `"normalized":"1070.00"`) {
 		t.Fatalf("draft status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Draft struct {
+			Accounting struct {
+				Summary struct {
+					Total *json.Number `json:"total_amount"`
+				} `json:"summary"`
+				RawText string `json:"raw_text"`
+			} `json:"accounting"`
+		} `json:"draft"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.Draft.Accounting.Summary.Total == nil ||
+		payload.Draft.Accounting.Summary.Total.String() != "1070.00" || !strings.Contains(payload.Draft.Accounting.RawText, "ยอดรวม 1,070.00") || response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("accounting JSON/evidence/cache contract failed: %v", err)
 	}
 	request = httptest.NewRequest(http.MethodGet, "https://app.example/v1/o/another-org/documents/doc-1/extraction", nil)
 	request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})

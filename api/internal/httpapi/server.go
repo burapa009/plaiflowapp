@@ -49,6 +49,7 @@ type Config struct {
 	OCRStorage                  job.ArtifactStore
 	Extraction                  extraction.Store
 	ExtractionEnabled           bool
+	OCRPilotOrganizations       map[string]bool
 	ReviewEnabled               bool
 	FirmEnabled                 bool
 	Firm                        firm.Store

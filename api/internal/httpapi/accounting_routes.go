@@ -15,19 +15,19 @@ import (
 )
 
 func (s *server) registerAccountingRoutes(m *http.ServeMux) {
-	m.HandleFunc("GET /v1/o/{organization}/accounting/categories", s.accountingCategories)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories", s.accountingCategories)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/archive", s.accountingCategoryStatus)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/restore", s.accountingCategoryStatus)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/rename", s.renameAccountingCategory)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/rules", s.accountingRule)
-	m.HandleFunc("GET /v1/o/{organization}/accounting/rules", s.listAccountingRules)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/rules/{rule}/retire", s.retireAccountingRule)
-	m.HandleFunc("GET /v1/o/{organization}/accounting/review-queue", s.accountingReviewQueue)
-	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/accounting", s.accountingSuggestion)
-	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/accounting/approve", s.approveAccounting)
-	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.csv", s.exportAccounting)
-	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.xlsx", s.exportAccounting)
+	m.HandleFunc("GET /v1/o/{organization}/accounting/categories", s.ocrPilot(s.accountingCategories))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories", s.ocrPilot(s.accountingCategories))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/archive", s.ocrPilot(s.accountingCategoryStatus))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/restore", s.ocrPilot(s.accountingCategoryStatus))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/rename", s.ocrPilot(s.renameAccountingCategory))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/rules", s.ocrPilot(s.accountingRule))
+	m.HandleFunc("GET /v1/o/{organization}/accounting/rules", s.ocrPilot(s.listAccountingRules))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/rules/{rule}/retire", s.ocrPilot(s.retireAccountingRule))
+	m.HandleFunc("GET /v1/o/{organization}/accounting/review-queue", s.ocrPilot(s.accountingReviewQueue))
+	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/accounting", s.ocrPilot(s.accountingSuggestion))
+	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/accounting/approve", s.ocrPilot(s.approveAccounting))
+	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.csv", s.ocrPilot(s.exportAccounting))
+	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.xlsx", s.ocrPilot(s.exportAccounting))
 }
 
 func (s *server) listAccountingRules(w http.ResponseWriter, r *http.Request) {
