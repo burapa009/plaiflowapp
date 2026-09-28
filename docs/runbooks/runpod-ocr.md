@@ -1,4 +1,4 @@
-# RunPod OCR migration — local candidate, not deployed
+﻿# RunPod OCR migration — branch candidate, not deployed
 
 ## Current and target flow
 
@@ -46,7 +46,11 @@ The `document_ocr_runs.provider`, `provider_job_id`, `provider_submitted_at`, `p
 
 Run `go test ./...`, `go vet ./...`, `go build ./cmd/server` from `api/`; run `python -m unittest discover -s ocr/tests -v` with `PYTHONPATH=ocr`. Run the real PostgreSQL suite with a disposable `OCR_TEST_ADMIN_URL`; a skipped test is no RLS/migration proof. Check migration 19 up/down on a **disposable** database, organization A/B read denial, duplicate submit, provider timeout, malformed result, cold start, no OCR text or tokens in logs, and a restored backup. Monitor queued/running/failed OCR jobs, `provider_job_id`, provider queue/execution times, API 5xx, OCR service RSS, RunPod worker count, and billed spend. Use correlation/job/document/organization IDs without raw document text.
 
-For capacity tests, measure p50/p95/p99 queue wait, GPU processing, end-to-end latency, errors, retries, pages, and billed cost for 100 then 500 representative pages and concurrent uploads. Compare with the existing Railway CPU path on the **same** annotated corpus. The current repo has no proved GPU image build, 100/500-page benchmark, cost/page result, managed database backup/PITR, or RunPod staging smoke. It must not be labelled production-ready yet.
+For capacity tests, measure p50/p95/p99 queue wait, GPU processing, end-to-end latency, errors, retries, pages, and billed cost for 100 then 500 representative pages and concurrent uploads. Compare with the existing Railway CPU path on the **same** annotated corpus. The current repo has no proved GPU inference, 100/500-page benchmark, cost/page result, managed database backup/PITR, or RunPod staging smoke. It must not be labelled production-ready yet.
+
+The staging pilot is authorized for **synthetic/sample documents only**. Do not send customer or production documents to RunPod. Generate the initial 100 pages with `& .\.tools\ocr-venv\Scripts\python.exe scripts\generate-runpod-corpus.py --pages 100 --output .scratch\runpod-corpus` from the repository root. This creates five 20-page PDFs: Thai receipt, Thai tax invoice at high resolution, English invoice, rotated receipt, and blurred low-confidence receipt. The generated reference text is synthetic; OCR accuracy on these pages does not establish accuracy on real invoices. Upload the same PDFs to a RunPod pilot organization and a Railway control organization through the normal staging document flow; confirm each job and page count. Do not run the 500-page variant (`--pages 500`) until the 100-page run is healthy and its spend is reviewed.
+
+The RunPod staging pilot has a **$10 total cap**. Check RunPod billed usage after each 20-page PDF and stop dispatching at **$8**, leaving $2 for delayed charges. Keep Active Workers at 0 and Max Workers at 1; verify scale-to-zero after the final request. Capture billed USD, cold-start delay, p50/p95 OCR and end-to-end seconds/page, error rate, GPU seconds/page, RSS/VRAM peak, and cost per 1,000 pages. `provider_queue_ms` is queue plus startup delay, not a standalone model-load metric. Query completed `document_ocr_runs` with `page_count`, `processing_ms`, `provider_execution_ms`, `provider_queue_ms`, and `gpu_class`; divide billed dollars by completed pages and multiply by 1,000. Record retries and failed billable jobs separately. The current response does not persist VRAM; collect it from RunPod worker metrics or a GPU runtime probe before reporting that field as measured. Compare normalized OCR text, bounding boxes, confidence, and field warnings against Railway on the same synthetic documents.
 
 ## Security review (STRIDE)
 
