@@ -64,6 +64,7 @@ func TestSecretaryBriefingUsesCurrentRoleAndHumanRoutineConfirmation(t *testing.
 	}
 	urgent := create("overdue urgent", member, "2026-09-27", work.Urgent)
 	create("today high", member, "2026-09-28", work.High)
+	undated := create("open without due date", member, "", work.Normal)
 	private := create("private team", owner, "2026-09-27", work.Normal)
 	if _, err := store.GetTaskSource(ctx, member, org, private); !errors.Is(err, tenant.ErrNotFound) {
 		t.Fatalf("member read private source: %v", err)
@@ -88,7 +89,7 @@ func TestSecretaryBriefingUsesCurrentRoleAndHumanRoutineConfirmation(t *testing.
 		t.Fatal("generate", err)
 	}
 	ready, err := store.Open(ctx, member, org, now)
-	if err != nil || ready.Status != "Ready" || len(ready.Items) != 2 || ready.Items[0].SourceID != urgent || ready.Remaining != 0 {
+	if err != nil || ready.Status != "Ready" || len(ready.Items) != 3 || ready.Items[0].SourceID != urgent || ready.Items[2].SourceID != undated || ready.Items[2].DueOn != "" || ready.Remaining != 0 {
 		t.Fatalf("ready=%+v err=%v", ready, err)
 	}
 	if _, err = store.SetTaskSource(ctx, secretary.SourceCommand{TaskSource: secretary.TaskSource{TaskID: urgent, Category: "FollowUp", FollowUpWith: "Supplier"}, UserID: member, OrganizationID: org, Now: now}); !errors.Is(err, tenant.ErrForbidden) {
@@ -175,7 +176,7 @@ func TestSecretaryBriefingUsesCurrentRoleAndHumanRoutineConfirmation(t *testing.
 		t.Fatal("routine generate", err)
 	}
 	withRemainder, err := store.Open(ctx, member, org, now.Add(16*time.Minute))
-	if err != nil || withRemainder.Status != "Ready" || len(withRemainder.Items) != 5 || withRemainder.Remaining != 2 {
+	if err != nil || withRemainder.Status != "Ready" || len(withRemainder.Items) != 5 || withRemainder.Remaining != 3 {
 		t.Fatalf("remainder=%+v err=%v", withRemainder, err)
 	}
 	shown := map[string]bool{}

@@ -178,7 +178,7 @@ func countSecretaryCandidates(ctx context.Context, tx pgx.Tx, organizationID, us
 	var tasks, routines int
 	err := tx.QueryRow(ctx, `SELECT count(*) FROM tasks t
 		LEFT JOIN secretary_preferences p ON p.organization_id=t.organization_id AND p.user_id=$2
-		WHERE t.organization_id=$1 AND t.status IN ('Open','InProgress') AND t.due_on<=$3::date
+		WHERE t.organization_id=$1 AND t.status IN ('Open','InProgress') AND (t.due_on<=$3::date OR t.due_on IS NULL)
 		AND NOT (t.secretary_category=ANY(coalesce(p.hidden_categories,'{}'::text[])))
 		AND ($4 IN ('Owner','Admin') OR t.assignee_user_id=$2 OR EXISTS
 		(SELECT 1 FROM task_watchers w WHERE w.organization_id=t.organization_id AND w.task_id=t.id AND w.user_id=$2))`,
@@ -255,18 +255,18 @@ func (s *Store) Generate(ctx context.Context, command job.LeaseCommand) error {
 	if err != nil {
 		return err
 	}
-	condition := `t.organization_id=$1 AND t.status IN ('Open','InProgress') AND t.due_on<=$3::date
+	condition := `t.organization_id=$1 AND t.status IN ('Open','InProgress') AND (t.due_on<=$3::date OR t.due_on IS NULL)
 		AND NOT (t.secretary_category=ANY(coalesce(p.hidden_categories,'{}'::text[])))
 		AND ($4 IN ('Owner','Admin') OR t.assignee_user_id=$2 OR EXISTS
 		(SELECT 1 FROM task_watchers w WHERE w.organization_id=t.organization_id AND w.task_id=t.id AND w.user_id=$2))`
 	prefJoin := ` LEFT JOIN secretary_preferences p ON p.organization_id=t.organization_id AND p.user_id=$2 `
-	rows, err := tx.Query(ctx, `SELECT t.id,t.title,t.due_on::text,t.priority,t.secretary_category,
+	rows, err := tx.Query(ctx, `SELECT t.id,t.title,coalesce(t.due_on::text,''),t.priority,t.secretary_category,
 		CASE WHEN t.assignee_user_id=$2 OR EXISTS
 		(SELECT 1 FROM task_watchers w WHERE w.organization_id=t.organization_id AND w.task_id=t.id AND w.user_id=$2)
 		THEN 'personal' ELSE 'team' END,
 		t.id=ANY(coalesce(p.pinned_task_ids,'{}'::uuid[]))
 		FROM tasks t `+prefJoin+` WHERE `+condition+`
-		ORDER BY CASE WHEN t.due_on<$3::date THEN 0 ELSE 1 END,
+		ORDER BY CASE WHEN t.due_on<$3::date THEN 0 WHEN t.due_on=$3::date THEN 1 ELSE 2 END,
 		CASE WHEN t.id=ANY(coalesce(p.pinned_task_ids,'{}'::uuid[])) THEN 0 ELSE 1 END,
 		CASE t.priority WHEN 'Urgent' THEN 0 WHEN 'High' THEN 1 ELSE 2 END,
 		t.due_on,t.id LIMIT 5`, organizationID, userID, day, role)
@@ -281,7 +281,9 @@ func (s *Store) Generate(ctx context.Context, command job.LeaseCommand) error {
 			return err
 		}
 		item.URL = "/o/" + url.PathEscape(organizationID) + "/tasks/" + url.PathEscape(item.SourceID)
-		if item.DueOn < day {
+		if item.DueOn == "" {
+			item.Reason = "ไม่กำหนดวันครบกำหนด · ความสำคัญ " + item.Priority
+		} else if item.DueOn < day {
 			item.Reason = "เกินกำหนด · ความสำคัญ " + item.Priority
 		} else {
 			item.Reason = "ครบกำหนดวันนี้ · ความสำคัญ " + item.Priority
@@ -330,8 +332,17 @@ func (s *Store) Generate(ctx context.Context, command job.LeaseCommand) error {
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		a, b := items[i], items[j]
-		if (a.DueOn < day) != (b.DueOn < day) {
-			return a.DueOn < day
+		group := func(due string) int {
+			if due == "" {
+				return 2
+			}
+			if due < day {
+				return 0
+			}
+			return 1
+		}
+		if group(a.DueOn) != group(b.DueOn) {
+			return group(a.DueOn) < group(b.DueOn)
 		}
 		if a.Pinned != b.Pinned {
 			return a.Pinned
