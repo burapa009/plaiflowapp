@@ -52,7 +52,7 @@ var patterns = map[string]*regexp.Regexp{
 	"buyer_tax_id":    regexp.MustCompile(`(?:เลขประจำตัวผู้เสียภาษีผู้ซื้อ|เลขผู้เสียภาษีผู้ซื้อ)\s*[:：]?\s*([0-9๐-๙ -]{13,20})`),
 	"subtotal":        regexp.MustCompile(`(?i)(?:มูลค่าก่อนภาษี|รวมก่อนภาษี|subtotal)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
 	"vat_amount":      regexp.MustCompile(`(?i)(?:ภาษีมูลค่าเพิ่ม|vat)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
-	"total_amount":    regexp.MustCompile(`(?i)(?:ยอดรวม|รวมทั้งสิ้น|ยอดสุทธิ|grand total)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
+	"total_amount":    regexp.MustCompile(`(?i)(?:ยอดรวม|รวมทั้งสิ้น|ยอดสุทธิ|grand total|^รวม)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
 }
 
 var moneyPattern = regexp.MustCompile(`^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]{2})?$`)

@@ -81,6 +81,18 @@ func TestEnglishAmountLabelsAreCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestBareThaiTotalDoesNotSwallowBeforeTaxAmount(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+		{Text: "ใบเสร็จรับเงิน", Confidence: .99},
+		{Text: "รวมก่อนภาษี 1,000.00", Confidence: .99},
+		{Text: "ภาษีมูลค่าเพิ่ม 70.00", Confidence: .99},
+		{Text: "รวม 1,070.00 บาท", Confidence: .99},
+	}}}})
+	if draft.Fields["subtotal"].Normalized != "1000.00" || draft.Fields["total_amount"].Normalized != "1070.00" || draft.Accounting.Summary.TotalAmount == nil || draft.Accounting.Summary.TotalAmount.String() != "1070.00" {
+		t.Fatalf("bare Thai total or before-tax amount misread: %+v", draft)
+	}
+}
+
 func TestThaiNumeralsNormalizeWithoutChangingRawEvidence(t *testing.T) {
 	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
 		{Text: "ใบกำกับภาษี", Confidence: .99},

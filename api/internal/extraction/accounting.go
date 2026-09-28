@@ -459,7 +459,7 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 					a.Summary.VATRate = &n
 				}
 			}
-			if v, ok := accountingLabeledAmount(line, `(?i)^(?:ยอดสุทธิ|รวมทั้งสิ้น|grand\s*total|net\s*total|total|ยอดรวม)\s*[:：]?\s*`); ok {
+			if v, ok := accountingLabeledAmount(line, `(?i)^(?:ยอดสุทธิ|รวมทั้งสิ้น|grand\s*total|net\s*total|total|ยอดรวม|รวม)\s*[:：]?\s*`); ok {
 				priority := 1
 				if strings.HasPrefix(lower, "ยอดสุทธิ") || strings.HasPrefix(lower, "รวมทั้งสิ้น") || strings.HasPrefix(lower, "grand total") || strings.HasPrefix(lower, "net total") {
 					priority = 2
