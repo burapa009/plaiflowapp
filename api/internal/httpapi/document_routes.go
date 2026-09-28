@@ -221,7 +221,9 @@ func (s *server) exportDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", map[string]string{"csv": "text/csv; charset=utf-8", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[format])
 	filename := "documents-"
-	if s.config.ReviewEnabled { filename = "unverified-documents-" }
+	if s.config.ReviewEnabled {
+		filename = "unverified-documents-"
+	}
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+s.config.Now().UTC().Format("20060102")+`.`+format+`"`)
 	_, _ = w.Write(output.Bytes())
 }

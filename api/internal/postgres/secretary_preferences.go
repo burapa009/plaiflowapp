@@ -45,8 +45,12 @@ func readSecretaryPreferences(ctx context.Context, tx pgx.Tx, userID, organizati
 }
 
 func (s *Store) SetPreferences(ctx context.Context, userID, organizationID string, prefs secretary.Preferences, now time.Time) (secretary.Preferences, error) {
-	if prefs.HiddenCategories == nil { prefs.HiddenCategories = []string{} }
-	if prefs.PinnedTaskIDs == nil { prefs.PinnedTaskIDs = []string{} }
+	if prefs.HiddenCategories == nil {
+		prefs.HiddenCategories = []string{}
+	}
+	if prefs.PinnedTaskIDs == nil {
+		prefs.PinnedTaskIDs = []string{}
+	}
 	tx, err := s.organizationTx(ctx, userID, organizationID)
 	if err != nil {
 		return secretary.Preferences{}, err

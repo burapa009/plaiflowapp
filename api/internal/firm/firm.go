@@ -20,9 +20,9 @@ type Grant struct {
 }
 
 type Assignment struct {
-	UserID     string    `json:"user_id"`
-	DisplayName string   `json:"display_name"`
-	AssignedAt time.Time `json:"assigned_at"`
+	UserID      string    `json:"user_id"`
+	DisplayName string    `json:"display_name"`
+	AssignedAt  time.Time `json:"assigned_at"`
 }
 
 type PortfolioClient struct {

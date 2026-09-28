@@ -75,7 +75,7 @@ func (s *Store) RequestGrant(ctx context.Context, actor, firmID, clientID, id st
 	var g firm.Grant
 	g, err = scanFirmGrant(tx.QueryRow(ctx, `INSERT INTO firm_access_grants
 		(id,firm_organization_id,client_organization_id,status,scopes,requested_by,requested_at,request_expires_at)
-		VALUES ($1,$2,$3,'Requested',ARRAY['read']::text[],$4,$5,$5+interval '7 days')
+		VALUES ($1,$2,$3,'Requested',ARRAY['read']::text[],$4,$5::timestamptz,$5::timestamptz+interval '7 days')
 		RETURNING id,firm_organization_id,client_organization_id,''::text,status,scopes,revision,request_expires_at,active_expires_at`,
 		id, firmID, clientID, actor, now))
 	if err != nil {
