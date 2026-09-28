@@ -40,6 +40,7 @@ class EngineFailureTest(unittest.TestCase):
                     self.assertEqual([page["page_number"] for page in pages], list(range(1, expected_count + 1)))
                     if expected_count == 1:
                         self.assertEqual(pages[0]["width"], 4000)
+                        self.assertEqual(model.predict.call_args.args[0].shape[1], 1600)
                         self.assertAlmostEqual(pages[0]["lines"][0]["polygon"][1][0], 2000)
 
     def test_invalid_files_are_terminal_but_model_failures_are_retryable(self):

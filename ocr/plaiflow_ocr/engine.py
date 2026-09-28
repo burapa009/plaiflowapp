@@ -99,7 +99,8 @@ def _serve(connection: Connection, max_pages: int = 20) -> None:
                 # Coordinates refer to the EXIF-corrected image or rendered PDF page.
                 failure_code = "temporary_upstream"
                 original_width, original_height = image.size
-                image.thumbnail((3500, 3500))
+                # Keep Paddle's temporary tensors within the Trial container's 1 GB limit.
+                image.thumbnail((1600, 1600))
                 array = np.array(image.convert("RGB"))[:, :, ::-1].copy()
                 image.close()
                 output = next(iter(model.predict(array)))
