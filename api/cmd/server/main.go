@@ -148,7 +148,7 @@ func main() {
 	}
 	var artifactTokens *job.ArtifactToken
 	if len(settings.JobWorkerAuthKey) > 0 {
-		workerAuth, err = job.NewWorkerAuth(settings.JobWorkerAuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:artifact", "jobs:fail"})
+		workerAuth, err = job.NewWorkerAuth(settings.JobWorkerAuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:generate", "jobs:artifact", "jobs:fail"})
 		if err != nil {
 			logger.Error("job_worker_auth_initialization_failed")
 			os.Exit(1)
@@ -170,7 +170,9 @@ func main() {
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
 			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
-			Billing: billingService, BillingEnabled: billingEnabled, BillingTestOrganizationID: os.Getenv("BILLING_TEST_ORGANIZATION_ID"),
+			Secretary: store, SecretaryEnabled: os.Getenv("SECRETARY_ENABLED") == "true",
+			SecretaryPilotOrganizations: secretaryPilotOrganizations(os.Getenv("SECRETARY_PILOT_ORGANIZATION_IDS")),
+			Billing:                     billingService, BillingEnabled: billingEnabled, BillingTestOrganizationID: os.Getenv("BILLING_TEST_ORGANIZATION_ID"),
 			OmiseWebhookSecret: os.Getenv("OMISE_WEBHOOK_SECRET"), OmiseWebhookPreviousSecret: os.Getenv("OMISE_WEBHOOK_PREVIOUS_SECRET"),
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
@@ -220,4 +222,14 @@ func runBilling(ctx context.Context, service billing.Service, logger *slog.Logge
 			}
 		}
 	}
+}
+
+func secretaryPilotOrganizations(value string) map[string]bool {
+	organizations := map[string]bool{}
+	for _, id := range strings.Split(value, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			organizations[id] = true
+		}
+	}
+	return organizations
 }

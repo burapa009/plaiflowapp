@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,9 @@ func (s *server) registerJobRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /internal/v1/jobs/{job}/heartbeat", s.heartbeatJob)
 	mux.HandleFunc("POST /internal/v1/jobs/{job}/fail", s.failJob)
 	mux.HandleFunc("GET /internal/v1/jobs/{job}/export-rows", s.exportRows)
+	if s.config.SecretaryEnabled && s.config.Secretary != nil {
+		mux.HandleFunc("POST /internal/v1/jobs/{job}/secretary-generate", s.generateSecretaryBriefing)
+	}
 	mux.HandleFunc("PUT /internal/v1/jobs/{job}/artifact", s.uploadArtifact)
 	mux.HandleFunc("GET /v1/export-artifacts/{job}", s.retrieveArtifact)
 }
@@ -96,7 +100,8 @@ func (s *server) claimJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&input) != nil || input.Limit < 1 || input.Limit > 10 || !validJobKinds(input.Kinds) {
+	if decoder.Decode(&input) != nil || input.Limit < 1 || input.Limit > 10 || !validJobKinds(input.Kinds) ||
+		!s.config.SecretaryEnabled && slices.Contains(input.Kinds, job.Secretary) {
 		writeError(w, r, http.StatusBadRequest, "invalid_claim", "Job claim is invalid")
 		return
 	}
@@ -295,7 +300,7 @@ func validJobKinds(kinds []job.Kind) bool {
 	}
 	seen := map[job.Kind]bool{}
 	for _, kind := range kinds {
-		if kind != job.Export || seen[kind] {
+		if kind != job.Export && kind != job.Secretary || seen[kind] {
 			return false
 		}
 		seen[kind] = true

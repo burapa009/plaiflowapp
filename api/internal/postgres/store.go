@@ -212,6 +212,15 @@ func (s *Store) Cleanup(ctx context.Context) error {
 	if _, err = tx.Exec(ctx, "DELETE FROM inbound_events WHERE received_at < now()-interval '90 days' AND "+terminal); err != nil {
 		return err
 	}
+	var hasSecretary bool
+	if err = tx.QueryRow(ctx, `SELECT to_regclass('public.secretary_briefings') IS NOT NULL`).Scan(&hasSecretary); err != nil {
+		return err
+	}
+	if hasSecretary {
+		if _, err = tx.Exec(ctx, `DELETE FROM secretary_briefings WHERE expires_at<=now()`); err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
 }
 

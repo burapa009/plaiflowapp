@@ -1,5 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { sessionGET, sessionPOST } from "@/lib/session-api";
+import { secretaryPilotEnabled } from "@/lib/secretary-pilot";
 import { taskFormBody } from "@/lib/task-form";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -72,6 +73,7 @@ export default async function TasksPage({ params, searchParams }: {
       </div>
       {query.error && <p className="form-error" role="alert">{errorMessage(query.error)}</p>}
       {query.read && <p className="success-message" role="status">ทำเครื่องหมายว่าอ่านแล้ว</p>}
+      {secretaryPilotEnabled(organization) && <Link className="secondary-button" href={`/o/${encodeURIComponent(organization)}/secretary`}>เปิดสรุปงานวันนี้</Link>}
       <div className="workspace-summary" role="status"><div><strong>{dueTasks.length ? `มี ${dueTasks.length} งานที่ควรติดตามวันนี้` : "งานของทีมพร้อมให้ติดตาม"}</strong><span>{dueTasks.length ? "งานที่ครบกำหนดวันนี้หรือเลยกำหนดแล้วอยู่ในรายการด้านล่าง" : "เริ่มจากรายการงาน หรือสร้างงานใหม่เพื่อมอบหมายให้ทีม"}</span></div><span className="workspace-summary-tag">อัปเดตล่าสุด</span></div>
       <div className="workspace-metrics" aria-label="สรุปงาน"><div><span>งานทั้งหมด</span><strong>{tasks.length}</strong></div><div><span>กำลังทำ</span><strong>{tasks.filter((task) => task.Status === "InProgress").length}</strong></div><div><span>เสร็จแล้ว</span><strong>{tasks.filter((task) => task.Status === "Done").length}</strong></div></div>
 

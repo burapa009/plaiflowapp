@@ -28,12 +28,13 @@ func main() {
 		logger.Error("configuration_invalid")
 		os.Exit(1)
 	}
-	auth, err := job.NewWorkerAuth(settings.AuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:artifact", "jobs:fail"})
+	auth, err := job.NewWorkerAuth(settings.AuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:generate", "jobs:artifact", "jobs:fail"})
 	if err != nil {
 		logger.Error("worker_auth_invalid")
 		os.Exit(1)
 	}
-	worker := apiWorker{baseURL: settings.APIURL, workerID: settings.WorkerID, auth: auth, client: &http.Client{Timeout: 90 * time.Second}, logger: logger}
+	worker := apiWorker{baseURL: settings.APIURL, workerID: settings.WorkerID, auth: auth, client: &http.Client{Timeout: 90 * time.Second}, logger: logger,
+		secretaryEnabled: os.Getenv("SECRETARY_ENABLED") == "true"}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	for backoff := time.Second; ctx.Err() == nil; {
@@ -63,6 +64,7 @@ type apiWorker struct {
 	auth              *job.WorkerAuth
 	client            *http.Client
 	logger            *slog.Logger
+	secretaryEnabled  bool
 }
 
 func (w apiWorker) token(scopes ...string) (string, error) {
@@ -88,7 +90,11 @@ func (w apiWorker) request(ctx context.Context, method, path, scope string, body
 	return w.client.Do(req)
 }
 func (w apiWorker) claim(ctx context.Context) ([]job.Claimed, error) {
-	body := bytes.NewBufferString(`{"kinds":["export"],"limit":1}`)
+	kinds := `{"kinds":["export"],"limit":1}`
+	if w.secretaryEnabled {
+		kinds = `{"kinds":["export","secretary"],"limit":1}`
+	}
+	body := bytes.NewBufferString(kinds)
 	response, err := w.request(ctx, http.MethodPost, "/internal/v1/jobs/claim", "jobs:claim", body, nil)
 	if err != nil {
 		return nil, err
@@ -123,13 +129,32 @@ func (w apiWorker) process(ctx context.Context, item job.Claimed) error {
 			}
 		}
 	}()
-	err := w.processExport(leaseCtx, item)
+	var err error
+	if item.Job.Kind == job.Secretary {
+		err = w.processSecretary(leaseCtx, item)
+	} else {
+		err = w.processExport(leaseCtx, item)
+	}
 	select {
 	case heartbeatErr := <-heartbeatErrors:
 		return heartbeatErr
 	default:
 		return err
 	}
+}
+
+func (w apiWorker) processSecretary(ctx context.Context, item job.Claimed) error {
+	response, err := w.request(ctx, http.MethodPost, "/internal/v1/jobs/"+url.PathEscape(item.Job.ID)+"/secretary-generate", "jobs:generate", nil, &item)
+	if err != nil {
+		return w.fail(ctx, item, "temporary_upstream")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		_ = w.fail(ctx, item, "temporary_upstream")
+		return fmt.Errorf("secretary generation status %d", response.StatusCode)
+	}
+	w.logger.Info("secretary_job_completed", "job_id", item.Job.ID, "attempt_id", item.Job.AttemptID)
+	return nil
 }
 
 func (w apiWorker) processExport(ctx context.Context, item job.Claimed) error {

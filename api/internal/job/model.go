@@ -16,8 +16,9 @@ var ErrLeaseLost = errors.New("job lease is no longer current")
 type Kind string
 
 const (
-	Export Kind = "export"
-	OCR    Kind = "ocr"
+	Export    Kind = "export"
+	OCR       Kind = "ocr"
+	Secretary Kind = "secretary"
 )
 
 type Status string

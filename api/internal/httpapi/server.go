@@ -28,6 +28,7 @@ import (
 	lineadapter "plaiflow/api/internal/line"
 	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/plan"
+	"plaiflow/api/internal/secretary"
 	"plaiflow/api/internal/tenant"
 	"plaiflow/api/internal/work"
 )
@@ -41,41 +42,44 @@ type Store interface {
 }
 
 type Config struct {
-	OCR                        ocr.Store
-	OCRJobs                    job.Store
-	OCRAuth                    *job.WorkerAuth
-	OCRTokens                  *job.ArtifactToken
-	OCRStorage                 job.ArtifactStore
-	Extraction                 extraction.Store
-	ExtractionEnabled          bool
-	ReviewEnabled              bool
-	FirmEnabled                bool
-	Firm                       firm.Store
-	Accounting                 accounting.Store
-	AccountingEnabled          bool
-	LineSecret                 string
-	LineChannel                string
-	DashboardTokens            []string
-	Logger                     *slog.Logger
-	Auth                       *auth.Service
-	Tenants                    tenant.Store
-	Work                       work.Store
-	Business                   business.Store
-	PlanStore                  plan.Store
-	Billing                    *billing.Service
-	BillingEnabled             bool
-	BillingTestOrganizationID  string
-	OmiseWebhookSecret         string
-	OmiseWebhookPreviousSecret string
-	Drive                      *drive.Service
-	Documents                  *document.Service
-	Jobs                       job.Store
-	ReviewExports              job.DocumentExportStore
-	JobWorkerAuth              *job.WorkerAuth
-	JobArtifacts               job.ArtifactStore
-	ArtifactTokens             *job.ArtifactToken
-	Gate                       work.Gate
-	Now                        func() time.Time
+	OCR                         ocr.Store
+	OCRJobs                     job.Store
+	OCRAuth                     *job.WorkerAuth
+	OCRTokens                   *job.ArtifactToken
+	OCRStorage                  job.ArtifactStore
+	Extraction                  extraction.Store
+	ExtractionEnabled           bool
+	ReviewEnabled               bool
+	FirmEnabled                 bool
+	Firm                        firm.Store
+	SecretaryEnabled            bool
+	Secretary                   secretary.Store
+	SecretaryPilotOrganizations map[string]bool
+	Accounting                  accounting.Store
+	AccountingEnabled           bool
+	LineSecret                  string
+	LineChannel                 string
+	DashboardTokens             []string
+	Logger                      *slog.Logger
+	Auth                        *auth.Service
+	Tenants                     tenant.Store
+	Work                        work.Store
+	Business                    business.Store
+	PlanStore                   plan.Store
+	Billing                     *billing.Service
+	BillingEnabled              bool
+	BillingTestOrganizationID   string
+	OmiseWebhookSecret          string
+	OmiseWebhookPreviousSecret  string
+	Drive                       *drive.Service
+	Documents                   *document.Service
+	Jobs                        job.Store
+	ReviewExports               job.DocumentExportStore
+	JobWorkerAuth               *job.WorkerAuth
+	JobArtifacts                job.ArtifactStore
+	ArtifactTokens              *job.ArtifactToken
+	Gate                        work.Gate
+	Now                         func() time.Time
 }
 
 type server struct {
@@ -173,6 +177,9 @@ func New(config Config, store Store) http.Handler {
 		if config.FirmEnabled && config.Firm != nil {
 			s.registerFirmRoutes(mux)
 		}
+		if config.SecretaryEnabled && config.Secretary != nil {
+			s.registerSecretaryRoutes(mux)
+		}
 	}
 	return s.observe(mux)
 }
@@ -182,6 +189,16 @@ func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) ready(w http.ResponseWriter, r *http.Request) {
+	if s.config.SecretaryEnabled {
+		if s.config.Secretary == nil {
+			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Secretary is unavailable")
+			return
+		}
+		if ready, ok := s.config.Secretary.(interface{ ReadySecretary(context.Context) error }); ok && ready.ReadySecretary(r.Context()) != nil {
+			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Secretary schema is not ready")
+			return
+		}
+	}
 	if s.config.FirmEnabled {
 		if s.config.Firm == nil || s.config.Firm.ReadyFirm(r.Context()) != nil {
 			writeError(w, r, http.StatusServiceUnavailable, "not_ready", "Firm schema is not ready")
