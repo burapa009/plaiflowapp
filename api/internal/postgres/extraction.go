@@ -106,7 +106,7 @@ func (s *Store) SaveReview(ctx context.Context, review extraction.Review, expect
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,actor_user_id,event_type,target_type,target_id,
 		request_id,outcome,occurred_at,metadata) VALUES($1,$2,'extraction.confirm','document',$3,$4,'success',$5,
-		jsonb_build_object('review_revision',$6,'draft_revision',$7))`, review.OrganizationID, review.ConfirmedBy,
+		jsonb_build_object('review_revision',$6::integer,'draft_revision',$7::integer))`, review.OrganizationID, review.ConfirmedBy,
 		review.DocumentID, review.RequestID, review.ConfirmedAt, review.Revision, review.DraftRevision)
 	if err != nil {
 		return extraction.Review{}, err
