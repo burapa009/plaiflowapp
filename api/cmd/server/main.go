@@ -65,6 +65,14 @@ func main() {
 	if os.Getenv("REVIEW_ENABLED") == "true" {
 		store.EnableReview()
 	}
+	matchingEnabled := os.Getenv("MATCHING_ENABLED") == "true"
+	if matchingEnabled {
+		store.EnableMatching()
+	}
+	runPodOrganizations := secretaryPilotOrganizations(os.Getenv("OCR_RUNPOD_ENABLED_ORGS"))
+	if provider == "runpod" || len(runPodOrganizations) > 0 {
+		store.RequireMigration19()
+	}
 	billingEnabled := os.Getenv("BILLING_ENABLED") == "true"
 	var billingService *billing.Service
 	if billingEnabled {
@@ -179,8 +187,8 @@ func main() {
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", OCRPilotOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_PILOT_ORGANIZATION_IDS")), ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
-			OCRDefaultProvider: provider, OCRRunPodOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_RUNPOD_ENABLED_ORGS")),
-			Matching: store, MatchingEnabled: os.Getenv("MATCHING_ENABLED") == "true", AutoMatchThreshold: autoMatch, ReviewMatchThreshold: reviewMatch,
+			OCRDefaultProvider: provider, OCRRunPodOrganizations: runPodOrganizations,
+			Matching: store, MatchingEnabled: matchingEnabled, AutoMatchThreshold: autoMatch, ReviewMatchThreshold: reviewMatch,
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
 			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
 			Secretary: store, SecretaryEnabled: os.Getenv("SECRETARY_ENABLED") == "true",

@@ -93,7 +93,13 @@ func (s *Store) CompleteOCR(ctx context.Context, c job.LeaseCommand, worker stri
 	if err != nil {
 		return "", err
 	}
-	_, err = tx.Exec(ctx, `UPDATE document_ocr_runs SET object_key=$2,result_sha256=$3,result_bytes=$4,page_count=$5,published_at=$6,processing_ms=$7 WHERE job_id=$1`, c.JobID, key, sha, size, len(result.Pages), c.Now, result.DurationMS)
+	query := `UPDATE document_ocr_runs SET object_key=$2,result_sha256=$3,result_bytes=$4,page_count=$5,published_at=$6 WHERE job_id=$1`
+	args := []any{c.JobID, key, sha, size, len(result.Pages), c.Now}
+	if s.requireMigration19 {
+		query = `UPDATE document_ocr_runs SET object_key=$2,result_sha256=$3,result_bytes=$4,page_count=$5,published_at=$6,processing_ms=$7 WHERE job_id=$1`
+		args = append(args, result.DurationMS)
+	}
+	_, err = tx.Exec(ctx, query, args...)
 	if err != nil {
 		return "", err
 	}

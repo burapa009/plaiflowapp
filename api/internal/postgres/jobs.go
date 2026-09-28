@@ -97,7 +97,7 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
 		candidate.job.Status = job.Running
 		candidate.job.AttemptID = attemptID
 		candidate.job.AttemptCount++
-		if candidate.job.Kind == job.OCR && command.OCRProvider != "" {
+		if candidate.job.Kind == job.OCR && (command.OCRDefaultProvider == "runpod" || len(command.OCRRunPodOrganizations) > 0) {
 			if _, err := tx.Exec(ctx, `UPDATE document_ocr_runs SET provider=$2,provider_job_id=NULL,provider_submitted_at=NULL WHERE job_id=$1`, candidate.job.ID, command.OCRProvider); err != nil {
 				return nil, err
 			}

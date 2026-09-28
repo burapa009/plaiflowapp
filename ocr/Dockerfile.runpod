@@ -1,3 +1,13 @@
+FROM python:3.12-slim AS models
+ENV PADDLE_PDX_CACHE_HOME=/opt/models PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY ocr/requirements.lock ./requirements.lock
+RUN pip install --no-cache-dir -r requirements.lock
+COPY ocr/plaiflow_ocr ./plaiflow_ocr
+COPY ocr/model-manifest.json ./model-manifest.json
+RUN OCR_DEVICE=cpu python -m plaiflow_ocr.models --download
+
 FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \
     PADDLE_PDX_CACHE_HOME=/opt/models PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
@@ -9,11 +19,12 @@ RUN python3.12 -m venv /opt/venv
 WORKDIR /app
 COPY ocr/requirements.lock ./requirements.lock
 RUN sed '/^paddlepaddle==/d' requirements.lock > requirements-gpu.lock && \
-    python -m pip install --no-cache-dir -r requirements-gpu.lock runpod==1.12.0 && \
+    python -m pip install --no-cache-dir --no-deps -r requirements-gpu.lock && \
+    python -m pip install --no-cache-dir runpod==1.12.0 && \
     python -m pip install --no-cache-dir paddlepaddle-gpu==3.2.2 \
       --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
 COPY ocr/plaiflow_ocr ./plaiflow_ocr
 COPY ocr/model-manifest.json ./model-manifest.json
 COPY ocr/runpod_handler.py ./runpod_handler.py
-RUN OCR_DEVICE=cpu python -m plaiflow_ocr.models --download
+COPY --from=models /opt/models /opt/models
 CMD ["python", "-u", "runpod_handler.py"]
