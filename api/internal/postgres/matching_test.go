@@ -81,6 +81,17 @@ func TestOCRAndReviewRemainUsableBeforeMigration19(t *testing.T) {
 	if err != nil || len(candidates) != 1 || candidates[0].DocumentID != accepted.Document.ID {
 		t.Fatalf("own matches=%v err=%v", candidates, err)
 	}
+	member := postgresUUID()
+	if _, err := store.pool.Exec(ctx, `INSERT INTO users(id) VALUES($1)`, member); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(ctx, `INSERT INTO memberships(organization_id,user_id,role) VALUES($1,$2,'Member')`, org, member); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err = store.FindMatchCandidates(ctx, member, org, source)
+	if err != nil || len(candidates) != 0 {
+		t.Fatalf("private same-organization matches=%v err=%v", candidates, err)
+	}
 	otherUser, otherOrg := postgresUUID(), postgresUUID()
 	if _, err := store.pool.Exec(ctx, `INSERT INTO users(id) VALUES($1)`, otherUser); err != nil {
 		t.Fatal(err)
@@ -118,6 +129,7 @@ func TestOCRAndReviewRemainUsableBeforeMigration19(t *testing.T) {
 		}
 	}
 	checkRLS(user, org, 1)
+	checkRLS(member, org, 0)
 	checkRLS(otherUser, otherOrg, 0)
 }
 
