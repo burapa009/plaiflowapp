@@ -133,7 +133,6 @@ func TestSecretaryBriefingUsesCurrentRoleAndHumanRoutineConfirmation(t *testing.
 	if err = store.TransferOwnership(ctx, org, member, owner, now); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("ownership restored")
 	if _, err = store.pool.Exec(ctx, `UPDATE memberships SET role='Member' WHERE organization_id=$1 AND user_id=$2`, org, member); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +142,6 @@ func TestSecretaryBriefingUsesCurrentRoleAndHumanRoutineConfirmation(t *testing.
 	if err != nil || template.ID == "" {
 		t.Fatalf("template=%+v err=%v", template, err)
 	}
-	t.Log("member routine template saved")
 	if _, err = store.SaveRoutineTemplate(ctx, secretary.TemplateCommand{RoutineTemplate: secretary.RoutineTemplate{
 		Title: "Manager check", ResponsibleUserID: owner, Cadence: "Monthly", FirstDueOn: "2026-09-28", Active: true},
 		UserID: owner, OrganizationID: org, Now: now}); err != nil {
@@ -153,17 +151,14 @@ func TestSecretaryBriefingUsesCurrentRoleAndHumanRoutineConfirmation(t *testing.
 	if err != nil || len(visibleTemplates) != 1 || visibleTemplates[0].ID != template.ID {
 		t.Fatalf("member templates=%+v err=%v", visibleTemplates, err)
 	}
-	t.Log("routine template visibility checked")
 	extraTasks := make([]string, 0, 4)
 	for i := 0; i < 4; i++ {
 		extraTasks = append(extraTasks, create("extra due today", member, "2026-09-28", work.Normal))
 	}
-	t.Log("extra tasks saved")
 	refreshed, err := store.Refresh(ctx, member, org, now.Add(16*time.Minute))
 	if err != nil || refreshed.Status != "Queued" {
 		t.Fatalf("refreshed=%+v err=%v", refreshed, err)
 	}
-	t.Log("refresh queued")
 	claimed, err = store.ClaimJobs(ctx, job.ClaimCommand{WorkerID: "secretary-test", Environment: "test", Kinds: []job.Kind{job.Secretary}, Limit: 5, Lease: 2 * time.Minute, Now: now.Add(16 * time.Minute)})
 	if err != nil {
 		t.Fatal("routine claim", err)
@@ -176,7 +171,6 @@ func TestSecretaryBriefingUsesCurrentRoleAndHumanRoutineConfirmation(t *testing.
 	if lease.JobID != refreshed.JobID {
 		t.Fatalf("refreshed job not claimed: %v", refreshed.JobID)
 	}
-	t.Log("refresh claimed")
 	if err = store.Generate(ctx, lease); err != nil {
 		t.Fatal("routine generate", err)
 	}
