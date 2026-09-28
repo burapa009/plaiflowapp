@@ -1,11 +1,27 @@
 package extraction_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"plaiflow/api/internal/extraction"
 	"plaiflow/api/internal/ocr"
 )
+
+func TestUnknownDocumentReturnsEmptyWarningsArray(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1}}})
+	body, err := json.Marshal(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if warnings, ok := decoded["warnings"].([]any); !ok || len(warnings) != 0 {
+		t.Fatalf("warnings must be an empty JSON array: %s", body)
+	}
+}
 
 func TestThaiTaxInvoiceProducesTraceableFieldsWithoutInventingMissingValues(t *testing.T) {
 	input := ocr.Result{SchemaVersion: 1, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{

@@ -59,7 +59,7 @@ var moneyPattern = regexp.MustCompile(`^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.
 
 // Extract keeps OCR candidates separate from human-reviewed values. A rule match is never a calibrated confidence score.
 func Extract(result ocr.Result) Draft {
-	draft := Draft{SchemaVersion: SchemaVersion, DocumentType: "unknown", Fields: make(map[string]Field, len(Keys))}
+	draft := Draft{SchemaVersion: SchemaVersion, DocumentType: "unknown", Fields: make(map[string]Field, len(Keys)), Warnings: []Warning{}}
 	accounting := ExtractAccounting(result)
 	draft.Accounting = &accounting
 	for _, key := range Keys {
