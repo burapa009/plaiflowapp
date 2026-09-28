@@ -58,7 +58,7 @@ func TestConfirmedInvoiceCanBeApprovedAndExportedAsGenericAccountingRow(t *testi
 	blobs := &extractionBlobs{objects: map[string][]byte{"review.json": data}}
 	approved := &accountingTestStore{}
 	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{}, OCRStorage: blobs,
-		Extraction: &extractionStore{review: review}, ExtractionEnabled: true, Accounting: approved, AccountingEnabled: true,
+		Extraction: &extractionStore{review: review}, ExtractionEnabled: true, OCRPilotOrganizations: map[string]bool{"org-1": true}, Accounting: approved, AccountingEnabled: true,
 		Now: func() time.Time { return now }}, &fakeStore{})
 	base := "https://app.example/v1/o/org-1/documents/doc-1/accounting"
 	request := httptest.NewRequest(http.MethodGet, base, nil)

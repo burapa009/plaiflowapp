@@ -11,4 +11,4 @@ COPY ocr/model-manifest.json ./model-manifest.json
 RUN python -m plaiflow_ocr.models --download
 RUN useradd --uid 10001 --create-home ocr && mkdir -p /tmp/plaiflow-ocr && chown ocr:ocr /tmp/plaiflow-ocr
 USER ocr
-CMD ["python", "-m", "plaiflow_ocr"]
+CMD ["python", "-m", "plaiflow_ocr.supervisor"]

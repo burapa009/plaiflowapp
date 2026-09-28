@@ -18,7 +18,9 @@ class ServiceClient:
         self.url = os.environ["OCR_SERVICE_URL"].rstrip("/")
         self.token = os.environ["OCR_SERVICE_TOKEN"]
         parsed = urllib.parse.urlsplit(self.url)
-        private_http = parsed.scheme == "http" and (parsed.hostname or "").endswith(".railway.internal") and parsed.port is not None
+        private_http = parsed.scheme == "http" and parsed.port is not None and (
+            (parsed.hostname or "").endswith(".railway.internal") or parsed.hostname == "127.0.0.1"
+        )
         if (parsed.scheme != "https" and not private_http) or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or len(self.token) < 32:
             raise ValueError("invalid_service_configuration")
         self.opener = urllib.request.build_opener(NoRedirect())

@@ -56,6 +56,8 @@ class ClientTest(unittest.TestCase):
         with patch.dict(os.environ, {"OCR_SERVICE_URL": "http://public.example:8000", "OCR_SERVICE_TOKEN": "t" * 32}):
             with self.assertRaises(ValueError):
                 ServiceClient()
+        with patch.dict(os.environ, {"OCR_SERVICE_URL": "http://127.0.0.1:8000", "OCR_SERVICE_TOKEN": "t" * 32}):
+            ServiceClient()
 
 
 if __name__ == "__main__":

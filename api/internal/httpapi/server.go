@@ -155,15 +155,15 @@ func New(config Config, store Store) http.Handler {
 		if config.ExtractionEnabled && config.Extraction != nil && config.OCR != nil && config.OCRStorage != nil {
 			s.registerExtractionRoutes(mux)
 			if config.ReviewEnabled {
-				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/draft", s.saveExtractionDraft)
-				mux.HandleFunc("GET /v1/o/{organization}/review-queue", s.reviewQueue)
-				mux.HandleFunc("POST /v1/o/{organization}/review-queue/assign", s.assignReviewQueue)
-				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/review/return", s.returnReview)
-				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/review/reprocess", s.reprocessReview)
-				mux.HandleFunc("POST /v1/o/{organization}/review-exports", s.requestReviewExport)
-				mux.HandleFunc("GET /v1/o/{organization}/review-exports/count", s.reviewExportCount)
-				mux.HandleFunc("GET /v1/o/{organization}/review-exports/{export}", s.reviewExportStatus)
-				mux.HandleFunc("GET /v1/o/{organization}/review-exports/{export}/download", s.reviewExportDownload)
+				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/draft", s.ocrPilot(s.saveExtractionDraft))
+				mux.HandleFunc("GET /v1/o/{organization}/review-queue", s.ocrPilot(s.reviewQueue))
+				mux.HandleFunc("POST /v1/o/{organization}/review-queue/assign", s.ocrPilot(s.assignReviewQueue))
+				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/review/return", s.ocrPilot(s.returnReview))
+				mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/review/reprocess", s.ocrPilot(s.reprocessReview))
+				mux.HandleFunc("POST /v1/o/{organization}/review-exports", s.ocrPilot(s.requestReviewExport))
+				mux.HandleFunc("GET /v1/o/{organization}/review-exports/count", s.ocrPilot(s.reviewExportCount))
+				mux.HandleFunc("GET /v1/o/{organization}/review-exports/{export}", s.ocrPilot(s.reviewExportStatus))
+				mux.HandleFunc("GET /v1/o/{organization}/review-exports/{export}/download", s.ocrPilot(s.reviewExportDownload))
 			}
 			if config.AccountingEnabled && config.Accounting != nil {
 				s.registerAccountingRoutes(mux)

@@ -43,6 +43,13 @@ func TestAccountingThaiInvoiceAndItems(t *testing.T) {
 	}
 }
 
+func TestSeparateReceiptAndTaxHeadingDoesNotClaimUnverifiedTaxID(t *testing.T) {
+	a := ExtractAccounting(accountingResult("ใบเสร็จรับเงิน", "ใบกำกับภาษี", "เลขประจำตัวผู้เสียภาษี 0123456789012"))
+	if a.Document.DocumentType == nil || *a.Document.DocumentType != "receipt_tax_invoice" || a.Validation.TaxIDValid != nil {
+		t.Fatalf("heading or tax validation incorrectly inferred: %+v", a)
+	}
+}
+
 func TestAccountingUncertainOCRStaysNull(t *testing.T) {
 	a := ExtractAccounting(accountingResult("Tax Invoice", "Date 01/02/2026", "Seller Tax ID 0123456789O12", "Total 1,2O0.00", "VAT 7%"))
 	if a.Document.DocumentDate != nil || a.Seller.TaxID != nil || a.Summary.TotalAmount != nil || a.Summary.VATAmount != nil {

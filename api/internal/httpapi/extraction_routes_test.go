@@ -86,7 +86,7 @@ func TestReviewerCanSaveDraftWithoutConfirmingAndStaleSaveConflicts(t *testing.T
 	blobs := &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}}
 	store := &extractionStore{}
 	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{}, OCRStorage: blobs,
-		Extraction: store, ExtractionEnabled: true, ReviewEnabled: true, Now: func() time.Time { return now }}, &fakeStore{})
+		Extraction: store, ExtractionEnabled: true, OCRPilotOrganizations: map[string]bool{"org-1": true}, ReviewEnabled: true, Now: func() time.Time { return now }}, &fakeStore{})
 	base := "https://app.example/v1/o/org-1/documents/doc-1/extraction"
 	form := url.Values{"csrf_token": {"csrf"}, "ocr_job_id": {"ocr-1"}, "expected_draft_revision": {"0"},
 		"document_number": {"INV-42"}, "document_number_decision": {"corrected"}}
@@ -150,7 +150,7 @@ func TestThaiTaxInvoiceCanBeReviewedAndExportedAsOneStructuredRow(t *testing.T) 
 	blobs := &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}}
 	store := &extractionStore{}
 	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{}, OCRStorage: blobs,
-		Extraction: store, ExtractionEnabled: true, Now: func() time.Time { return now }}, &fakeStore{})
+		Extraction: store, ExtractionEnabled: true, OCRPilotOrganizations: map[string]bool{"org-1": true}, Now: func() time.Time { return now }}, &fakeStore{})
 	base := "https://app.example/v1/o/org-1/documents/doc-1/extraction"
 	request := httptest.NewRequest(http.MethodGet, base, nil)
 	request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})

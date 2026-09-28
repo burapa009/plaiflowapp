@@ -115,7 +115,7 @@ async def authorize_upload(request: Request, call_next: Callable[[Request], Awai
         if not hmac.compare_digest(supplied, request.app.state.token):
             return _error(401, "UNAUTHORIZED", request.state.request_id)
         try:
-            declared = int(request.headers.get("content-length", "0"))
+            declared = int(request.headers["content-length"])
         except ValueError:
             return _error(400, "INVALID_FILE", request.state.request_id)
         if declared > request.app.state.max_file_size + (1 << 20):
@@ -217,4 +217,4 @@ async def ocr(request: Request, file: UploadFile = File(...)) -> OCRResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")), workers=1)
+    uvicorn.run(app, host=os.environ.get("OCR_BIND_HOST", "0.0.0.0"), port=int(os.environ.get("PORT", "8000")), workers=1)

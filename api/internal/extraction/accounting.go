@@ -246,6 +246,7 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 	section := "seller"
 	var itemColumns []string
 	invalidTax := false
+	sawReceipt, sawTaxInvoice := false, false
 	for _, p := range result.Pages {
 		groups := accountingPolygonRows(p.Lines)
 		parseLines := make([]ocr.Line, 0, len(p.Lines)+len(groups))
@@ -300,6 +301,13 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 				}
 				if kind != "" {
 					a.Document.DocumentType = accountingPtr(kind)
+				}
+			}
+			if l.Confidence >= .8 {
+				sawReceipt = sawReceipt || strings.Contains(lower, "ใบเสร็จ") || strings.Contains(lower, "receipt")
+				sawTaxInvoice = sawTaxInvoice || strings.Contains(lower, "ใบกำกับภาษี") || strings.Contains(lower, "tax invoice")
+				if sawReceipt && sawTaxInvoice {
+					a.Document.DocumentType = accountingPtr("receipt_tax_invoice")
 				}
 			}
 			if strings.Contains(lower, "บาท") || strings.Contains(lower, "thb") {
@@ -540,8 +548,6 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 	}
 	if invalidTax {
 		a.Validation.TaxIDValid = accountingBool(false)
-	} else if a.Seller.TaxID != nil || a.Buyer.TaxID != nil {
-		a.Validation.TaxIDValid = accountingBool(true)
 	}
 	for i, item := range a.Items {
 		if item.Quantity == nil || item.UnitPrice == nil || item.Amount == nil {

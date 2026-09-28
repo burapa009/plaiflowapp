@@ -31,7 +31,7 @@ func (s *server) registerExtractionRoutes(m *http.ServeMux) {
 
 func (s *server) ocrPilot(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.config.OCRPilotOrganizations != nil && !s.config.OCRPilotOrganizations[r.PathValue("organization")] {
+		if !s.config.OCRPilotOrganizations[r.PathValue("organization")] {
 			http.NotFound(w, r)
 			return
 		}

@@ -20,6 +20,8 @@ The existing `EXTRACTION_ENABLED` gate still applies.
   filling missing amounts or correcting contradictory values.
 - Currency requires evidence; THB is not inferred solely from Thai text.
 - `raw_value` preserves tax identifier candidates, including invalid candidates.
+- `tax_id_valid` stays null for a 13-digit candidate until an authoritative
+  registry check exists; length alone is not proof that the ID is valid.
 - `raw_text` retains each original OCR page text in page order, joined with a
   newline between pages. The authoritative OCR artifact retains the separate
   page texts and polygons. Older artifacts without page text fall back to their
