@@ -95,6 +95,30 @@ func TestOCRAndReviewRemainUsableBeforeMigration19(t *testing.T) {
 	if _, err := store.FindMatchCandidates(ctx, otherUser, org, source); err == nil {
 		t.Fatal("nonmember queried another organization")
 	}
+	checkRLS := func(actor, scope string, want int) {
+		t.Helper()
+		tx, err := store.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		if _, err := tx.Exec(ctx, `SET LOCAL ROLE pg_read_all_data`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `SELECT set_config('app.user_id',$1,true),set_config('app.organization_id',$2,true)`, actor, scope); err != nil {
+			t.Fatal(err)
+		}
+		var bypass bool
+		if err := tx.QueryRow(ctx, `SELECT rolbypassrls OR rolsuper FROM pg_roles WHERE rolname=current_user`).Scan(&bypass); err != nil || bypass {
+			t.Fatalf("test role bypasses RLS: %v err=%v", bypass, err)
+		}
+		var count int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM document_match_index`).Scan(&count); err != nil || count != want {
+			t.Fatalf("match index RLS count=%d want=%d err=%v", count, want, err)
+		}
+	}
+	checkRLS(user, org, 1)
+	checkRLS(otherUser, otherOrg, 0)
 }
 
 func TestRunPodMatchingMigrationRoundTrip(t *testing.T) {
