@@ -9,6 +9,7 @@ import (
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/extraction"
 	"plaiflow/api/internal/job"
+	"plaiflow/api/internal/matching"
 	"plaiflow/api/internal/ocr"
 )
 
@@ -34,13 +35,14 @@ func TestOCRAndReviewRemainUsableBeforeMigration19(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	claimTime := time.Now().UTC() // The insert trigger schedules the job at database now().
 	claims, err := store.ClaimJobs(ctx, job.ClaimCommand{WorkerID: "ocr-test", Environment: "test",
-		Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: now, OCRProvider: "railway", OCRDefaultProvider: "railway"})
+		Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: claimTime, OCRProvider: "railway", OCRDefaultProvider: "railway"})
 	if err != nil || len(claims) != 1 {
 		t.Fatalf("claim before migration 19: count=%d err=%v", len(claims), err)
 	}
 	claim := claims[0]
-	lease := job.LeaseCommand{JobID: claim.Job.ID, AttemptID: claim.Job.AttemptID, LeaseToken: claim.LeaseToken, Now: now}
+	lease := job.LeaseCommand{JobID: claim.Job.ID, AttemptID: claim.Job.AttemptID, LeaseToken: claim.LeaseToken, Now: claimTime}
 	input, err := store.OCRInput(ctx, lease, "ocr-test")
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +75,25 @@ func TestOCRAndReviewRemainUsableBeforeMigration19(t *testing.T) {
 	var indexed int
 	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM document_match_index WHERE organization_id=$1 AND document_id=$2`, org, accepted.Document.ID).Scan(&indexed); err != nil || indexed != 1 {
 		t.Fatalf("match index count=%d err=%v", indexed, err)
+	}
+	source := matching.Facts{DocumentID: postgresUUID(), IssueDate: "2026-09-28", TotalAmount: "100.00"}
+	candidates, err := store.FindMatchCandidates(ctx, user, org, source)
+	if err != nil || len(candidates) != 1 || candidates[0].DocumentID != accepted.Document.ID {
+		t.Fatalf("own matches=%v err=%v", candidates, err)
+	}
+	otherUser, otherOrg := postgresUUID(), postgresUUID()
+	if _, err := store.pool.Exec(ctx, `INSERT INTO users(id) VALUES($1)`, otherUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateOrganization(ctx, otherUser, otherOrg, "Other", now); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err = store.FindMatchCandidates(ctx, otherUser, otherOrg, source)
+	if err != nil || len(candidates) != 0 {
+		t.Fatalf("cross-organization matches=%v err=%v", candidates, err)
+	}
+	if _, err := store.FindMatchCandidates(ctx, otherUser, org, source); err == nil {
+		t.Fatal("nonmember queried another organization")
 	}
 }
 
