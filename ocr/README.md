@@ -39,12 +39,12 @@ operation because debug output contains document text.
 Deploy `ocr/railway.service.toml` as a separate **private** service using the
 same Docker image as the worker. Set the token in both services and configure
 `OCR_SERVICE_URL=http://<service>.railway.internal:<port>` only on the worker.
-If the Railway plan cannot provision another service, the Docker image's default
-command starts the API bound to `127.0.0.1:8000` and then starts the worker as a
-separate process in the same container. Both processes share the service token;
-the supervisor stops the other process if either exits. This uses one Railway
-resource but cannot scale the API and worker independently. `OCR_SERVICE_URL`
-should be unset on the worker for this mode.
+On the current Trial project, the staging instance of the unused `plaiflowapp`
+service runs the API and leased worker as separate processes in one container.
+The Docker default command is a small supervisor that binds the API to loopback,
+waits for model readiness, and then starts the worker with a loopback URL. If
+either exits, both restart. This avoids changing the running Go API, LINE worker,
+or jobworker. A paid plan can split the two processes into separate services.
 Railway's [private network](https://docs.railway.com/networking/private-networking/how-it-works)
 encrypts service traffic with WireGuard; the client
 also accepts HTTPS for other deployments. Do not expose the OCR service to browsers.

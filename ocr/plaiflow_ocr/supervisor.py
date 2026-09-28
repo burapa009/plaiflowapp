@@ -1,4 +1,4 @@
-"""Run the private OCR API beside the leased worker when Railway has one slot."""
+"""Run the private OCR API and leased worker in one Trial service instance."""
 
 import os
 import signal
@@ -11,12 +11,6 @@ import urllib.request
 
 def main() -> None:
     worker_env = os.environ.copy()
-    if worker_env.get("OCR_SERVICE_URL"):
-        from .__main__ import main as run_worker
-
-        run_worker()
-        return
-
     worker_env["OCR_SERVICE_URL"] = "http://127.0.0.1:8000"
     api_env = worker_env.copy()
     api_env["OCR_BIND_HOST"] = "127.0.0.1"
