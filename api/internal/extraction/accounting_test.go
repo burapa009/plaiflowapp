@@ -43,6 +43,20 @@ func TestAccountingThaiInvoiceAndItems(t *testing.T) {
 	}
 }
 
+func TestAccountingThaiDateFormsRemainValidated(t *testing.T) {
+	for raw, want := range map[string]string{"วันที่ 28/09/69": "2026-09-28", "วันที่ 28 ก.ย. 2569": "2026-09-28"} {
+		got := accountingDateFromLine(raw)
+		if got == nil || *got != want {
+			t.Fatalf("%q: got %v want %s", raw, got, want)
+		}
+	}
+	for _, raw := range []string{"วันที่ 01/02/69", "วันที่ 31/02/2569", "วันที่ 28/09/59"} {
+		if got := accountingDateFromLine(raw); got != nil {
+			t.Fatalf("unsafe date %q: %s", raw, *got)
+		}
+	}
+}
+
 func TestSeparateReceiptAndTaxHeadingDoesNotClaimUnverifiedTaxID(t *testing.T) {
 	a := ExtractAccounting(accountingResult("ใบเสร็จรับเงิน", "ใบกำกับภาษี", "เลขประจำตัวผู้เสียภาษี 0123456789012"))
 	if a.Document.DocumentType == nil || *a.Document.DocumentType != "receipt_tax_invoice" || a.Validation.TaxIDValid != nil {

@@ -1,0 +1,28 @@
+name: RunPod OCR image
+
+on:
+  push:
+    branches: [feat/business-management]
+    paths:
+      - ocr/**
+      - .github/workflows/runpod-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Log in to GitHub Container Registry
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push immutable OCR image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/plaiflow-ocr-runpod:${GITHUB_SHA}"
+          docker build --platform linux/amd64 -f ocr/Dockerfile.runpod -t "$image" .
+          docker run --rm --entrypoint python "$image" -c 'import paddle, paddleocr, runpod; from plaiflow_ocr.models import verify; verify()'
+          docker push "$image"

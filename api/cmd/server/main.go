@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,6 +28,16 @@ func main() {
 	settings, err := config.LoadServer()
 	if err != nil {
 		logger.Error("configuration_invalid")
+		os.Exit(1)
+	}
+	provider := os.Getenv("OCR_PROVIDER")
+	if provider != "" && provider != "railway" && provider != "runpod" {
+		logger.Error("ocr_provider_invalid")
+		os.Exit(1)
+	}
+	autoMatch, reviewMatch, err := matchingThresholds()
+	if err != nil {
+		logger.Error("matching_thresholds_invalid")
 		os.Exit(1)
 	}
 	if settings.SkipDocumentScan {
@@ -168,6 +179,8 @@ func main() {
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", OCRPilotOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_PILOT_ORGANIZATION_IDS")), ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
+			OCRDefaultProvider: provider, OCRRunPodOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_RUNPOD_ENABLED_ORGS")),
+			Matching: store, MatchingEnabled: os.Getenv("MATCHING_ENABLED") == "true", AutoMatchThreshold: autoMatch, ReviewMatchThreshold: reviewMatch,
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
 			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
 			Secretary: store, SecretaryEnabled: os.Getenv("SECRETARY_ENABLED") == "true",
@@ -232,4 +245,25 @@ func secretaryPilotOrganizations(value string) map[string]bool {
 		}
 	}
 	return organizations
+}
+
+func matchingThresholds() (float64, float64, error) {
+	parse := func(name string, fallback float64) (float64, error) {
+		if os.Getenv(name) == "" {
+			return fallback, nil
+		}
+		return strconv.ParseFloat(os.Getenv(name), 64)
+	}
+	auto, err := parse("OCR_AUTO_MATCH_THRESHOLD", .9)
+	if err != nil {
+		return 0, 0, err
+	}
+	review, err := parse("OCR_REVIEW_THRESHOLD", .7)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !(review > 0 && review < auto && auto <= 1) {
+		return 0, 0, strconv.ErrRange
+	}
+	return auto, review, nil
 }

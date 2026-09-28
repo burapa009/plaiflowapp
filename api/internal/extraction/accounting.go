@@ -78,7 +78,8 @@ type AccountingItem struct {
 	Amount      *json.Number `json:"amount"`
 }
 
-var accountingDate = regexp.MustCompile(`(?:[0-9๐-๙]{1,2}[/.-]){2}[0-9๐-๙]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2}`)
+var accountingDate = regexp.MustCompile(`(?:[0-9๐-๙]{1,2}[/.-]){2}[0-9๐-๙]{2,4}|[0-9]{4}-[0-9]{2}-[0-9]{2}`)
+var accountingThaiMonthDate = regexp.MustCompile(`[0-9๐-๙]{1,2}\s+(?:ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)\s*[0-9๐-๙]{4}`)
 var accountingMoney = regexp.MustCompile(`^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?$`)
 var accountingTax = regexp.MustCompile(`(?i)(?:tax\s*id|เลข(?:ประจำตัว)?ผู้เสียภาษี)(?:ผู้ซื้อ|ผู้ขาย)?\s*[:：]?\s*(.+)$`)
 var accountingVATRate = regexp.MustCompile(`(?i)(?:vat|ภาษีมูลค่าเพิ่ม|ภาษี)\s*([0-9]{1,2})\s*%`)
@@ -143,7 +144,16 @@ func accountingDateValue(s string) *string {
 		}
 		return nil
 	}
+	thaiMonths := map[string]int{"ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
+		"ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12}
 	parts := strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '.' || r == '-' })
+	thaiMonth := 0
+	if fields := strings.Fields(s); len(fields) == 3 {
+		thaiMonth = thaiMonths[fields[1]]
+		if thaiMonth != 0 {
+			parts = []string{fields[0], strconv.Itoa(thaiMonth), fields[2]}
+		}
+	}
 	if len(parts) != 3 {
 		return nil
 	}
@@ -153,8 +163,11 @@ func accountingDateValue(s string) *string {
 	if e1 != nil || e2 != nil || e3 != nil {
 		return nil
 	}
-	if d <= 12 && m <= 12 {
+	if d <= 12 && m <= 12 && thaiMonth == 0 {
 		return nil
+	}
+	if y >= 60 && y <= 99 {
+		y += 2500 // Thai two-digit Buddhist year; only recent unambiguous years.
 	}
 	if y >= 2400 && y <= 2600 {
 		y -= 543
@@ -170,11 +183,26 @@ func accountingDateValue(s string) *string {
 }
 
 func accountingDateFromLine(line string) *string {
-	spans := accountingDate.FindAllStringIndex(line,-1)
-	if len(spans) != 1 { return nil }
+	spans := accountingDate.FindAllStringIndex(line, -1)
+	if len(spans) == 0 {
+		spans = accountingThaiMonthDate.FindAllStringIndex(line, -1)
+	}
+	if len(spans) != 1 {
+		return nil
+	}
 	span := spans[0]
-	if span[0] > 0 { r, _ := utf8.DecodeLastRuneInString(line[:span[0]]); if unicode.IsLetter(r) || unicode.IsDigit(r) { return nil } }
-	if span[1] < len(line) { r, _ := utf8.DecodeRuneInString(line[span[1]:]); if unicode.IsLetter(r) || unicode.IsDigit(r) { return nil } }
+	if span[0] > 0 {
+		r, _ := utf8.DecodeLastRuneInString(line[:span[0]])
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return nil
+		}
+	}
+	if span[1] < len(line) {
+		r, _ := utf8.DecodeRuneInString(line[span[1]:])
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return nil
+		}
+	}
 	return accountingDateValue(line[span[0]:span[1]])
 }
 
@@ -226,19 +254,32 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 	}
 	setTotal := func(raw string, q float64, priority int) bool {
 		n, _ := accountingNumber(raw)
-		if n == nil || q < .8 { return false }
+		if n == nil || q < .8 {
+			return false
+		}
 		value := n.String()
 		if seen["total_amount"] == value {
-			if priority > totalPriority { totalPriority = priority }
-			if q > quality["total_amount"] { quality["total_amount"] = q }
+			if priority > totalPriority {
+				totalPriority = priority
+			}
+			if q > quality["total_amount"] {
+				quality["total_amount"] = q
+			}
 			return true
 		}
 		if old, ok := seen["total_amount"]; ok && old != value {
 			a.Warnings = append(a.Warnings, "total_amount: conflicting values")
-			if priority < totalPriority { return false }
-			if priority == totalPriority { seen["total_amount"] = ""; return false }
+			if priority < totalPriority {
+				return false
+			}
+			if priority == totalPriority {
+				seen["total_amount"] = ""
+				return false
+			}
 		}
-		if seen["total_amount"] == "" && totalPriority == priority { return false }
+		if seen["total_amount"] == "" && totalPriority == priority {
+			return false
+		}
 		totalPriority = priority
 		seen["total_amount"], quality["total_amount"] = value, q
 		return true
@@ -251,7 +292,11 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 		groups := accountingPolygonRows(p.Lines)
 		parseLines := make([]ocr.Line, 0, len(p.Lines)+len(groups))
 		for i, line := range p.Lines {
-			for _, row := range groups { if row.index == i { parseLines = append(parseLines, ocr.Line{Text: strings.Join(row.cells, " "), Confidence: row.confidence}) } }
+			for _, row := range groups {
+				if row.index == i {
+					parseLines = append(parseLines, ocr.Line{Text: strings.Join(row.cells, " "), Confidence: row.confidence})
+				}
+			}
 			parseLines = append(parseLines, line)
 		}
 		for _, l := range parseLines {
@@ -269,7 +314,11 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 					itemColumns = cols
 					continue
 				}
-				if len(cells)>0 && accountingSummaryLabel(cells[0]) { itemColumns=nil; line = strings.Join(cells," "); lower = strings.ToLower(line) }
+				if len(cells) > 0 && accountingSummaryLabel(cells[0]) {
+					itemColumns = nil
+					line = strings.Join(cells, " ")
+					lower = strings.ToLower(line)
+				}
 				if itemColumns != nil && len(cells) == len(itemColumns) {
 					if item, ok := accountingItemRow(cells, itemColumns); ok {
 						a.Items = append(a.Items, item)
@@ -325,11 +374,11 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 			}
 			if strings.Contains(lower, "due") || strings.Contains(lower, "ครบกำหนด") || strings.Contains(lower, "กำหนดชำระ") {
 				if v := accountingDateFromLine(line); v != nil && set("due_date", *v, l.Confidence) {
-						a.Document.DueDate = v
+					a.Document.DueDate = v
 				}
 			} else if strings.Contains(lower, "วันที่") || strings.HasPrefix(lower, "date") || strings.Contains(lower, "issue date") {
 				if v := accountingDateFromLine(line); v != nil && set("document_date", *v, l.Confidence) {
-						a.Document.DocumentDate = v
+					a.Document.DocumentDate = v
 				}
 			}
 			if v, ok := accountingLabel(line, `(?i)^(?:ผู้ขาย|ชื่อผู้ขาย|seller|vendor|ผู้ซื้อ|ชื่อลูกค้า|buyer|customer)\s*[:：]\s*`, `.+`); ok {
@@ -352,7 +401,11 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 				}
 				key := party + "_tax_id"
 				raw := strings.TrimSpace(m[1])
-				if prior := a.RawValue[key]; prior == "" { a.RawValue[key] = raw } else if !strings.Contains(prior, raw) { a.RawValue[key] = prior + " | " + raw }
+				if prior := a.RawValue[key]; prior == "" {
+					a.RawValue[key] = raw
+				} else if !strings.Contains(prior, raw) {
+					a.RawValue[key] = prior + " | " + raw
+				}
 				id := accountingDigits(strings.NewReplacer(" ", "", "-", "").Replace(raw))
 				if len(id) == 13 && strings.Trim(id, "0123456789") == "" {
 					if set(key, id, l.Confidence) {
@@ -398,13 +451,19 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 			if v, ok := accountingLabel(line, `(?i)^(?:เลขอ้างอิง|transaction\s*(?:reference|ref\.?))\s*[:：#]\s*`, `[A-Za-z0-9/-]+`); ok && set("transaction_reference", v, l.Confidence) {
 				a.Payment.TransactionReference = accountingPtr(v)
 			}
-			if rate := accountingVATRate.FindStringSubmatch(line); len(rate)==2 {
-				parsed, _ := strconv.Atoi(rate[1]); normalized := strconv.Itoa(parsed)
-				if set("vat_rate", normalized, l.Confidence) { n := json.Number(normalized); a.Summary.VATRate = &n }
+			if rate := accountingVATRate.FindStringSubmatch(line); len(rate) == 2 {
+				parsed, _ := strconv.Atoi(rate[1])
+				normalized := strconv.Itoa(parsed)
+				if set("vat_rate", normalized, l.Confidence) {
+					n := json.Number(normalized)
+					a.Summary.VATRate = &n
+				}
 			}
 			if v, ok := accountingLabeledAmount(line, `(?i)^(?:ยอดสุทธิ|รวมทั้งสิ้น|grand\s*total|net\s*total|total|ยอดรวม)\s*[:：]?\s*`); ok {
 				priority := 1
-				if strings.HasPrefix(lower,"ยอดสุทธิ") || strings.HasPrefix(lower,"รวมทั้งสิ้น") || strings.HasPrefix(lower,"grand total") || strings.HasPrefix(lower,"net total") { priority = 2 }
+				if strings.HasPrefix(lower, "ยอดสุทธิ") || strings.HasPrefix(lower, "รวมทั้งสิ้น") || strings.HasPrefix(lower, "grand total") || strings.HasPrefix(lower, "net total") {
+					priority = 2
+				}
 				if setTotal(*v, l.Confidence, priority) {
 					a.Summary.TotalAmount, _ = accountingNumber(*v)
 				}
@@ -518,7 +577,8 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 			a.Summary.AmountBeforeVAT = nil
 		case "vat_amount":
 			a.Summary.VATAmount = nil
-		case "vat_rate": a.Summary.VATRate = nil
+		case "vat_rate":
+			a.Summary.VATRate = nil
 		case "withholding_tax":
 			a.Summary.WithholdingTax = nil
 		case "service_charge":
@@ -563,8 +623,15 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 			a.Warnings = append(a.Warnings, fmt.Sprintf("item %d: quantity × unit price does not match amount", i+1))
 		}
 	}
-	conflicted := func(keys ...string) bool { for _, key := range keys { if value, exists := seen[key]; exists && value == "" { return true } }; return false }
-	if a.Summary.AmountBeforeVAT != nil && a.Summary.VATAmount != nil && a.Summary.TotalAmount != nil && !conflicted("amount_before_vat","vat_amount","total_amount") {
+	conflicted := func(keys ...string) bool {
+		for _, key := range keys {
+			if value, exists := seen[key]; exists && value == "" {
+				return true
+			}
+		}
+		return false
+	}
+	if a.Summary.AmountBeforeVAT != nil && a.Summary.VATAmount != nil && a.Summary.TotalAmount != nil && !conflicted("amount_before_vat", "vat_amount", "total_amount") {
 		before, _ := accountingCents(a.Summary.AmountBeforeVAT)
 		vat, _ := accountingCents(a.Summary.VATAmount)
 		total, _ := accountingCents(a.Summary.TotalAmount)
@@ -574,7 +641,7 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 			a.Warnings = append(a.Warnings, "VAT amounts do not match total")
 		}
 	}
-	if a.Summary.Subtotal != nil && a.Summary.TotalAmount != nil && !(a.Summary.VATRate != nil && a.Summary.VATAmount == nil) && !conflicted("subtotal","discount","vat_amount","withholding_tax","service_charge","other_charges","total_amount") {
+	if a.Summary.Subtotal != nil && a.Summary.TotalAmount != nil && !(a.Summary.VATRate != nil && a.Summary.VATAmount == nil) && !conflicted("subtotal", "discount", "vat_amount", "withholding_tax", "service_charge", "other_charges", "total_amount") {
 		sub, _ := accountingCents(a.Summary.Subtotal)
 		total, _ := accountingCents(a.Summary.TotalAmount)
 		calc := sub
@@ -655,7 +722,12 @@ func accountingItemHeader(cells []string) []string {
 			cols[i] = "amount"
 			hasAmount = true
 		}
-		if cols[i] != "" { if used[cols[i]] { return nil }; used[cols[i]] = true }
+		if cols[i] != "" {
+			if used[cols[i]] {
+				return nil
+			}
+			used[cols[i]] = true
+		}
 	}
 	if hasDescription && hasAmount {
 		return cols
@@ -700,7 +772,7 @@ func accountingPolygonRows(lines []ocr.Line) []accountingRow {
 	type cell struct {
 		text                     string
 		x, y, height, confidence float64
-		index int
+		index                    int
 	}
 	cells := make([]cell, 0, len(lines))
 	for index, line := range lines {
@@ -750,7 +822,9 @@ func accountingPolygonRows(lines []ocr.Line) []accountingRow {
 			if group[i].confidence < row.confidence {
 				row.confidence = group[i].confidence
 			}
-			if group[i].index < row.index { row.index = group[i].index }
+			if group[i].index < row.index {
+				row.index = group[i].index
+			}
 		}
 		rows = append(rows, row)
 	}

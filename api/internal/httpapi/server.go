@@ -26,6 +26,7 @@ import (
 	"plaiflow/api/internal/inbound"
 	"plaiflow/api/internal/job"
 	lineadapter "plaiflow/api/internal/line"
+	"plaiflow/api/internal/matching"
 	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/secretary"
@@ -50,6 +51,12 @@ type Config struct {
 	Extraction                  extraction.Store
 	ExtractionEnabled           bool
 	OCRPilotOrganizations       map[string]bool
+	OCRDefaultProvider          string
+	OCRRunPodOrganizations      map[string]bool
+	Matching                    matching.Store
+	MatchingEnabled             bool
+	AutoMatchThreshold          float64
+	ReviewMatchThreshold        float64
 	ReviewEnabled               bool
 	FirmEnabled                 bool
 	Firm                        firm.Store

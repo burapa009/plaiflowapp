@@ -90,6 +90,18 @@ func (s *Store) SaveReview(ctx context.Context, review extraction.Review, expect
 	if err != nil {
 		return extraction.Review{}, err
 	}
+	_, err = tx.Exec(ctx, `INSERT INTO document_match_index
+		(organization_id,document_id,review_id,document_type,issue_date,total_amount,document_number,seller_tax_id,seller_name)
+		VALUES($1,$2,$3,$4,nullif($5,'')::date,nullif($6,'')::numeric,$7,$8,$9)
+		ON CONFLICT (organization_id,document_id) DO UPDATE SET
+		review_id=excluded.review_id,document_type=excluded.document_type,issue_date=excluded.issue_date,
+		total_amount=excluded.total_amount,document_number=excluded.document_number,
+		seller_tax_id=excluded.seller_tax_id,seller_name=excluded.seller_name`, review.OrganizationID,
+		review.DocumentID, review.ID, review.DocumentType, review.Values["issue_date"], review.Values["total_amount"],
+		review.Values["document_number"], review.Values["seller_tax_id"], review.Values["seller_name"])
+	if err != nil {
+		return extraction.Review{}, err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,actor_user_id,event_type,target_type,target_id,
 		request_id,outcome,occurred_at,metadata) VALUES($1,$2,'extraction.confirm','document',$3,$4,'success',$5,
 		jsonb_build_object('review_revision',$6,'draft_revision',$7))`, review.OrganizationID, review.ConfirmedBy,

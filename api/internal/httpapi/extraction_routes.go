@@ -7,12 +7,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/extraction"
+	"plaiflow/api/internal/matching"
 	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
@@ -27,6 +29,94 @@ func (s *server) registerExtractionRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/confirm", s.ocrPilot(s.confirmExtraction))
 	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.csv", s.ocrPilot(s.exportExtractions))
 	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.xlsx", s.ocrPilot(s.exportExtractions))
+	if s.config.MatchingEnabled && s.config.Matching != nil {
+		m.HandleFunc("GET /v1/o/{organization}/documents/{document}/matches", s.ocrPilot(s.getMatches))
+	}
+}
+
+func (s *server) getMatches(w http.ResponseWriter, r *http.Request) {
+	session, member, ok := s.workContext(w, r, false)
+	if !ok {
+		return
+	}
+	draft, ocrJob, err := s.extractionDraft(r.Context(), session.UserID, member.OrganizationID, r.PathValue("document"))
+	if err != nil {
+		writeError(w, r, 409, "ocr_unavailable", "Complete OCR is required before matching")
+		return
+	}
+	value := func(key string) string {
+		field := draft.Fields[key]
+		if field.Presence == "found" {
+			return field.Normalized
+		}
+		return ""
+	}
+	source := matching.Facts{DocumentID: r.PathValue("document"), DocumentType: draft.DocumentType,
+		IssueDate: value("issue_date"), TotalAmount: value("total_amount"), DocumentNumber: value("document_number"),
+		SellerTaxID: value("seller_tax_id"), SellerName: value("seller_name")}
+	if draft.Accounting != nil {
+		if source.IssueDate == "" && draft.Accounting.Document.DocumentDate != nil {
+			source.IssueDate = *draft.Accounting.Document.DocumentDate
+		}
+		if source.TotalAmount == "" && draft.Accounting.Summary.TotalAmount != nil {
+			source.TotalAmount = draft.Accounting.Summary.TotalAmount.String()
+		}
+		if source.DocumentNumber == "" && draft.Accounting.Document.DocumentNumber != nil {
+			source.DocumentNumber = *draft.Accounting.Document.DocumentNumber
+		}
+		if source.SellerTaxID == "" && draft.Accounting.Seller.TaxID != nil {
+			source.SellerTaxID = *draft.Accounting.Seller.TaxID
+		}
+		if source.SellerName == "" && draft.Accounting.Seller.Name != nil {
+			source.SellerName = *draft.Accounting.Seller.Name
+		}
+	}
+	needsReview := true
+	current, err := s.config.Extraction.CurrentReview(r.Context(), session.UserID, member.OrganizationID, source.DocumentID)
+	if err != nil {
+		writeError(w, r, 503, "matching_unavailable", "Matches are unavailable")
+		return
+	}
+	if current.ID != "" && current.OCRJobID == ocrJob {
+		confirmed, err := s.readReview(r.Context(), current)
+		if err != nil {
+			writeError(w, r, 503, "matching_unavailable", "Matches are unavailable")
+			return
+		}
+		source.DocumentType = confirmed.DocumentType
+		source.IssueDate = confirmed.Values["issue_date"]
+		source.TotalAmount = confirmed.Values["total_amount"]
+		source.DocumentNumber = confirmed.Values["document_number"]
+		source.SellerTaxID = confirmed.Values["seller_tax_id"]
+		source.SellerName = confirmed.Values["seller_name"]
+		needsReview = false
+	}
+	targets, err := s.config.Matching.FindMatchCandidates(r.Context(), session.UserID, member.OrganizationID, source)
+	if err != nil {
+		writeError(w, r, 503, "matching_unavailable", "Matches are unavailable")
+		return
+	}
+	auto, review := s.config.AutoMatchThreshold, s.config.ReviewMatchThreshold
+	if auto == 0 {
+		auto = .9
+	}
+	if review == 0 {
+		review = .7
+	}
+	candidates := make([]matching.Candidate, 0, len(targets))
+	for _, target := range targets {
+		candidate := matching.Score(source, target, auto, review, needsReview)
+		if candidate.Status != "no_match" {
+			candidates = append(candidates, candidate)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Score > candidates[j].Score })
+	if len(candidates) > 20 {
+		candidates = candidates[:20]
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, map[string]any{"source_document_id": source.DocumentID, "candidates": candidates,
+		"status": "suggestions_only", "source_review_required": needsReview})
 }
 
 func (s *server) ocrPilot(next http.HandlerFunc) http.HandlerFunc {

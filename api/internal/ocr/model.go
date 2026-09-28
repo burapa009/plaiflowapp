@@ -133,8 +133,15 @@ type State struct {
 }
 type Store interface {
 	OCRInput(context.Context, job.LeaseCommand, string) (Input, error)
+	RecordProviderJob(context.Context, job.LeaseCommand, string, ProviderJob) error
 	CompleteOCR(context.Context, job.LeaseCommand, string, Result, string, string, int64) (string, error)
 	OCRState(context.Context, string, string, string) (State, error)
 	RetryOCR(context.Context, string, string, string, time.Time) (State, error)
 	ReprocessOCR(context.Context, string, string, string, string, int, string, string, string, time.Time) (State, error)
+}
+
+type ProviderJob struct {
+	ID                   string
+	ExecutionMS, QueueMS int64
+	GPUClass             string
 }

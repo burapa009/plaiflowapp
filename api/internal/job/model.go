@@ -46,12 +46,15 @@ type Job struct {
 }
 
 type ClaimCommand struct {
-	WorkerID    string
-	Environment string
-	Kinds       []Kind
-	Limit       int
-	Lease       time.Duration
-	Now         time.Time
+	WorkerID               string
+	Environment            string
+	Kinds                  []Kind
+	Limit                  int
+	Lease                  time.Duration
+	Now                    time.Time
+	OCRProvider            string
+	OCRDefaultProvider     string
+	OCRRunPodOrganizations []string
 }
 
 type Claimed struct {

@@ -11,6 +11,10 @@ import urllib.request
 
 def main() -> None:
     worker_env = os.environ.copy()
+    if worker_env.get("OCR_PROVIDER") == "runpod":
+        # Dispatcher only: no Paddle model or FastAPI process on Railway.
+        subprocess.run([sys.executable, "-m", "plaiflow_ocr"], env=worker_env, check=True)
+        return
     worker_env["OCR_SERVICE_URL"] = "http://127.0.0.1:8000"
     api_env = worker_env.copy()
     api_env["OCR_BIND_HOST"] = "127.0.0.1"
@@ -39,6 +43,12 @@ def main() -> None:
             raise RuntimeError("ocr_api_not_ready")
         worker = subprocess.Popen([sys.executable, "-m", "plaiflow_ocr"], env=worker_env)
         processes.append(worker)
+        if os.environ.get("OCR_RUNPOD_DISPATCHER") == "true":
+            # Pilot routing keeps the CPU worker for all other organizations.
+            remote_env = os.environ.copy()
+            remote_env["OCR_PROVIDER"] = "runpod"
+            remote_env.pop("OCR_SERVICE_URL", None)
+            processes.append(subprocess.Popen([sys.executable, "-m", "plaiflow_ocr"], env=remote_env))
         while not stopping and all(process.poll() is None for process in processes):
             time.sleep(1)
         if not stopping:

@@ -26,15 +26,16 @@ class Protocol:
             raise ValueError("invalid_worker_configuration")
         self.opener = urllib.request.build_opener(NoRedirect())
 
-    def request(self, method, path, scope, claim=None, data=None):
-        if not path.startswith("/internal/v1/ocr/jobs/") or path.startswith("//"):
-            raise ValueError("unauthorized_input")
+    def token(self, scope, ttl=120):
+        if scope not in {"claim", "heartbeat", "input", "submit", "fail"} or not 0 < ttl <= (900 if scope == "input" else 300):
+            raise ValueError("invalid_worker_scope")
+        now = int(time.time())
         claims = {
             "worker_id": self.worker,
             "environment": self.environment,
             "scopes": ["ocr:" + scope],
-            "iat": int(time.time()),
-            "exp": int(time.time()) + 120,
+            "iat": now,
+            "exp": now + ttl,
             "nonce": secrets.token_hex(16),
         }
         encoded = base64.urlsafe_b64encode(
@@ -43,8 +44,13 @@ class Protocol:
         signature = base64.urlsafe_b64encode(
             hmac.digest(self.key, encoded, "sha256")
         ).rstrip(b"=")
+        return (encoded + b"." + signature).decode()
+
+    def request(self, method, path, scope, claim=None, data=None):
+        if not path.startswith("/internal/v1/ocr/jobs/") or path.startswith("//"):
+            raise ValueError("unauthorized_input")
         headers = {
-            "Authorization": "Bearer " + (encoded + b"." + signature).decode(),
+            "Authorization": "Bearer " + self.token(scope),
             "Content-Type": "application/json",
         }
         if claim is not None:
@@ -61,9 +67,33 @@ class Protocol:
             timeout=30,
         )
 
-    def claim(self):
+    def delegation(self, claim):
+        # Each scoped token is single-use; RunPod never receives the signing key.
+        return {
+            "api_url": self.base,
+            "input_auth": self.token("input", 900),
+            "original_auth": self.token("input", 900),
+            "lease_token": claim["lease_token"],
+            "attempt_id": claim["job"]["attempt_id"],
+            "worker_id": self.worker,
+        }
+
+    def record_provider(self, claim, provider_job_id, execution_ms=0, queue_ms=0, gpu_class=""):
+        path = "/internal/v1/ocr/jobs/" + claim["job"]["id"] + "/provider"
         with self.request(
-            "POST", "/internal/v1/ocr/jobs/claim", "claim", data=b"{}"
+            "POST", path, "heartbeat", claim,
+            data=json.dumps({"provider_job_id": provider_job_id, "execution_ms": execution_ms,
+                             "queue_ms": queue_ms, "gpu_class": gpu_class}).encode(),
+        ):
+            pass
+
+    def claim(self):
+        provider = os.environ.get("OCR_PROVIDER", "railway")
+        if provider not in {"railway", "runpod"}:
+            raise ValueError("invalid_ocr_provider")
+        with self.request(
+            "POST", "/internal/v1/ocr/jobs/claim", "claim",
+            data=json.dumps({"provider": provider}).encode(),
         ) as response:
             return json.loads(response.read(1 << 20))["jobs"]
 

@@ -20,6 +20,7 @@ import (
 func (s *server) registerOCRRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /internal/v1/ocr/jobs/claim", s.claimOCR)
 	m.HandleFunc("POST /internal/v1/ocr/jobs/{job}/heartbeat", s.heartbeatOCR)
+	m.HandleFunc("POST /internal/v1/ocr/jobs/{job}/provider", s.providerOCR)
 	m.HandleFunc("POST /internal/v1/ocr/jobs/{job}/fail", s.failOCR)
 	m.HandleFunc("GET /internal/v1/ocr/jobs/{job}/input", s.inputOCR)
 	m.HandleFunc("GET /internal/v1/ocr/jobs/{job}/original", s.originalOCR)
@@ -27,6 +28,31 @@ func (s *server) registerOCRRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/ocr", s.stateOCR)
 	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/ocr/retry", s.retryOCR)
 	m.HandleFunc("GET /v1/ocr-results/{document}", s.retrieveOCR)
+}
+func (s *server) providerOCR(w http.ResponseWriter, r *http.Request) {
+	_, id, ok := s.ocrInputFor(w, r, "heartbeat")
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	var input struct {
+		ID          string `json:"provider_job_id"`
+		ExecutionMS int64  `json:"execution_ms"`
+		QueueMS     int64  `json:"queue_ms"`
+		GPUClass    string `json:"gpu_class"`
+	}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if dec.Decode(&input) != nil || input.ID == "" || len(input.ID) > 128 || input.ExecutionMS < 0 || input.QueueMS < 0 || len(input.GPUClass) > 100 {
+		writeError(w, r, 400, "invalid_provider_job", "Invalid provider job")
+		return
+	}
+	if err := s.config.OCR.RecordProviderJob(r.Context(), s.leaseCommand(r), id.WorkerID,
+		ocr.ProviderJob{ID: input.ID, ExecutionMS: input.ExecutionMS, QueueMS: input.QueueMS, GPUClass: input.GPUClass}); err != nil {
+		s.writeJobError(w, r, err)
+		return
+	}
+	w.WriteHeader(204)
 }
 func (s *server) authorizeOCR(w http.ResponseWriter, r *http.Request, scope string) (job.WorkerIdentity, bool) {
 	id, err := s.config.OCRAuth.Verify(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), "ocr:"+scope, s.config.Now())
@@ -42,14 +68,23 @@ func (s *server) claimOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
-	var input struct{}
+	var input struct {
+		Provider string `json:"provider"`
+	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	if dec.Decode(&input) != nil {
-		writeError(w, r, 400, "invalid_claim", "Expected empty claim body")
+	if dec.Decode(&input) != nil || input.Provider != "" && input.Provider != "railway" && input.Provider != "runpod" {
+		writeError(w, r, 400, "invalid_claim", "Invalid OCR provider")
 		return
 	}
-	jobs, err := s.config.OCRJobs.ClaimJobs(r.Context(), job.ClaimCommand{WorkerID: id.WorkerID, Environment: id.Environment, Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: s.config.Now()})
+	if input.Provider == "" {
+		input.Provider = "railway"
+	}
+	orgs := make([]string, 0, len(s.config.OCRRunPodOrganizations))
+	for organizationID := range s.config.OCRRunPodOrganizations {
+		orgs = append(orgs, organizationID)
+	}
+	jobs, err := s.config.OCRJobs.ClaimJobs(r.Context(), job.ClaimCommand{WorkerID: id.WorkerID, Environment: id.Environment, Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: s.config.Now(), OCRProvider: input.Provider, OCRDefaultProvider: s.config.OCRDefaultProvider, OCRRunPodOrganizations: orgs})
 	if err != nil {
 		s.writeJobError(w, r, err)
 		return

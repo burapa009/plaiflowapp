@@ -70,15 +70,27 @@ def run_job(protocol: Any, claim: dict[str, Any], infer: Callable[[Path, float],
     try:
         with tempfile.TemporaryDirectory(prefix="attempt-", dir=temp_root) as directory:
             os.chmod(directory, 0o700)
-            original = Path(directory) / "original"
-            metadata = protocol.download(claim, original)
-            if not 0 < original.stat().st_size <= MAX_FILE:
-                raise ValueError("invalid_input")
-            with original.open("rb") as body:
-                digest = hashlib.file_digest(body, "sha256").hexdigest()
-            if digest != metadata["sha256"]:
-                raise ValueError("invalid_input")
-            pages = normalize(infer(original, started + 900))
+            if getattr(infer, "remote", False):
+                # The API owns authorization and decrypts the source; only a
+                # short-lived, lease-bound input capability crosses to RunPod.
+                digest = payload["sha256"]
+                raw_pages = infer(claim, protocol.delegation(claim), started + 900, protocol)
+            else:
+                original = Path(directory) / "original"
+                metadata = protocol.download(claim, original)
+                if not 0 < original.stat().st_size <= MAX_FILE:
+                    raise ValueError("invalid_input")
+                with original.open("rb") as body:
+                    digest = hashlib.file_digest(body, "sha256").hexdigest()
+                if digest != metadata["sha256"]:
+                    raise ValueError("invalid_input")
+                raw_pages = infer(original, started + 900)
+            try:
+                pages = normalize(raw_pages)
+            except (ValueError, TypeError, KeyError) as error:
+                if not getattr(infer, "remote", False):
+                    raise
+                raise RuntimeError("invalid_runpod_output") from error
             if lease_errors:
                 raise lease_errors[0]
             if time.monotonic() > started + 900:

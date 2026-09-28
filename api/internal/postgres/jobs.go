@@ -50,9 +50,12 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
 	}
 	rows, err := tx.Query(ctx, `SELECT id,organization_id,coalesce(requester_user_id::text,''),kind,status,payload,
         attempt_count,created_at FROM durable_jobs
-        WHERE kind=ANY($1) AND attempt_count<max_attempts AND
-          ((status='Queued' AND available_at<=$2) OR (status='Running' AND lease_expires_at<=$2))
-        ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT $3`, kinds, now, command.Limit)
+		WHERE kind=ANY($1) AND attempt_count<max_attempts AND
+		  ($4::text='' OR kind<>'ocr' OR (($4::text='runpod') =
+		    ($5::text='runpod' OR organization_id::text=ANY($6::text[])))) AND
+		  ((status='Queued' AND available_at<=$2) OR (status='Running' AND lease_expires_at<=$2))
+		ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT $3`, kinds, now, command.Limit,
+		command.OCRProvider, command.OCRDefaultProvider, command.OCRRunPodOrganizations)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +97,11 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
 		candidate.job.Status = job.Running
 		candidate.job.AttemptID = attemptID
 		candidate.job.AttemptCount++
+		if candidate.job.Kind == job.OCR && command.OCRProvider != "" {
+			if _, err := tx.Exec(ctx, `UPDATE document_ocr_runs SET provider=$2,provider_job_id=NULL,provider_submitted_at=NULL WHERE job_id=$1`, candidate.job.ID, command.OCRProvider); err != nil {
+				return nil, err
+			}
+		}
 		claimed = append(claimed, job.Claimed{Job: candidate.job, LeaseToken: leaseToken, LeaseExpiresAt: expires})
 		eventType := "job.claimed"
 		if candidate.wasStale {

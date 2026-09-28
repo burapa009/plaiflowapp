@@ -14,10 +14,45 @@ import (
 	"time"
 
 	"plaiflow/api/internal/extraction"
+	"plaiflow/api/internal/matching"
 	"plaiflow/api/internal/ocr"
 )
 
 type extractionOCR struct{ ocr.Store }
+
+type matchingStoreDouble struct {
+	matching.Store
+	organizations []string
+}
+
+func (s *matchingStoreDouble) FindMatchCandidates(_ context.Context, _, org string, _ matching.Facts) ([]matching.Facts, error) {
+	s.organizations = append(s.organizations, org)
+	return []matching.Facts{}, nil
+}
+
+func TestMatchingRouteRejectsOtherOrganizationBeforeQuery(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	authService, _ := newTestAuth(now)
+	sample, _ := json.Marshal(ocr.Result{SchemaVersion: 1, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{{Text: "Receipt", Confidence: .98}}}}})
+	matcher := &matchingStoreDouble{}
+	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{},
+		OCRStorage: &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}},
+		Extraction: &extractionStore{}, ExtractionEnabled: true, Matching: matcher, MatchingEnabled: true,
+		OCRPilotOrganizations: map[string]bool{"org-1": true, "org-2": true}, Now: func() time.Time { return now }}, &fakeStore{})
+	for _, tc := range []struct {
+		org    string
+		status int
+		calls  int
+	}{{"org-1", 200, 1}, {"org-2", 404, 1}} {
+		req := httptest.NewRequest(http.MethodGet, "https://app.example/v1/o/"+tc.org+"/documents/doc-1/matches", nil)
+		req.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != tc.status || len(matcher.organizations) != tc.calls {
+			t.Fatalf("org=%s status=%d calls=%v", tc.org, response.Code, matcher.organizations)
+		}
+	}
+}
 
 func TestOCRPilotDeniesUnlistedOrganization(t *testing.T) {
 	s := &server{config: Config{OCRPilotOrganizations: map[string]bool{"pilot": true}}}
