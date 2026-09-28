@@ -21,7 +21,7 @@ COPY ocr/requirements.lock ./requirements.lock
 RUN sed '/^paddlepaddle==/d' requirements.lock > requirements-gpu.lock && \
     python -m pip install --no-cache-dir --no-deps -r requirements-gpu.lock && \
     python -m pip install --no-cache-dir runpod==1.12.0 && \
-    python -m pip install --no-cache-dir paddlepaddle-gpu==3.2.2 \
+    python -m pip install --no-cache-dir --timeout 180 --retries 5 paddlepaddle-gpu==3.2.2 \
       --index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
 COPY ocr/plaiflow_ocr ./plaiflow_ocr
 COPY ocr/model-manifest.json ./model-manifest.json

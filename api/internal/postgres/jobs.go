@@ -52,7 +52,7 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
         attempt_count,created_at FROM durable_jobs
 		WHERE kind=ANY($1) AND attempt_count<max_attempts AND
 		  ($4::text='' OR kind<>'ocr' OR (($4::text='runpod') =
-		    ($5::text='runpod' OR organization_id::text=ANY($6::text[])))) AND
+		    ($5::text='runpod' OR coalesce(organization_id::text=ANY($6::text[]),false)))) AND
 		  ((status='Queued' AND available_at<=$2) OR (status='Running' AND lease_expires_at<=$2))
 		ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT $3`, kinds, now, command.Limit,
 		command.OCRProvider, command.OCRDefaultProvider, command.OCRRunPodOrganizations)
