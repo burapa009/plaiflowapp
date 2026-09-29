@@ -4,11 +4,14 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from plaiflow_ocr.generative import FIELDS, normalize_pages, validate_fields
+from plaiflow_ocr.generative import FIELDS, TYPHOON_GENERATION, normalize_pages, validate_fields
 from generative_models import assemble_weights
 
 
 class GenerativeTest(unittest.TestCase):
+    def test_typhoon_uses_pinned_publisher_generation_config(self):
+        self.assertEqual(TYPHOON_GENERATION, {"max_new_tokens": 10000})
+
     def test_split_weights_are_verified_before_atomic_publication(self):
         data = b"pinned model weights"
         digest = hashlib.sha256(data).hexdigest()

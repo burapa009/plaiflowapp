@@ -11,6 +11,7 @@ PREPROCESSING_VERSION = "markdown-v1"
 TYPHOON_REVISION = "15b381a2d62569e6736f9c085859dff68e48608d"
 OPENTHAI_MODEL = "openthai/openthai2.0-qwen3.8-27b:latest"
 OPENTHAI_WEIGHTS = "8a53bc6612576dffeb1f988bb5eede4321b004bf23f28a6f0e6173b4a0780f52"
+TYPHOON_GENERATION = {"max_new_tokens": 10000}
 FIELDS = (
     "document_number", "issue_date", "seller_name", "seller_tax_id", "seller_branch",
     "buyer_name", "buyer_tax_id", "currency", "subtotal", "vat_amount", "total_amount",
@@ -159,7 +160,7 @@ class GenerativeEngine:
             {"type": "image", "image": image}, {"type": "text", "text": OCR_PROMPT},
         ]}], tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt").to("cuda")
         with self.torch.inference_mode():
-            output = self.model.generate(**inputs, max_new_tokens=10000, do_sample=False,
+            output = self.model.generate(**inputs, **TYPHOON_GENERATION,
                 stopping_criteria=StoppingCriteriaList([Deadline()]))
         generated = output[0][inputs["input_ids"].shape[-1]:]
         if time.monotonic() >= deadline or len(generated) >= 10000:
