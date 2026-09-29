@@ -145,6 +145,21 @@ func TestOCRIsolatedDatabaseLifecycle(t *testing.T) {
 	if _, err = store.OCRInput(ctx, lease, "other-worker"); !errors.Is(err, job.ErrLeaseLost) {
 		t.Fatalf("wrong worker: %v", err)
 	}
+	if err = store.FailJob(ctx, job.FailureCommand{LeaseCommand: lease, Code: "temporary_upstream"}); err != nil {
+		t.Fatal(err)
+	}
+	var retryStatus string
+	var hasFailedAt bool
+	if err = store.pool.QueryRow(ctx, `SELECT status,failed_at IS NOT NULL FROM durable_jobs WHERE id=$1`, claim.Job.ID).Scan(&retryStatus, &hasFailedAt); err != nil || retryStatus != "Queued" || hasFailedAt {
+		t.Fatalf("retry status=%s failed_at=%v err=%v", retryStatus, hasFailedAt, err)
+	}
+	retryNow := time.Now().UTC().Add(time.Minute)
+	retried, err := store.ClaimJobs(ctx, job.ClaimCommand{WorkerID: "ocr-test", Environment: "test", Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: retryNow})
+	if err != nil || len(retried) != 1 {
+		t.Fatalf("retry claim=%d err=%v", len(retried), err)
+	}
+	claim = retried[0]
+	lease = job.LeaseCommand{JobID: claim.Job.ID, AttemptID: claim.Job.AttemptID, LeaseToken: claim.LeaseToken, Now: retryNow}
 	result := ocr.Result{SchemaVersion: 1, InputSHA256: in.SHA256, ModelVersion: in.ModelVersion, PreprocessingVersion: in.PreprocessingVersion, Pages: []ocr.Page{{Number: 1, Width: 100, Height: 100, Lines: []ocr.Line{}}}}
 	key, err := store.CompleteOCR(ctx, lease, "ocr-test", result, "test/result", "abc", 10)
 	if err != nil {

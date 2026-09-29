@@ -168,7 +168,7 @@ func (s *Store) FailJob(ctx context.Context, command job.FailureCommand) error {
 		available = available.Add(backoff)
 	}
 	_, err = tx.Exec(ctx, `UPDATE durable_jobs SET status=$1,available_at=$2,failure_code=$3,
-		failed_at=CASE WHEN $1='Failed' THEN $4 ELSE NULL END,current_attempt_id=NULL,lease_token_hash=NULL,lease_expires_at=NULL,worker_id=NULL
+		failed_at=CASE WHEN $1='Failed' THEN $4::timestamptz ELSE NULL END,current_attempt_id=NULL,lease_token_hash=NULL,lease_expires_at=NULL,worker_id=NULL
 		WHERE id=$5`, status, available, command.Code, command.Now.UTC(), command.JobID)
 	if err != nil {
 		return err
