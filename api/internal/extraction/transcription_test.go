@@ -28,3 +28,16 @@ func TestTranscriptionEvidenceAndAmbiguity(t *testing.T) {
 		t.Fatal("ambiguous date normalized")
 	}
 }
+
+func TestTranscriptionPrefersExplicitThaiInvoiceEvidence(t *testing.T) {
+	p := ocr.Page{Number: 1, Width: 100, Height: 100, DurationMS: 100, TranscriptionMS: 60, ExtractionMS: 40,
+		Text:      "บริษัท โฟลว์แอคเคาท์ ทดสอบ จำกัด (สำนักงานใหญ่)\nลูกค้า\nบริษัท ตัวอย่าง จำกัด\nรวมเป็นเงิน: 12,500.00 บาท\nภาษีมูลค่าเพิ่ม 7%: 776.87 บาท\nราคาไม่รวมภาษีมูลค่าเพิ่ม: 11,098.13 บาท\nจำนวนเงินรวมทั้งสิ้น: 11,875.00 บาท",
+		Proposals: []ocr.Proposal{{Field: "subtotal", Raw: "12,500.00", Line: 4}, {Field: "vat_amount", Raw: "776.87", Line: 5}, {Field: "total_amount", Raw: "11,875.00", Line: 7}}}
+	r := ocr.Result{SchemaVersion: 3, InputSHA256: "sha", ModelVersion: ocr.GenerativeModelVersion, PreprocessingVersion: ocr.GenerativePreprocessingVersion, Pages: []ocr.Page{p}}
+	d := Extract(r)
+	if d.Fields["seller_name"].Normalized != "บริษัท โฟลว์แอคเคาท์ ทดสอบ จำกัด (สำนักงานใหญ่)" ||
+		d.Fields["subtotal"].Normalized != "11098.13" || d.Fields["vat_amount"].Normalized != "776.87" ||
+		d.Fields["total_amount"].Normalized != "11875.00" || !d.HasWarning("multiple_candidates", "subtotal") {
+		t.Fatalf("explicit evidence not preferred: %+v", d.Fields)
+	}
+}

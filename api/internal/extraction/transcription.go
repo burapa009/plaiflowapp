@@ -1,10 +1,51 @@
 package extraction
 
 import (
+	"regexp"
 	"strings"
 
 	"plaiflow/api/internal/ocr"
 )
+
+// ponytail: the first business-name line is the issuer; add layout-aware sections if real invoices disprove it.
+var transcriptionSellerName = regexp.MustCompile(`^(?:บริษัท|ห้างหุ้นส่วน(?:จำกัด)?|ร้าน)\s+.+`)
+var transcriptionAmounts = map[string]*regexp.Regexp{
+	"subtotal":     regexp.MustCompile(`(?i)^(?:มูลค่าก่อนภาษี|รวมก่อนภาษี|ราคาไม่รวมภาษีมูลค่าเพิ่ม|amount\s*before\s*vat|subtotal)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
+	"vat_amount":   regexp.MustCompile(`(?i)^(?:ภาษีมูลค่าเพิ่ม|vat)(?:\s*[0-9๐-๙]{1,2}\s*%)?\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
+	"total_amount": regexp.MustCompile(`(?i)^(?:จำนวนเงินรวมทั้งสิ้น|ยอดรวม|รวมทั้งสิ้น|ยอดสุทธิ|grand total|รวม)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
+}
+
+func preferTranscriptionEvidence(d *Draft, page ocr.Page) {
+	lines := strings.Split(page.Text, "\n")
+	sellerFound := d.Fields["seller_name"].Presence == "found"
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if !sellerFound && transcriptionSellerName.MatchString(line) {
+			d.Fields["seller_name"] = Field{Presence: "found", Raw: line, Normalized: line,
+				Confidence: "unrated", Evidence: []Evidence{{Page: page.Number, Line: i + 1}}}
+			sellerFound = true
+		}
+		for _, key := range []string{"subtotal", "vat_amount", "total_amount"} {
+			match := transcriptionAmounts[key].FindStringSubmatch(line)
+			if len(match) < 2 {
+				continue
+			}
+			raw := strings.TrimSpace(match[1])
+			normalized, ok := normalize(key, raw)
+			if !ok {
+				continue
+			}
+			if previous := d.Fields[key]; previous.Presence == "found" && previous.Normalized != normalized {
+				d.warn("multiple_candidates", key, "review")
+			}
+			d.Fields[key] = Field{Presence: "found", Raw: raw, Normalized: normalized,
+				Confidence: "unrated", Evidence: []Evidence{{Page: page.Number, Line: i + 1}}}
+		}
+	}
+}
 
 func extractTranscription(result ocr.Result) Draft {
 	d := Draft{SchemaVersion: SchemaVersion, DocumentType: "unknown", Fields: map[string]Field{}, Warnings: []Warning{}}
@@ -64,6 +105,7 @@ func extractTranscription(result ocr.Result) Draft {
 			}
 			d.Fields[p.Field] = field
 		}
+		preferTranscriptionEvidence(&d, page)
 	}
 	a.RawText = strings.Join(texts, "\n\n")
 	for key, target := range map[string]**string{
