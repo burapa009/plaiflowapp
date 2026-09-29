@@ -38,7 +38,7 @@ func TestMatchingRouteRejectsOtherOrganizationBeforeQuery(t *testing.T) {
 	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{},
 		OCRStorage: &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}},
 		Extraction: &extractionStore{}, ExtractionEnabled: true, Matching: matcher, MatchingEnabled: true,
-		OCRPilotOrganizations: map[string]bool{"org-1": true, "org-2": true}, Now: func() time.Time { return now }}, &fakeStore{})
+		OCRPilotOrganizations: map[string]bool{"*": true}, Now: func() time.Time { return now }}, &fakeStore{})
 	for _, tc := range []struct {
 		org    string
 		status int
@@ -69,6 +69,13 @@ func TestOCRPilotDeniesUnlistedOrganization(t *testing.T) {
 	handler(response, request)
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("pilot organization status=%d", response.Code)
+	}
+	s.config.OCRPilotOrganizations = map[string]bool{"*": true}
+	request.SetPathValue("organization", "other")
+	response = httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("all-organization rollout status=%d", response.Code)
 	}
 }
 

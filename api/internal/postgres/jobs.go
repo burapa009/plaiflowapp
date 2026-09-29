@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"plaiflow/api/internal/job"
+	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/work"
 )
 
@@ -52,10 +53,11 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
         attempt_count,created_at FROM durable_jobs
 		WHERE kind=ANY($1) AND attempt_count<max_attempts AND
 		  ($4::text='' OR kind<>'ocr' OR (($4::text='runpod') =
-		    ($5::text='runpod' OR coalesce(organization_id::text=ANY($6::text[]),false)))) AND
+		    ($5::text='runpod' OR coalesce(organization_id::text=ANY($6::text[]),false)
+		     OR payload->>'model_version'=$7::text))) AND
 		  ((status='Queued' AND available_at<=$2) OR (status='Running' AND lease_expires_at<=$2))
 		ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT $3`, kinds, now, command.Limit,
-		command.OCRProvider, command.OCRDefaultProvider, command.OCRRunPodOrganizations)
+		command.OCRProvider, command.OCRDefaultProvider, command.OCRRunPodOrganizations, ocr.GenerativeModelVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +99,7 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
 		candidate.job.Status = job.Running
 		candidate.job.AttemptID = attemptID
 		candidate.job.AttemptCount++
-		if candidate.job.Kind == job.OCR && (command.OCRDefaultProvider == "runpod" || len(command.OCRRunPodOrganizations) > 0) {
+		if candidate.job.Kind == job.OCR && (command.OCRProvider == "runpod" || command.OCRDefaultProvider == "runpod" || len(command.OCRRunPodOrganizations) > 0) {
 			if _, err := tx.Exec(ctx, `UPDATE document_ocr_runs SET provider=$2,provider_job_id=NULL,provider_submitted_at=NULL WHERE job_id=$1`, candidate.job.ID, command.OCRProvider); err != nil {
 				return nil, err
 			}

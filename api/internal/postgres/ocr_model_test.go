@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"plaiflow/api/internal/document"
+	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/ocr"
 )
 
@@ -49,6 +50,21 @@ func TestOCRModelPilotSelection(t *testing.T) {
 		}
 		if err = s.pool.QueryRow(ctx, `SELECT payload->>'model_version' FROM durable_jobs WHERE id=$1`, state.JobID).Scan(&model); err != nil || model != scope.model {
 			t.Fatalf("job model=%s err=%v", model, err)
+		}
+	}
+	// During cutover, new-model jobs must never be claimed by the CPU worker.
+	for _, scope := range []struct{ provider, org string }{{"railway", other}, {"runpod", pilot}} {
+		claimed, err := s.ClaimJobs(ctx, job.ClaimCommand{WorkerID: "model-" + scope.provider,
+			Environment: "test", Kinds: []job.Kind{job.OCR}, Limit: 10, Lease: 2 * time.Minute,
+			Now: time.Now().UTC(), OCRProvider: scope.provider, OCRDefaultProvider: "railway"})
+		if err != nil || len(claimed) != 1 || claimed[0].Job.OrganizationID != scope.org {
+			t.Fatalf("provider=%s claimed=%v err=%v", scope.provider, claimed, err)
+		}
+		if scope.provider == "runpod" {
+			var provider string
+			if err := s.pool.QueryRow(ctx, `SELECT provider FROM document_ocr_runs WHERE job_id=$1`, claimed[0].Job.ID).Scan(&provider); err != nil || provider != "runpod" {
+				t.Fatalf("recorded provider=%s err=%v", provider, err)
+			}
 		}
 	}
 	tx, err := s.pool.Begin(ctx)

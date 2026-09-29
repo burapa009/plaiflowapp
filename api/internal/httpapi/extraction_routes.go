@@ -121,7 +121,7 @@ func (s *server) getMatches(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) ocrPilot(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.config.OCRPilotOrganizations[r.PathValue("organization")] {
+		if !s.config.OCRPilotOrganizations["*"] && !s.config.OCRPilotOrganizations[r.PathValue("organization")] {
 			http.NotFound(w, r)
 			return
 		}
