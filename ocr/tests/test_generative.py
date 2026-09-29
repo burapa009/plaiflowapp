@@ -1,9 +1,33 @@
 import unittest
+import hashlib
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from plaiflow_ocr.generative import FIELDS, normalize_pages, validate_fields
+from generative_models import assemble_weights
 
 
 class GenerativeTest(unittest.TestCase):
+    def test_split_weights_are_verified_before_atomic_publication(self):
+        data = b"pinned model weights"
+        digest = hashlib.sha256(data).hexdigest()
+        with tempfile.TemporaryDirectory() as directory, patch("generative_models.OPENTHAI_WEIGHTS", digest):
+            root = Path(directory)
+            (root / "ollama/blobs").mkdir(parents=True)
+            for suffix, chunk in zip(("aa", "ab", "ac"), (data[:5], data[5:10], data[10:])):
+                (root / ("openthai-part-" + suffix)).write_bytes(chunk)
+            destination = root / "ollama/blobs" / ("sha256-" + digest)
+            (root / "openthai-part-ac").write_bytes(b"corrupted")
+            with self.assertRaisesRegex(ValueError, "model_hash_mismatch"):
+                assemble_weights(root)
+            self.assertFalse(destination.exists())
+            self.assertFalse(destination.with_suffix(".assembling").exists())
+            (root / "openthai-part-ac").write_bytes(data[10:])
+            assemble_weights(root)
+            self.assertEqual(destination.read_bytes(), data)
+            assemble_weights(root)
+
     def test_evidence_and_transcription_boundary(self):
         fields = dict.fromkeys(FIELDS)
         lines = ["Total 11,875.00", "<figure>", "Tax ID 1234567890123", "</figure>"]

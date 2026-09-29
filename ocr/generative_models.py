@@ -6,7 +6,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from plaiflow_ocr.generative import OPENTHAI_MODEL, TYPHOON_REVISION
+from plaiflow_ocr.generative import OPENTHAI_MODEL, OPENTHAI_WEIGHTS, TYPHOON_REVISION
 
 LAYERS = [
     ("application/vnd.ollama.image.projector", "7eec6ab6043a1fbc5ab54fea0fe7db53f704b5e0b62c6974404f2e8bd50160de", 931145760),
@@ -15,6 +15,26 @@ LAYERS = [
     ("application/vnd.ollama.image.params", "1d5b971ca7607cae0fa648c8bda410938c3420f767170e07d3557efd879cc441", 81),
 ]
 CONFIG = ("application/vnd.docker.container.image.v1+json", "592e46f09edad2305e6601ca240ed7e3c814d392c1f22c032cb284f624471ced", 490)
+
+
+def assemble_weights(root=Path("/opt")):
+    destination = root / "ollama" / "blobs" / ("sha256-" + OPENTHAI_WEIGHTS)
+    if destination.exists():
+        return
+    temporary = destination.with_suffix(".assembling")
+    digest = hashlib.sha256()
+    try:
+        with temporary.open("wb") as output:
+            for suffix in ("aa", "ab", "ac"):
+                with (root / ("openthai-part-" + suffix)).open("rb") as source:
+                    while chunk := source.read(8 << 20):
+                        digest.update(chunk)
+                        output.write(chunk)
+        if digest.hexdigest() != OPENTHAI_WEIGHTS:
+            raise ValueError("model_hash_mismatch")
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def models(download=False):
@@ -27,11 +47,18 @@ def models(download=False):
             with urllib.request.urlopen(f"https://registry.ollama.ai/v2/{model}/blobs/sha256:{digest}", timeout=300) as source, path.open("wb") as output:
                 while chunk := source.read(8 << 20):
                     output.write(chunk)
-        if path.stat().st_size != size:
+        paths = [path]
+        if digest == OPENTHAI_WEIGHTS and not path.exists():
+            paths = [Path("/opt/openthai-part-" + suffix) for suffix in ("aa", "ab", "ac")]
+        if sum(part.stat().st_size for part in paths) != size:
             raise ValueError("model_size_mismatch")
-        with path.open("rb") as source:
-            if hashlib.file_digest(source, "sha256").hexdigest() != digest:
-                raise ValueError("model_hash_mismatch")
+        actual = hashlib.sha256()
+        for part in paths:
+            with part.open("rb") as source:
+                while chunk := source.read(8 << 20):
+                    actual.update(chunk)
+        if actual.hexdigest() != digest:
+            raise ValueError("model_hash_mismatch")
     entry = lambda item: {"mediaType": item[0], "digest": "sha256:" + item[1], "size": item[2]}
     manifest = {"schemaVersion": 2, "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
                 "config": entry(CONFIG), "layers": [entry(item) for item in LAYERS]}

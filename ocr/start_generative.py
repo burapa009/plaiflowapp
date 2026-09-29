@@ -3,6 +3,9 @@ import subprocess
 import time
 import urllib.request
 
+from generative_models import assemble_weights
+
+assemble_weights()
 server = subprocess.Popen(["ollama", "serve"])
 try:
     deadline = time.monotonic() + 90
