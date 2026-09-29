@@ -14,6 +14,14 @@ import (
 const MaxResultBytes = 8 << 20
 const ModelVersion = "paddleocr-3.7.0-ppocrv5-th-v2"
 const PreprocessingVersion = "v2"
+const GenerativeModelVersion = "typhoon-ocr1.5-2b-openthai2-q4-v1"
+const GenerativePreprocessingVersion = "markdown-v1"
+
+type Proposal struct {
+	Field string `json:"field"`
+	Raw   string `json:"raw"`
+	Line  int    `json:"line"`
+}
 
 type Line struct {
 	ID             string                 `json:"id,omitempty"`
@@ -47,16 +55,19 @@ type NormalizedBoundingBox struct {
 	YMax float64 `json:"y_max"`
 }
 type Page struct {
-	Number             int     `json:"page_number"`
-	Width              int     `json:"width"`
-	Height             int     `json:"height"`
-	Rotation           int     `json:"rotation"`
-	DurationMS         int64   `json:"duration_ms"`
-	Text               string  `json:"text"`
-	AverageConfidence  float64 `json:"average_confidence,omitempty"`
-	LowConfidenceCount int     `json:"low_confidence_count,omitempty"`
-	LineCount          int     `json:"line_count,omitempty"`
-	Lines              []Line  `json:"lines"`
+	TranscriptionMS    int64      `json:"transcription_ms,omitempty"`
+	ExtractionMS       int64      `json:"extraction_ms,omitempty"`
+	Proposals          []Proposal `json:"proposals,omitempty"`
+	Number             int        `json:"page_number"`
+	Width              int        `json:"width"`
+	Height             int        `json:"height"`
+	Rotation           int        `json:"rotation"`
+	DurationMS         int64      `json:"duration_ms"`
+	Text               string     `json:"text"`
+	AverageConfidence  float64    `json:"average_confidence,omitempty"`
+	LowConfidenceCount int        `json:"low_confidence_count,omitempty"`
+	LineCount          int        `json:"line_count,omitempty"`
+	Lines              []Line     `json:"lines"`
 }
 type Result struct {
 	SchemaVersion        int    `json:"schema_version"`
@@ -68,12 +79,25 @@ type Result struct {
 }
 
 func (r Result) Validate(input Input) error {
-	if (r.SchemaVersion != 1 && r.SchemaVersion != 2) || r.InputSHA256 != input.SHA256 || r.ModelVersion != input.ModelVersion || r.PreprocessingVersion != input.PreprocessingVersion || len(r.Pages) < 1 || len(r.Pages) > 20 || r.DurationMS < 0 || r.DurationMS > 900000 {
+	if (r.SchemaVersion != 1 && r.SchemaVersion != 2 && r.SchemaVersion != 3) || r.InputSHA256 != input.SHA256 || r.ModelVersion != input.ModelVersion || r.PreprocessingVersion != input.PreprocessingVersion || len(r.Pages) < 1 || len(r.Pages) > 20 || r.DurationMS < 0 || r.DurationMS > 900000 {
 		return errors.New("invalid OCR result")
 	}
 	for i, p := range r.Pages {
-		if p.Number != i+1 || p.Width < 1 || p.Height < 1 || p.Width > 25000000 || p.Height > 25000000 || int64(p.Width)*int64(p.Height) > 25000000 || p.Rotation < 0 || p.Rotation > 270 || p.Rotation%90 != 0 || len(p.Lines) > 5000 || p.DurationMS < 0 || p.DurationMS > 45000 {
+		limit := int64(45000)
+		if r.SchemaVersion == 3 {
+			limit = 600000
+		}
+		if p.Number != i+1 || p.Width < 1 || p.Height < 1 || p.Width > 25000000 || p.Height > 25000000 || int64(p.Width)*int64(p.Height) > 25000000 || p.Rotation < 0 || p.Rotation > 270 || p.Rotation%90 != 0 || len(p.Lines) > 5000 || p.DurationMS < 0 || p.DurationMS > limit {
 			return errors.New("invalid OCR page")
+		}
+		if r.SchemaVersion == 3 {
+			if r.ModelVersion != GenerativeModelVersion || r.PreprocessingVersion != GenerativePreprocessingVersion || p.ValidateTranscription() != nil {
+				return errors.New("invalid OCR transcription")
+			}
+			continue
+		}
+		if len(p.Proposals) != 0 || p.TranscriptionMS != 0 || p.ExtractionMS != 0 {
+			return errors.New("unexpected OCR proposals")
 		}
 		if r.SchemaVersion == 2 && (p.LineCount != len(p.Lines) || math.IsNaN(p.AverageConfidence) || p.AverageConfidence < 0 || p.AverageConfidence > 1 || p.LowConfidenceCount < 0 || p.LowConfidenceCount > p.LineCount) {
 			return errors.New("invalid OCR page statistics")

@@ -150,7 +150,7 @@ func (s *Store) RetryOCR(ctx context.Context, user, org, doc string, now time.Ti
 	if err != nil || status == "Trash" || status == "Purged" {
 		return ocr.State{}, tenant.ErrNotFound
 	}
-	if err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM ocr_settings WHERE singleton AND enabled`).Scan(&model, &pre); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM document_ocr_model($1)`, org).Scan(&model, &pre); err != nil {
 		return ocr.State{}, tenant.ErrForbidden
 	}
 	fp := doc + ":" + sha + ":" + model + ":" + pre
@@ -197,7 +197,7 @@ func (s *Store) ReprocessOCR(ctx context.Context, user, org, doc, expectedOCR st
 	if err != nil || status != "Available" && status != "Archived" {
 		return ocr.State{}, tenant.ErrNotFound
 	}
-	err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM ocr_settings WHERE singleton AND enabled`).Scan(&model, &pre)
+	err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM document_ocr_model($1)`, org).Scan(&model, &pre)
 	if err != nil {
 		return ocr.State{}, tenant.ErrForbidden
 	}

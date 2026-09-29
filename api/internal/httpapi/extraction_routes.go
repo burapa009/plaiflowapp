@@ -144,7 +144,7 @@ func (s *server) extractionDraft(ctx context.Context, user, org, doc string) (ex
 		return extraction.Draft{}, "", errors.New("OCR result exceeds limit")
 	}
 	var result ocr.Result
-	if err := json.Unmarshal(data, &result); err != nil || (result.SchemaVersion != 1 && result.SchemaVersion != 2) || len(result.Pages) == 0 || len(result.Pages) > 20 {
+	if err := json.Unmarshal(data, &result); err != nil || (result.SchemaVersion != 1 && result.SchemaVersion != 2 && result.SchemaVersion != 3) || len(result.Pages) == 0 || len(result.Pages) > 20 {
 		return extraction.Draft{}, "", errors.New("OCR result is invalid")
 	}
 	return extraction.Extract(result), state.JobID, nil
