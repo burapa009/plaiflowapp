@@ -1,5 +1,13 @@
 # RunPod OCR migration — staging pilot configured
 
+## Latest configuration and pending model change — 2026-09-29
+
+The consented sample `02_ใบเสร็จรับเงิน_ใบกำกับภาษีแบบเต็มรูป-scaled.jpg` completed on attempt one: `processing_ms=18941`, `provider_queue_ms=12935`, `provider_execution_ms=2675`, provider job `270554bc-4590-429a-9261-748e69bb0775-u1`. Processing time excludes browser upload time.
+
+Live endpoint inspection found FlashBoot disabled, Active Workers 0, Max Workers 3, idle timeout 5 seconds, and the 16 GB GPU tier selected. FlashBoot Standard was enabled and Max Workers restored to the pilot cap of 1; the saved form confirmed both settings. GPU tier, GPU count, model image, and idle timeout were unchanged. Account balance displayed $14.95. This live snapshot supersedes historical GPU selections below.
+
+No post-change latency result is available: the document page's retry action reuses a Completed job with the same fingerprint, so it did not start a new inference. The user then redirected work to [Typhoon OCR 1.5 followed by OpenThai 2.0](typhoon-openthai-migration.md), both self-hosted on RunPod, with GPU sizing/cost approval required before changing hardware.
+
 ## Current and target flow
 
 PlaiFlow currently accepts and encrypts documents in private object storage, creates a PostgreSQL `durable_jobs` OCR job, and lets a Railway worker claim a two-minute lease. The worker publishes an OCR v2 artifact through the Go API. Extraction and accounting suggestions remain in Go; human confirmation is separate. The public Vercel site currently uses the Railway **staging** API. See [OCR staging status](ocr-microservice-staging-status.md) for the last deployed evidence.

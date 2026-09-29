@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .normalize import normalize_pages
+from . import generative
 
 MAX_FILE = 20 << 20
 MAX_RESULT = 8 << 20
@@ -51,7 +52,9 @@ def normalize(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def run_job(protocol: Any, claim: dict[str, Any], infer: Callable[[Path, float], list[dict[str, Any]]], temp_root: Path) -> dict[str, int]:
     payload = claim["job"]["payload"]
-    if payload.get("model_version") != MODEL_VERSION or payload.get("preprocessing_version") != PREPROCESSING_VERSION:
+    versions = (payload.get("model_version"), payload.get("preprocessing_version"))
+    generative_job = versions == (generative.MODEL_VERSION, generative.PREPROCESSING_VERSION)
+    if versions != (MODEL_VERSION, PREPROCESSING_VERSION) and not (generative_job and getattr(infer, "remote", False)):
         raise RuntimeError("incompatible_ocr_version")
     started = time.monotonic()
     stop = threading.Event()
@@ -86,7 +89,7 @@ def run_job(protocol: Any, claim: dict[str, Any], infer: Callable[[Path, float],
                     raise ValueError("invalid_input")
                 raw_pages = infer(original, started + 900)
             try:
-                pages = normalize(raw_pages)
+                pages = generative.normalize_pages(raw_pages) if generative_job else normalize(raw_pages)
             except (ValueError, TypeError, KeyError) as error:
                 if not getattr(infer, "remote", False):
                     raise
@@ -96,7 +99,7 @@ def run_job(protocol: Any, claim: dict[str, Any], infer: Callable[[Path, float],
             if time.monotonic() > started + 900:
                 raise TimeoutError()
             result = {
-                "schema_version": 2,
+                "schema_version": 3 if generative_job else 2,
                 "input_sha256": digest,
                 "model_version": payload["model_version"],
                 "preprocessing_version": payload["preprocessing_version"],

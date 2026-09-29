@@ -16,6 +16,8 @@ from plaiflow_ocr.worker import MAX_FILE, MODEL_VERSION, PREPROCESSING_VERSION
 
 
 def build_handler(engine):
+    model_version = getattr(engine, "model_version", MODEL_VERSION)
+    preprocessing_version = getattr(engine, "preprocessing_version", PREPROCESSING_VERSION)
     trusted_api = os.environ["OCR_INPUT_API_URL"].rstrip("/")
     parsed_api = urllib.parse.urlsplit(trusted_api)
     if parsed_api.scheme != "https" or not parsed_api.hostname or parsed_api.path or parsed_api.query:
@@ -29,7 +31,7 @@ def build_handler(engine):
         job_id = data.get("job_id", "")
         if not isinstance(job_id, str) or not re.fullmatch(r"[0-9a-f-]{36}", job_id):
             raise ValueError("invalid_input")
-        if data.get("model_version") != MODEL_VERSION or data.get("preprocessing_version") != PREPROCESSING_VERSION:
+        if data.get("model_version") != model_version or data.get("preprocessing_version") != preprocessing_version:
             raise ValueError("incompatible_ocr_version")
         attempt = data.get("attempt_id", "")
         lease = data.get("lease_token", "")
@@ -75,8 +77,8 @@ def build_handler(engine):
             "document_id": data.get("document_id"),
             "organization_id": data.get("organization_id"),
             "input_sha256": digest,
-            "model_version": MODEL_VERSION,
-            "preprocessing_version": PREPROCESSING_VERSION,
+            "model_version": model_version,
+            "preprocessing_version": preprocessing_version,
             "pages": pages,
             "ocr_ms": round((time.monotonic() - started) * 1000),
         }
@@ -90,6 +92,7 @@ def build_handler(engine):
 if __name__ == "__main__":
     import runpod
 
-    model = Engine(max_pages=20)
+    from plaiflow_ocr.generative import GenerativeEngine
+    model = GenerativeEngine()
     model.start()  # One model per worker, reused across jobs.
     runpod.serverless.start({"handler": build_handler(model)})
