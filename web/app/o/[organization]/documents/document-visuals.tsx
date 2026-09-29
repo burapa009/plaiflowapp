@@ -13,10 +13,24 @@ export function DocumentIcon({ kind }: { kind: "file" | "upload" | "download" | 
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={paths[kind]} /></svg>;
 }
 
+const statuses: Record<string, { label: string; symbol: string; tone: string }> = {
+  Available: { label: "พร้อมใช้", symbol: "✓", tone: "is-available" },
+  Archived: { label: "เก็บถาวร", symbol: "↧", tone: "is-archived" },
+  Trash: { label: "อยู่ในถังขยะ", symbol: "×", tone: "is-danger" },
+  Purged: { label: "ลบถาวร", symbol: "×", tone: "is-danger" },
+  Checking: { label: "กำลังตรวจ", symbol: "…", tone: "is-checking" },
+  Rejected: { label: "ไม่รับเอกสาร", symbol: "!", tone: "is-danger" },
+};
+
+export function DocumentStatus({ status }: { status: string }) {
+  const display = statuses[status] ?? { label: status, symbol: "?", tone: "" };
+  return <span className={`document-status ${display.tone}`}><span aria-hidden="true">{display.symbol}</span>{display.label}</span>;
+}
+
 export function DocumentSummary({ filename, size, status }: { filename: string; size: number; status: string }) {
   const extension = filename.split(".").pop()?.toUpperCase() || "FILE";
   return <div className="document-file-summary">
     <div className="document-thumbnail" aria-hidden="true"><DocumentIcon kind="file" /><i /><i /><i /><i /><span>{extension}</span></div>
-    <div className="document-file-copy"><strong>{filename}</strong><p>ขนาดไฟล์ {size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(size / 1024)} KB`}</p><span className={`document-status ${status === "Available" ? "is-available" : ""}`}>{status === "Available" && <span aria-hidden="true">✓</span>}{status === "Available" ? "อัปโหลดสำเร็จ" : status}</span></div>
+    <div className="document-file-copy"><strong>{filename}</strong><p>ขนาดไฟล์ {size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(size / 1024)} KB`}</p><DocumentStatus status={status} /></div>
   </div>;
 }

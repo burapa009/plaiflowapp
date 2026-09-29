@@ -1,6 +1,7 @@
 import { sessionGET, sessionPOST } from "@/lib/session-api";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { DocumentStatus } from "../document-visuals";
 import OCRPanel from "./ocr-panel";
 import ExtractionPanel from "./extraction-panel";
 import AccountingPanel from "./accounting-panel";
@@ -74,7 +75,7 @@ export default async function DocumentDetailPage({ params, searchParams }: {
       <svg aria-hidden="true" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M5 12h14" /></svg>
       กลับไปรายการเอกสาร
     </Link>
-    <header className="work-header"><div><p className="eyebrow">DOCUMENT</p><h1>{item.filename}</h1><p className="intro">{item.status} · {item.mime} · {Math.ceil(item.size / 1024)} KB · รับเมื่อ {date(item.accepted_at)}</p></div><div className="card-actions">{item.status !== "Trash" && <a className="secondary-button" href={`/api/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(item.id)}/original`}>ดาวน์โหลดต้นฉบับ</a>}{item.status === "Available" && (membership?.role === "Owner" || membership?.role === "Admin") && <form action={archiveDocument.bind(null, organization, document)}><button className="secondary-button" type="submit">เก็บถาวร</button></form>}</div></header>
+    <header className="work-header"><div><p className="eyebrow">DOCUMENT</p><h1>{item.filename}</h1><p className="intro"><DocumentStatus status={item.status} /> · {item.mime} · {Math.ceil(item.size / 1024)} KB · รับเมื่อ {date(item.accepted_at)}</p></div><div className="card-actions">{item.status !== "Trash" && <a className="secondary-button" href={`/api/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(item.id)}/original`}>ดาวน์โหลดต้นฉบับ</a>}{item.status === "Available" && (membership?.role === "Owner" || membership?.role === "Admin") && <form action={archiveDocument.bind(null, organization, document)}><button className="secondary-button" type="submit">เก็บถาวร</button></form>}</div></header>
     <section className="rounded-[1.2rem] border border-line bg-surface p-5 shadow-panel" aria-labelledby="source-heading"><h2 id="source-heading">แหล่งที่มา</h2>
       {sources.length === 0 ? <p>ไม่มีแหล่งที่มาที่คุณมีสิทธิ์ดู</p> : <ol className="grid gap-4 pl-6 [&>li]:break-words [&>li]:border-b [&>li]:border-line [&>li]:pb-4 [&>li:last-child]:border-0 [&_span]:block [&_span]:text-muted">{sources.map((source) => <li key={source.id}>
         <strong>{source.channel}</strong><span>รับเมื่อ {date(source.accepted_at)}</span>{source.submitted_by && <span>ส่งโดย {source.submitted_by}</span>}
