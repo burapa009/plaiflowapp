@@ -36,6 +36,16 @@ Describe the image's main elements (people, objects, text), note any contextual 
 - Checkboxes: Use ☐ for unchecked and ☑ for checked boxes."""
 
 
+def resize_for_typhoon(image):
+    """Match the publisher's fixed 1,800 px image preprocessing."""
+    width, height = image.size
+    if width <= 300 and height <= 300:
+        return image
+    scale = 1800 / max(width, height)
+    from PIL import Image
+    return image.resize((int(width * scale), int(height * scale)), Image.Resampling.LANCZOS)
+
+
 def extraction_schema():
     field = {"type": ["object", "null"], "properties": {
         "raw": {"type": "string", "maxLength": 240},
@@ -155,17 +165,22 @@ class GenerativeEngine:
 
         started = time.monotonic()
         width, height = image.size
-        image.thumbnail((1800, 1800))
-        inputs = self.processor.apply_chat_template([{"role": "user", "content": [
-            {"type": "image", "image": image}, {"type": "text", "text": OCR_PROMPT},
-        ]}], tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt").to("cuda")
-        with self.torch.inference_mode():
-            output = self.model.generate(**inputs, **TYPHOON_GENERATION,
-                stopping_criteria=StoppingCriteriaList([Deadline()]))
+        resized = resize_for_typhoon(image)
+        try:
+            inputs = self.processor.apply_chat_template([{"role": "user", "content": [
+                {"type": "image", "image": resized}, {"type": "text", "text": OCR_PROMPT},
+            ]}], tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt").to("cuda")
+            with self.torch.inference_mode():
+                output = self.model.generate(**inputs, **TYPHOON_GENERATION,
+                    stopping_criteria=StoppingCriteriaList([Deadline()]))
+        finally:
+            if resized is not image:
+                resized.close()
         generated = output[0][inputs["input_ids"].shape[-1]:]
         if time.monotonic() >= deadline or len(generated) >= 10000:
             raise RuntimeError("incomplete_transcription")
-        text = self.processor.decode(generated, skip_special_tokens=True).strip()
+        text = self.processor.decode(generated, skip_special_tokens=True,
+            clean_up_tokenization_spaces=False).strip()
         if not text or len(text) > 16000:
             raise RuntimeError("transcription_limit")
         lines = text.splitlines()
