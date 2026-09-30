@@ -7,7 +7,7 @@ export default function ReviewTabs({ documentPanel, amountsPanel }: { documentPa
   const id = useId();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const panels = [documentPanel, amountsPanel];
-  const labels = ["ข้อมูลเอกสาร", "รายการและยอดเงิน"];
+  const labels = ["ข้อมูลรายจ่าย", "รายการและสรุปค่าใช้จ่าย"];
 
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     let next = index;

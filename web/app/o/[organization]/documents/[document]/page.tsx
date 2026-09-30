@@ -6,6 +6,8 @@ import OCRPanel from "./ocr-panel";
 import ExtractionPanel, { type Extraction } from "./extraction-panel";
 import AccountingPanel from "./accounting-panel";
 import ReviewShortcuts from "./review-shortcuts";
+import DocumentPreview from "./document-preview";
+import ReviewWorkspace from "./review-workspace";
 
 
 type Source = {
@@ -34,20 +36,24 @@ async function archiveDocument(organization: string, document: string) {
 
 export default async function DocumentDetailPage({ params, searchParams }: {
   params: Promise<{ organization: string; document: string }>;
-  searchParams: Promise<{ ocr?: string; queue_cursor?: string; queue_view?: string; queue_status?: string; previous?: string }>;
+  searchParams: Promise<{ extraction?: string; ocr?: string; queue_cursor?: string; queue_view?: string; queue_status?: string; previous?: string }>;
 }) {
   const { organization, document } = await params;
-  const { ocr, queue_cursor, queue_view, queue_status, previous } = await searchParams;
+  const { extraction: extractionResult, ocr, queue_cursor, queue_view, queue_status, previous } = await searchParams;
   const base = `/o/${encodeURIComponent(organization)}/documents`;
-  const [response, organizationResponse] = await Promise.all([
+  const [response, organizationResponse, businessResponse, ocrResponse] = await Promise.all([
     sessionGET(`/v1${base}/${encodeURIComponent(document)}/sources`),
     sessionGET(`/v1/o/${encodeURIComponent(organization)}`),
+    sessionGET(`/v1/o/${encodeURIComponent(organization)}/business`),
+    sessionGET(`/v1${base}/${encodeURIComponent(document)}/ocr`),
   ]);
   if (response?.status === 401) redirect("/");
   if (response?.status === 404) notFound();
   if (!response?.ok) return <section className="error-state" role="alert"><h1>ยังเปิดรายละเอียดเอกสารไม่ได้</h1><Link href={base}>กลับไปรายการเอกสาร</Link></section>;
   const { document: item, sources } = await response.json() as Detail;
-  const membership = organizationResponse?.ok ? (await organizationResponse.json() as { membership: { role: string } }).membership : null;
+  const membership = organizationResponse?.ok ? (await organizationResponse.json() as { membership: { role: string; organization_name: string } }).membership : null;
+  const business = businessResponse?.ok ? await businessResponse.json() as { name_th: string; branch_type: string } : null;
+  const ocrStatus = ocrResponse?.ok ? (await ocrResponse.json() as { ocr: { status: string } }).ocr.status : "";
   const extractionResponse = item.status !== "Trash" ? await sessionGET(`/v1${base}/${encodeURIComponent(document)}/extraction`) : null;
   const extraction = extractionResponse?.ok ? await extractionResponse.json() as Extraction : null;
   let nextDocument = "";
@@ -81,21 +87,21 @@ export default async function DocumentDetailPage({ params, searchParams }: {
       {source.drive_revision && <span>Drive revision: {source.drive_revision}</span>}
     </li>)}</ol>}
   </section>;
-  const viewer = <aside className="ocr-review-viewer" aria-labelledby="ocr-preview-heading">
-    <div className="ocr-review-viewer-head"><div><h2 id="ocr-preview-heading">ผลลัพธ์ข้อความ OCR</h2><p>ข้อความที่ระบบอ่านได้จากเอกสารนี้ แยกตามหน้า</p></div><span>1 ไฟล์</span></div>
-    <div className="ocr-review-canvas ocr-review-transcript"><OCRPanel organization={organization} document={document} unavailable={ocr === "unavailable"} /></div>
-    <div className="ocr-review-viewer-toolbar"><span title={item.filename}>{item.filename}</span><a href={`${originalURL}?preview=1`} target="_blank" rel="noopener noreferrer">เปิดต้นฉบับ ↗</a></div>
-  </aside>;
+  const documentType = ({ tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", invoice: "ใบแจ้งหนี้", receipt_tax_invoice: "ใบเสร็จรับเงิน / ใบกำกับภาษี" } as Record<string, string>)[extraction?.draft.document_type ?? ""] ?? "ยังระบุไม่ได้";
+  const viewer = <DocumentPreview src={`${originalURL}?preview=1`} filename={item.filename} mime={item.mime} documentType={documentType} ocrStatus={ocrStatus} />;
+  const documentActions = <div className="card-actions">
+    {previous && <Link data-review-previous className="secondary-button" href={`${base}/${encodeURIComponent(previous)}`}>← เอกสารก่อนหน้า</Link>}
+    {nextHref && <Link data-review-next className="secondary-button" href={nextHref}>{nextDocument ? "เอกสารถัดไป →" : "กลับคิวตรวจเอกสาร"}</Link>}
+    {item.status !== "Trash" && <a className="secondary-button" href={originalURL}>ดาวน์โหลดต้นฉบับ</a>}
+    {item.status === "Available" && (membership?.role === "Owner" || membership?.role === "Admin") && <form action={archiveDocument.bind(null, organization, document)}><button className="secondary-button" type="submit">เก็บถาวร</button></form>}
+  </div>;
   return <section className={`document-detail-page ${extraction ? "is-post-ocr" : "mx-auto max-w-[1270px]"}`}>
-    {previous && <Link data-review-previous className="secondary-button mb-5 ml-2" href={`${base}/${encodeURIComponent(previous)}`}>← เอกสารก่อนหน้า</Link>}
-    {nextHref && <Link data-review-next className="secondary-button mb-5 ml-2" href={nextHref}>{nextDocument ? "เอกสารถัดไป →" : "กลับคิวตรวจเอกสาร"}</Link>}
     {!extraction && <Link className="mb-5 inline-flex min-h-11 w-fit items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-sm font-semibold text-brand-strong shadow-sm transition-colors hover:border-brand-strong hover:bg-surface-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-strong" href={base}>← กลับไปรายการเอกสาร</Link>}
-    <header className={extraction ? "document-detail-header" : "work-header"}><div>{extraction && <Link className="document-detail-back" href={base}>← กลับไปรายการเอกสาร</Link>}<p className="eyebrow">{extraction ? "DOCUMENT REVIEW" : "DOCUMENT"}</p><h1>{extraction ? "ตรวจข้อมูลจาก OCR" : item.filename}</h1><p className="intro">{extraction && <span className="document-detail-filename">{item.filename} · </span>}<DocumentStatus status={item.status} /> · {item.mime} · {Math.ceil(item.size / 1024)} KB · รับเมื่อ {date(item.accepted_at)}</p></div><div className="card-actions">{item.status !== "Trash" && <a className="secondary-button" href={originalURL}>ดาวน์โหลดต้นฉบับ</a>}{item.status === "Available" && (membership?.role === "Owner" || membership?.role === "Admin") && <form action={archiveDocument.bind(null, organization, document)}><button className="secondary-button" type="submit">เก็บถาวร</button></form>}</div></header>
-    {process.env.REVIEW_ENABLED === "true" && <ReviewShortcuts nextHref={nextHref} previousHref={previous ? `${base}/${encodeURIComponent(previous)}` : ""} />}
+    <header className={extraction ? "document-detail-header" : "work-header"}><div><p className="eyebrow">{extraction ? "DOCUMENT REVIEW" : "DOCUMENT"}</p><h1>{extraction ? "แก้ไขรายจ่าย" : item.filename}</h1><p className="intro">{extraction && <span className="document-detail-filename">{item.filename} · </span>}<DocumentStatus status={item.status} /> · {item.mime} · {Math.ceil(item.size / 1024)} KB · รับเมื่อ {date(item.accepted_at)}</p></div>{extraction ? <Link data-review-exit className="document-detail-close" href={base} aria-label="กลับไปรายการเอกสาร" title="กลับไปรายการเอกสาร">×</Link> : documentActions}</header>
     {extraction ? <>
-      <div className="ocr-review-workspace">{viewer}<ExtractionPanel organization={organization} document={document} nextHref={nextHref} data={extraction} role={membership?.role ?? ""} cancelHref={base} /></div>
-      <div className="ocr-review-support"><details><summary>แหล่งที่มา</summary>{sourcePanel}</details></div>
+      <ReviewWorkspace key={`${extraction.ocr_job_id}:${extraction.revision}:${extraction.saved_review?.revision ?? 0}`} viewer={viewer} form={<ExtractionPanel organization={organization} document={document} nextHref={nextHref} data={extraction} role={membership?.role ?? ""} cancelHref={base} organizationName={business?.name_th || membership?.organization_name || ""} branchType={business?.branch_type || ""} result={extractionResult} />} support={<div className="ocr-review-support">{documentActions}<details><summary>ข้อความที่ OCR อ่านได้</summary><OCRPanel organization={organization} document={document} unavailable={ocr === "unavailable"} /></details><details><summary>แหล่งที่มา</summary>{sourcePanel}</details>{process.env.REVIEW_ENABLED === "true" && <ReviewShortcuts nextHref={nextHref} previousHref={previous ? `${base}/${encodeURIComponent(previous)}` : ""} />}<AccountingPanel organization={organization} document={document} nextHref={nextHref} /></div>} />
+
     </> : <>{sourcePanel}<OCRPanel organization={organization} document={document} unavailable={ocr === "unavailable"} />{item.status !== "Trash" && <details className="group mt-5 rounded-[1.2rem] border border-line bg-surface p-5 shadow-panel"><summary className="cursor-pointer font-semibold lg:hidden">ดูเอกสารต้นฉบับ</summary><h2 className="hidden font-semibold lg:block">เอกสารต้นฉบับ</h2><p className="mt-1 text-sm text-muted">เปิดต้นฉบับเพื่อตรวจเทียบก่อนยืนยันข้อมูล</p><iframe title="ตัวอย่างเอกสารต้นฉบับ" loading="lazy" className="mt-4 hidden min-h-[32rem] w-full rounded-xl border border-line group-open:block lg:block" src={`${originalURL}?preview=1`} /></details>}</>}
-    <AccountingPanel organization={organization} document={document} nextHref={nextHref} />
+    {!extraction && <AccountingPanel organization={organization} document={document} nextHref={nextHref} />}
   </section>;
 }
