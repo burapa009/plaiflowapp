@@ -109,9 +109,6 @@ export default async function ExtractionPanel({ organization, document, nextHref
       {data.review_enabled && <label className="ocr-review-decision">การตัดสินใจ<select name={`${key}_decision`} defaultValue={data.saved_review?.decisions[key] ?? ""}>
         <option value="">ยังไม่ตัดสินใจ</option><option value="accepted">ยอมรับค่าที่เสนอ</option><option value="corrected">แก้ไขจากต้นฉบับ</option><option value="unknown">ไม่ทราบค่า</option>
       </select></label>}
-      <details className="ocr-review-evidence"><summary>ข้อความ OCR และหลักฐาน</summary><p>ข้อความดิบ: {field?.raw || "ไม่พบ"}</p><p>ค่าที่ระบบเสนอ: {field?.normalized || "ไม่มี"}</p><p>ความมั่นใจรายฟิลด์ยังไม่ผ่านการปรับเทียบ</p>
-        {field?.evidence?.length > 0 && <a href={`${originalURL}#page=${field.evidence[0].page}`} target="_blank" rel="noopener noreferrer" aria-label={`เปิดหลักฐานหน้า ${field.evidence[0].page} บรรทัด ${field.evidence[0].line} ของ ${label}`}>เปิดต้นฉบับหน้า {field.evidence[0].page} บรรทัด {field.evidence[0].line} ↗</a>}
-      </details>
     </div>;
   }
 
@@ -126,7 +123,6 @@ export default async function ExtractionPanel({ organization, document, nextHref
     <section className="ocr-review-card ocr-review-evidence-card"><div className="ocr-review-card-heading"><div><h3>เอกสารหลักฐาน</h3><p className="ocr-review-card-intro">เอกสารประกอบเพิ่มเติม</p></div><a className="ocr-review-original-link" href={originalURL} target="_blank" rel="noopener noreferrer">เปิดเอกสารต้นฉบับ ↗</a></div><div className="ocr-review-evidence-empty"><span aria-hidden="true">▤</span><strong>{attachmentCount > 0 ? `แนบเอกสารเพิ่มเติมแล้ว ${attachmentCount} ไฟล์` : "ยังไม่มีเอกสารประกอบเพิ่มเติม"}</strong></div></section>
     <section className="ocr-review-card"><h3>ข้อมูลรายจ่าย</h3><p className="ocr-review-card-intro">ประเภทที่ OCR อ่านได้: {documentTypeLabels[data.draft.document_type] ?? (data.draft.document_type || "ยังระบุไม่ได้")}</p><div className="ocr-review-fields">{fields.filter(([key]) => ["document_number", "issue_date", "currency"].includes(key)).map(renderField)}</div>{data.draft.accounting?.summary.paid_amount != null && <p className="ocr-review-card-intro">ยอดรับชำระที่ OCR อ่านได้: {displayMoney(data.draft.accounting.summary.paid_amount)} {currency}</p>}</section>
     <section className="ocr-review-card"><div className="ocr-review-card-heading"><h3>ข้อมูลผู้ขาย</h3>{!preview && <Link className="ocr-review-original-link" href={`/o/${encodeURIComponent(organization)}/vendors`} target="_blank" rel="noopener noreferrer">ค้นหาผู้ขาย ↗</Link>}</div><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("seller_")).map(renderField)}</div><div className="ocr-review-readonly-block"><label htmlFor="review-seller-address">ที่อยู่ที่ OCR อ่านได้ · อ่านอย่างเดียว</label><textarea id="review-seller-address" readOnly value={display(data.draft.accounting?.seller.address)} rows={3} /></div></section>
-    <section className="ocr-review-card"><h3>ข้อมูลผู้ซื้อ</h3><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("buyer_")).map(renderField)}</div></section>
   </div>;
   const amountsPanel = <div className="ocr-review-panel-content">
     <section className="ocr-review-card ocr-review-items-card"><p className="ocr-review-item-info">รายการค่าใช้จ่ายจาก OCR ใช้ประกอบการตรวจ <span>{accountingItems.length} รายการ · {currency || "ไม่ระบุสกุลเงิน"}</span></p>
@@ -139,6 +135,7 @@ export default async function ExtractionPanel({ organization, document, nextHref
       ] as const).filter(([key]) => accountingSummary[key] != null).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{displayMoney(accountingSummary[key])}{key !== "vat_rate" ? ` ${currency}` : ""}</dd></div>)}</dl>}
     </section>
     {data.draft.accounting && <AccountingResultPanel result={data.draft.accounting} />}
+    <details className="ocr-review-card"><summary>ข้อมูลผู้ซื้อ</summary><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("buyer_")).map(renderField)}</div></details>
   </div>;
 
   return <section className="ocr-review-panel" aria-labelledby="extraction-heading">
