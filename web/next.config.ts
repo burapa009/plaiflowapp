@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
       { source: "/api/o/:organization/documents/summary", destination: `${api}/v1/o/:organization/documents/summary` },
       { source: "/api/o/:organization/documents", destination: `${api}/v1/o/:organization/documents` },
       { source: "/api/o/:organization/documents/:document/original", destination: `${api}/v1/o/:organization/documents/:document/original` },
+      { source: "/api/o/:organization/documents/:document/attachments", destination: `${api}/v1/o/:organization/documents/:document/attachments` },
     ];
   },
 };

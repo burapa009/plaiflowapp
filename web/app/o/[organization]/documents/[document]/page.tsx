@@ -25,6 +25,7 @@ type Source = {
 type Detail = {
   document: { id: string; filename: string; mime: string; size: number; status: string; accepted_at: string };
   sources: Source[];
+  attachments: { id: string; filename: string; mime: string }[];
 };
 
 async function archiveDocument(organization: string, document: string) {
@@ -50,7 +51,7 @@ export default async function DocumentDetailPage({ params, searchParams }: {
   if (response?.status === 401) redirect("/");
   if (response?.status === 404) notFound();
   if (!response?.ok) return <section className="error-state" role="alert"><h1>ยังเปิดรายละเอียดเอกสารไม่ได้</h1><Link href={base}>กลับไปรายการเอกสาร</Link></section>;
-  const { document: item, sources } = await response.json() as Detail;
+  const { document: item, sources, attachments } = await response.json() as Detail;
   const membership = organizationResponse?.ok ? (await organizationResponse.json() as { membership: { role: string; organization_name: string } }).membership : null;
   const business = businessResponse?.ok ? await businessResponse.json() as { name_th: string; branch_type: string } : null;
   const ocrStatus = ocrResponse?.ok ? (await ocrResponse.json() as { ocr: { status: string } }).ocr.status : "";
@@ -88,7 +89,7 @@ export default async function DocumentDetailPage({ params, searchParams }: {
     </li>)}</ol>}
   </section>;
   const documentType = ({ tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", invoice: "ใบแจ้งหนี้", receipt_tax_invoice: "ใบเสร็จรับเงิน / ใบกำกับภาษี" } as Record<string, string>)[extraction?.draft.document_type ?? ""] ?? "ยังระบุไม่ได้";
-  const viewer = <DocumentPreview src={`${originalURL}?preview=1`} filename={item.filename} mime={item.mime} documentType={documentType} ocrStatus={ocrStatus} />;
+  const viewer = <DocumentPreview src={`${originalURL}?preview=1`} filename={item.filename} mime={item.mime} documentType={documentType} ocrStatus={ocrStatus} organization={organization} document={document} attachments={attachments ?? []} />;
   const documentActions = <div className="card-actions">
     {previous && <Link data-review-previous className="secondary-button" href={`${base}/${encodeURIComponent(previous)}`}>← เอกสารก่อนหน้า</Link>}
     {nextHref && <Link data-review-next className="secondary-button" href={nextHref}>{nextDocument ? "เอกสารถัดไป →" : "กลับคิวตรวจเอกสาร"}</Link>}

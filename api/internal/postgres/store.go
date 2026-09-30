@@ -21,7 +21,7 @@ type Store struct {
 	requireMigration19 bool
 }
 
-const requiredMigrationVersion = 11
+const requiredMigrationVersion = 21
 
 func (s *Store) EnableReview()       { s.reviewEnabled = true }
 func (s *Store) EnableBilling()      { s.billingEnabled = true }
@@ -61,13 +61,13 @@ func (s *Store) Ready(ctx context.Context) error {
 	var dirty bool
 	minimum := requiredMigrationVersion
 	if s.reviewEnabled {
-		minimum = 12
+		minimum = max(minimum, 12)
 	}
 	if s.billingEnabled {
-		minimum = 15
+		minimum = max(minimum, 15)
 	}
 	if s.requireMigration19 {
-		minimum = 19
+		minimum = max(minimum, 19)
 	}
 	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < minimum {
 		return errors.New("database migration is not ready")

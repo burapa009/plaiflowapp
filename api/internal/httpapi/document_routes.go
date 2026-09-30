@@ -22,6 +22,7 @@ import (
 
 func (s *server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/o/{organization}/documents", s.uploadDocument)
+	mux.HandleFunc("POST /v1/o/{organization}/documents/{document}/attachments", s.uploadDocument)
 	mux.HandleFunc("GET /v1/o/{organization}/documents", s.listDocuments)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/summary", s.documentSummary)
 	mux.HandleFunc("GET /v1/o/{organization}/documents/export/count", s.documentExportCount)
@@ -366,6 +367,7 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request) {
 	result, err := s.config.Documents.Accept(r.Context(), document.AcceptInput{
 		OrganizationID: membership.OrganizationID, ActorUserID: session.UserID, AttemptID: attemptID,
 		OriginKey: hex.EncodeToString(digest[:]), Filename: filename, Channel: "Web", Now: s.config.Now().UTC(),
+		AttachToDocumentID: r.PathValue("document"),
 	}, part)
 	if err != nil {
 		switch {
@@ -383,6 +385,10 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, http.StatusConflict, "document_in_trash", "Matching document must be restored by an administrator")
 		case errors.Is(err, document.ErrSourceConflict):
 			writeError(w, r, http.StatusConflict, "document_source_conflict", "Upload key was reused for different content")
+		case errors.Is(err, tenant.ErrNotFound):
+			writeError(w, r, http.StatusNotFound, "not_found", "Document was not found")
+		case errors.Is(err, document.ErrStatusConflict):
+			writeError(w, r, http.StatusConflict, "document_attachment_conflict", "Document cannot be attached to itself")
 		default:
 			s.config.Logger.Error("document_upload_failed", "request_id", requestID(r), "error", err)
 			writeError(w, r, http.StatusServiceUnavailable, "document_unavailable", "Document could not be accepted")

@@ -47,8 +47,9 @@ type Source struct {
 }
 
 type Detail struct {
-	Document Document `json:"document"`
-	Sources  []Source `json:"sources"`
+	Document    Document   `json:"document"`
+	Sources     []Source   `json:"sources"`
+	Attachments []Document `json:"attachments"`
 }
 
 type Summary struct {
@@ -108,20 +109,21 @@ type StatusUpdater interface {
 }
 
 type AcceptInput struct {
-	OrganizationID    string
-	ActorUserID       string
-	AttemptID         string
-	OriginKey         string
-	Filename          string
-	Channel           string
-	LINEGroup         bool
-	Now               time.Time
-	DriveConnectionID string
-	DriveFileID       string
-	DriveRevision     string
-	DriveProviderMIME string
-	DriveProviderSize int64
-	DriveSelectedAt   time.Time
+	OrganizationID     string
+	ActorUserID        string
+	AttemptID          string
+	OriginKey          string
+	Filename           string
+	Channel            string
+	LINEGroup          bool
+	Now                time.Time
+	DriveConnectionID  string
+	DriveFileID        string
+	DriveRevision      string
+	DriveProviderMIME  string
+	DriveProviderSize  int64
+	DriveSelectedAt    time.Time
+	AttachToDocumentID string
 }
 
 type CommitInput struct {
