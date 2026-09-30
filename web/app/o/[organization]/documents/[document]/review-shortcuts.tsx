@@ -10,7 +10,7 @@ export default function ReviewShortcuts({ nextHref, previousHref }: { nextHref: 
       if (target?.isContentEditable || target?.closest("input,textarea,select,[contenteditable]") || target?.tagName === "BUTTON") return;
       const key = event.key.toLowerCase();
       if (key === "j") {
-        const fields = [...document.querySelectorAll<HTMLInputElement>("[id^='extraction-']")];
+        const fields = [...document.querySelectorAll<HTMLInputElement>("[id^='extraction-']")].filter((field) => field.getClientRects().length > 0);
         if (fields.length) { event.preventDefault(); fields[(fields.indexOf(target as HTMLInputElement)+1) % fields.length].focus(); }
         return;
       }
@@ -29,5 +29,5 @@ export default function ReviewShortcuts({ nextHref, previousHref }: { nextHref: 
     return () => window.removeEventListener("keydown", onKey);
   }, [nextHref, previousHref]);
 
-  return <p className="mb-3 text-xs text-muted">คีย์ลัด: Alt+J ช่องถัดไป · Alt+S บันทึกฉบับร่าง · Alt+N เอกสารถัดไป · Alt+P เอกสารก่อนหน้า</p>;
+  return <p className="mb-3 text-xs text-muted">คีย์ลัด: Alt+J ช่องถัดไปในแท็บ · Alt+S บันทึกฉบับร่าง · Alt+N เอกสารถัดไป · Alt+P เอกสารก่อนหน้า</p>;
 }
