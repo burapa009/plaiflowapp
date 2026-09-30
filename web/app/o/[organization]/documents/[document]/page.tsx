@@ -81,10 +81,10 @@ export default async function DocumentDetailPage({ params, searchParams }: {
       {source.drive_revision && <span>Drive revision: {source.drive_revision}</span>}
     </li>)}</ol>}
   </section>;
-  const viewer = <aside className="ocr-review-viewer" aria-labelledby="original-preview-heading">
-    <div className="ocr-review-viewer-head"><div><h2 id="original-preview-heading">เอกสารต้นฉบับ</h2><p>ตรวจเทียบกับข้อมูลที่ OCR อ่านได้</p></div><span>1 ไฟล์</span></div>
-    <div className="ocr-review-canvas"><iframe title={`ตัวอย่างเอกสารต้นฉบับ ${item.filename}`} loading="lazy" src={`${originalURL}?preview=1`} /></div>
-    <div className="ocr-review-viewer-toolbar"><span title={item.filename}>{item.filename}</span><a href={`${originalURL}?preview=1`} target="_blank" rel="noopener noreferrer">เปิดเต็มหน้า ↗</a></div>
+  const viewer = <aside className="ocr-review-viewer" aria-labelledby="ocr-preview-heading">
+    <div className="ocr-review-viewer-head"><div><h2 id="ocr-preview-heading">ผลลัพธ์ข้อความ OCR</h2><p>ข้อความที่ระบบอ่านได้จากเอกสารนี้ แยกตามหน้า</p></div><span>1 ไฟล์</span></div>
+    <div className="ocr-review-canvas ocr-review-transcript"><OCRPanel organization={organization} document={document} unavailable={ocr === "unavailable"} /></div>
+    <div className="ocr-review-viewer-toolbar"><span title={item.filename}>{item.filename}</span><a href={`${originalURL}?preview=1`} target="_blank" rel="noopener noreferrer">เปิดต้นฉบับ ↗</a></div>
   </aside>;
   return <section className={`document-detail-page ${extraction ? "is-post-ocr" : "mx-auto max-w-[1270px]"}`}>
     {previous && <Link data-review-previous className="secondary-button mb-5 ml-2" href={`${base}/${encodeURIComponent(previous)}`}>← เอกสารก่อนหน้า</Link>}
@@ -94,7 +94,7 @@ export default async function DocumentDetailPage({ params, searchParams }: {
     {process.env.REVIEW_ENABLED === "true" && <ReviewShortcuts nextHref={nextHref} previousHref={previous ? `${base}/${encodeURIComponent(previous)}` : ""} />}
     {extraction ? <>
       <div className="ocr-review-workspace">{viewer}<ExtractionPanel organization={organization} document={document} nextHref={nextHref} data={extraction} role={membership?.role ?? ""} cancelHref={base} /></div>
-      <div className="ocr-review-support"><details open={ocr === "unavailable" || extraction.source_superseded}><summary>ข้อความ OCR และการประมวลผล</summary><OCRPanel organization={organization} document={document} unavailable={ocr === "unavailable"} /></details><details><summary>แหล่งที่มา</summary>{sourcePanel}</details></div>
+      <div className="ocr-review-support"><details><summary>แหล่งที่มา</summary>{sourcePanel}</details></div>
     </> : <>{sourcePanel}<OCRPanel organization={organization} document={document} unavailable={ocr === "unavailable"} />{item.status !== "Trash" && <details className="group mt-5 rounded-[1.2rem] border border-line bg-surface p-5 shadow-panel"><summary className="cursor-pointer font-semibold lg:hidden">ดูเอกสารต้นฉบับ</summary><h2 className="hidden font-semibold lg:block">เอกสารต้นฉบับ</h2><p className="mt-1 text-sm text-muted">เปิดต้นฉบับเพื่อตรวจเทียบก่อนยืนยันข้อมูล</p><iframe title="ตัวอย่างเอกสารต้นฉบับ" loading="lazy" className="mt-4 hidden min-h-[32rem] w-full rounded-xl border border-line group-open:block lg:block" src={`${originalURL}?preview=1`} /></details>}</>}
     <AccountingPanel organization={organization} document={document} nextHref={nextHref} />
   </section>;
