@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export default function ReviewWorkspace({ viewer, form, support }: { viewer: ReactNode; form: ReactNode; support?: ReactNode }) {
   const dirty = useRef(false);
+  const [mobileView, setMobileView] = useState<"document" | "form">("document");
 
   useEffect(() => {
     function beforeUnload(event: BeforeUnloadEvent) {
@@ -30,7 +31,11 @@ export default function ReviewWorkspace({ viewer, form, support }: { viewer: Rea
     return () => { window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", confirmExit, true); document.removeEventListener("submit", confirmOtherAction, true); };
   }, []);
 
-  return <div className="ocr-review-shell" onInputCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }} onChangeCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}>
+  return <div className="ocr-review-shell" data-mobile-view={mobileView} onInputCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }} onChangeCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}>
+    <div className="ocr-review-mobile-switch" role="group" aria-label="มุมมองตรวจเอกสาร">
+      <button type="button" aria-pressed={mobileView === "document"} onClick={() => setMobileView("document")}>ดูเอกสาร</button>
+      <button type="button" aria-pressed={mobileView === "form"} onClick={() => setMobileView("form")}>แก้ไขข้อมูล</button>
+    </div>
     <div className="ocr-review-workspace">{viewer}<div className="ocr-review-right">{form}{support && <details className="ocr-review-support-drawer"><summary aria-label="หลักฐาน OCR และการจัดหมวด"><span aria-hidden="true">⋯</span><span>หลักฐาน OCR และการจัดหมวด</span></summary>{support}</details>}</div></div>
   </div>;
 }
