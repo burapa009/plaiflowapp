@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { formatReviewAmount } from "./review-amount";
 
 export type ReviewState = { error: string };
 
@@ -12,8 +13,13 @@ export function ReviewForm({ action, children }: { action: (state: ReviewState, 
   return <form action={formAction} className="ocr-review-form" onReset={(event) => event.preventDefault()}>
 
     {state.error && <p ref={errorRef} tabIndex={-1} className="ocr-review-alert" role="alert">{state.error}</p>}
-    {children}
+    <ReviewFields>{children}</ReviewFields>
   </form>;
+}
+
+function ReviewFields({ children }: { children: ReactNode }) {
+  const { pending } = useFormStatus();
+  return <fieldset className="ocr-review-form-fields" disabled={pending} aria-busy={pending}>{children}</fieldset>;
 }
 
 export function ReviewSubmit({ children, intent, className, id, skipValidation = false }: {
@@ -35,5 +41,5 @@ export function ReviewTotal({ initial, currency }: { initial: string; currency: 
     input.addEventListener("input", update);
     return () => { input.removeEventListener("input", update); currencyInput?.removeEventListener("input", update); };
   }, [currency]);
-  return <div className="ocr-review-live-total"><span>ยอดรวมสุทธิที่กรอก</span><strong aria-live="polite">{value || "—"} {unit}</strong></div>;
+  return <div className="ocr-review-live-total"><span>ยอดชำระ</span><strong aria-live="polite">{formatReviewAmount(value, unit)}</strong></div>;
 }

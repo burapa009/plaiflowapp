@@ -22,7 +22,7 @@ export type Extraction = {
 };
 
 const fields: [string, string][] = [
-  ["document_number", "เลขที่เอกสาร"], ["issue_date", "วันที่เอกสาร (YYYY-MM-DD)"],
+  ["document_number", "เลขที่เอกสาร / ใบกำกับภาษี"], ["issue_date", "วันที่เอกสาร"],
   ["seller_name", "ชื่อผู้ขาย"], ["seller_tax_id", "เลขผู้เสียภาษีผู้ขาย"], ["seller_branch", "สาขาผู้ขาย (5 หลัก; เว้นว่างถ้าไม่ทราบ)"],
   ["buyer_name", "ชื่อผู้ซื้อ"], ["buyer_tax_id", "เลขผู้เสียภาษีผู้ซื้อ"],
   ["currency", "สกุลเงิน"], ["subtotal", "ยอดก่อนภาษี"],
@@ -122,11 +122,10 @@ export default async function ExtractionPanel({ organization, document, nextHref
     {data.returned_review && <div className="ocr-review-alert" role="status"><strong>ส่งกลับเพื่อแก้ไข: {({ missing_value: "ข้อมูลไม่ครบ", incorrect_value: "ข้อมูลไม่ถูกต้อง", unreadable_original: "ต้นฉบับอ่านไม่ได้", other: "อื่น ๆ" } as Record<string, string>)[data.returned_review.reason_code] ?? data.returned_review.reason_code}</strong>{data.returned_review.private_note && <p className="whitespace-pre-wrap">{data.returned_review.private_note}</p>}</div>}
     {data.draft.warnings.length > 0 && <div className="ocr-review-alert" role="status"><h3>รายการที่ต้องตรวจ</h3><ul>{data.draft.warnings.map((warning, index) => <li key={`${warning.code}-${warning.field}-${index}`}>{warningLabels[warning.code] ?? warning.code}: {fields.find(([key]) => key === warning.field)?.[1] ?? warning.field}</li>)}</ul></div>}
 
-    <section className="ocr-review-card ocr-review-business-card"><h3>รายจ่ายสำหรับ</h3><p className="ocr-review-business-name">{organizationName || "ยังไม่มีชื่อธุรกิจ"}</p>{branchType && <p className="ocr-review-card-intro">{({ head: "สำนักงานใหญ่", branch: "สาขา", none: "ไม่มีสาขา" } as Record<string, string>)[branchType] ?? branchType}</p>}</section>
+    <section className="ocr-review-card ocr-review-business-card"><h3>ธุรกิจ</h3><p className="ocr-review-business-name">{organizationName || "ยังไม่มีชื่อธุรกิจ"}</p>{branchType && <p className="ocr-review-card-intro">{({ head: "สำนักงานใหญ่", branch: "สาขา", none: "ไม่มีสาขา" } as Record<string, string>)[branchType] ?? branchType}</p>}</section>
     <section className="ocr-review-card ocr-review-evidence-card"><div className="ocr-review-card-heading"><div><h3>เอกสารหลักฐาน</h3><p className="ocr-review-card-intro">เอกสารประกอบเพิ่มเติม</p></div><a className="ocr-review-original-link" href={originalURL} target="_blank" rel="noopener noreferrer">เปิดเอกสารต้นฉบับ ↗</a></div><div className="ocr-review-evidence-empty"><span aria-hidden="true">▤</span><strong>ยังไม่มีเอกสารประกอบเพิ่มเติม</strong></div></section>
     <section className="ocr-review-card"><h3>ข้อมูลรายจ่าย</h3><p className="ocr-review-card-intro">ประเภทที่ OCR อ่านได้: {documentTypeLabels[data.draft.document_type] ?? (data.draft.document_type || "ยังระบุไม่ได้")}</p><div className="ocr-review-fields">{fields.filter(([key]) => ["document_number", "issue_date", "currency"].includes(key)).map(renderField)}</div>{data.draft.accounting?.summary.paid_amount != null && <p className="ocr-review-card-intro">ยอดรับชำระที่ OCR อ่านได้: {displayMoney(data.draft.accounting.summary.paid_amount)} {currency}</p>}</section>
-    <section className="ocr-review-card"><h3>ข้อมูลผู้ขาย</h3><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("seller_")).map(renderField)}</div>{data.draft.accounting?.seller.address && <div className="ocr-review-readonly-block"><strong>ที่อยู่ที่ OCR อ่านได้</strong><p>{display(data.draft.accounting.seller.address)}</p></div>}</section>
-    <section className="ocr-review-card"><div className="ocr-review-card-heading"><h3>รายการค่าใช้จ่าย</h3><span>{accountingItems.length} รายการ</span></div><OCRItems items={accountingItems} currency={currency} /></section>
+    <section className="ocr-review-card"><div className="ocr-review-card-heading"><h3>ข้อมูลผู้ขาย</h3>{!preview && <Link className="ocr-review-original-link" href={`/o/${encodeURIComponent(organization)}/vendors`} target="_blank" rel="noopener noreferrer">ค้นหาผู้ขาย ↗</Link>}</div><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("seller_")).map(renderField)}</div><div className="ocr-review-readonly-block"><label htmlFor="review-seller-address">ที่อยู่ที่ OCR อ่านได้ · อ่านอย่างเดียว</label><textarea id="review-seller-address" readOnly value={display(data.draft.accounting?.seller.address)} rows={3} /></div></section>
     <section className="ocr-review-card"><h3>ข้อมูลผู้ซื้อ</h3><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("buyer_")).map(renderField)}</div></section>
   </div>;
   const amountsPanel = <div className="ocr-review-panel-content">
@@ -151,10 +150,11 @@ export default async function ExtractionPanel({ organization, document, nextHref
       <ReviewTabs documentPanel={documentPanel} amountsPanel={amountsPanel} />
       <div className="ocr-review-actions">
         <ReviewTotal initial={data.saved_review?.values.total_amount ?? data.confirmed?.values.total_amount ?? data.draft.fields.total_amount?.normalized ?? ""} currency={currency} />
+        <details className="ocr-review-footer-menu"><summary aria-label="เมนูเอกสาร" title="เมนูเอกสาร">⋮</summary><div><a href={originalURL} target="_blank" rel="noopener noreferrer">เปิดเอกสารต้นฉบับ ↗</a></div></details>
         {canConfirm && <label className="ocr-review-ack"><input required type="checkbox" name="review_ack" value="1" />ฉันตรวจเทียบค่ากับเอกสารต้นฉบับแล้ว และยืนยันค่าที่กรอก</label>}
         {data.review_enabled && <p className="ocr-review-draft-help">ตัดสินใจแต่ละช่องและบันทึกฉบับร่างก่อนยืนยัน</p>}
         <div className="ocr-review-action-buttons"><Link data-review-exit className="secondary-button" href={cancelHref}>ยกเลิก</Link>
-          {data.review_enabled && <ReviewSubmit id="review-save" intent="draft" skipValidation className="secondary-button">บันทึกการเปลี่ยนแปลง</ReviewSubmit>}
+          {data.review_enabled && <ReviewSubmit id="review-save" intent="draft" skipValidation className="button ocr-review-save-button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="16" height="16"><path d="M4 3h14l3 3v15H4zM7 3v6h10V3M7 21v-8h11v8" /></svg>บันทึกการเปลี่ยนแปลง</ReviewSubmit>}
           {data.review_enabled && nextHref && <ReviewSubmit intent="draft-next" skipValidation className="secondary-button">บันทึกและไป{nextHref.includes("/review?") ? "คิว" : "เอกสารถัดไป"}</ReviewSubmit>}
           {canConfirm && <ReviewSubmit intent="confirm" className="button">บันทึกและยืนยันข้อมูล</ReviewSubmit>}
         </div>
