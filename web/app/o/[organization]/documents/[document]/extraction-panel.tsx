@@ -160,7 +160,7 @@ export default async function ExtractionPanel({ organization, document, nextHref
         </div>
       </div>
     </ReviewForm>
-    {(data.review_enabled && (canConfirm || !!data.review_history?.length)) && <details className="ocr-review-tools"><summary>การตรวจเพิ่มเติม</summary>
+    {(data.review_enabled && (canConfirm || !!data.review_history?.length)) && <details className="ocr-review-tools"><summary aria-label="การตรวจเพิ่มเติม"><span aria-hidden="true">⋯</span><span>การตรวจเพิ่มเติม</span></summary>
     {data.review_enabled && canConfirm && <details className="ocr-review-secondary"><summary>ส่งกลับหรือประมวลผลใหม่</summary>
       <form action={returnReview} className="ocr-review-secondary-form"><h3>ส่งกลับเพื่อแก้ไข</h3>
         <input type="hidden" name="ocr_job_id" value={data.ocr_job_id} /><input type="hidden" name="review_revision" value={data.revision} /><input type="hidden" name="draft_revision" value={data.saved_review?.revision ?? 0} />

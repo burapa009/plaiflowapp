@@ -28,6 +28,6 @@ export default function ReviewWorkspace({ viewer, form, support }: { viewer: Rea
 
   return <div className="ocr-review-shell" data-mobile-view={view} onInputCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }} onChangeCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}>
     <div className="ocr-review-mobile-switch" role="group" aria-label="สลับมุมมองเอกสาร"><button type="button" aria-pressed={view === "document"} onClick={() => setView("document")}>ดูเอกสาร</button><button type="button" aria-pressed={view === "form"} onClick={() => setView("form")}>แก้ไขข้อมูล</button></div>
-    <div className="ocr-review-workspace">{viewer}<div className="ocr-review-right">{form}{support && <details className="ocr-review-support-drawer"><summary>หลักฐาน OCR และการจัดหมวด</summary>{support}</details>}</div></div>
+    <div className="ocr-review-workspace">{viewer}<div className="ocr-review-right">{form}{support && <details className="ocr-review-support-drawer"><summary aria-label="หลักฐาน OCR และการจัดหมวด"><span aria-hidden="true">⋯</span><span>หลักฐาน OCR และการจัดหมวด</span></summary>{support}</details>}</div></div>
   </div>;
 }

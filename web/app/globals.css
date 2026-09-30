@@ -910,10 +910,17 @@ h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 700; line-heig
 
 .document-detail-page.is-post-ocr .ocr-review-right { display: flex; flex-direction: column; overflow: hidden; }
 .document-detail-page.is-post-ocr .ocr-review-panel-head { flex-shrink: 0; }
-.document-detail-page.is-post-ocr .ocr-review-tools { position: absolute; z-index: 3; right: 16px; bottom: 88px; width: min(360px, calc(100% - 32px)); max-height: calc(100% - 160px); overflow: auto; border: 1px solid var(--pf-border-default); border-radius: var(--pf-radius-sm); background: var(--pf-surface); box-shadow: var(--pf-shadow-soft); }
-.document-detail-page.is-post-ocr .ocr-review-tools > summary { min-height: 40px; padding: 10px 14px; cursor: pointer; }
-.document-detail-page.is-post-ocr .ocr-review-support-drawer { position: absolute; z-index: 3; left: 16px; bottom: 88px; width: min(360px, calc(100% - 32px)); max-height: calc(100% - 160px); overflow: auto; border: 1px solid var(--pf-border-default); border-radius: var(--pf-radius-sm); background: var(--pf-surface); box-shadow: var(--pf-shadow-soft); font-size: 14px; }
-.document-detail-page.is-post-ocr .ocr-review-support-drawer > summary { min-height: 44px; padding: 12px 20px; cursor: pointer; }
+.document-detail-page.is-post-ocr .ocr-review-tools { position: absolute; z-index: 3; right: 16px; bottom: 88px; width: 44px; max-height: calc(100% - 160px); overflow: auto; border: 1px solid var(--pf-border-default); border-radius: var(--pf-radius-sm); background: var(--pf-surface); box-shadow: var(--pf-shadow-soft); }
+.document-detail-page.is-post-ocr .ocr-review-tools[open] { width: min(360px, calc(100% - 32px)); }
+.document-detail-page.is-post-ocr .ocr-review-tools > summary { display: grid; min-height: 40px; place-items: center; cursor: pointer; list-style: none; }
+.document-detail-page.is-post-ocr .ocr-review-support-drawer { position: absolute; z-index: 3; left: 16px; bottom: 88px; width: 44px; max-height: calc(100% - 160px); overflow: auto; border: 1px solid var(--pf-border-default); border-radius: var(--pf-radius-sm); background: var(--pf-surface); box-shadow: var(--pf-shadow-soft); font-size: 14px; }
+.document-detail-page.is-post-ocr .ocr-review-support-drawer[open] { width: min(360px, calc(100% - 32px)); }
+.document-detail-page.is-post-ocr .ocr-review-support-drawer > summary { display: grid; min-height: 40px; place-items: center; cursor: pointer; list-style: none; }
+.document-detail-page.is-post-ocr .ocr-review-tools > summary::-webkit-details-marker, .document-detail-page.is-post-ocr .ocr-review-support-drawer > summary::-webkit-details-marker { display: none; }
+.document-detail-page.is-post-ocr .ocr-review-tools > summary span:last-child, .document-detail-page.is-post-ocr .ocr-review-support-drawer > summary span:last-child { display: none; }
+.document-detail-page.is-post-ocr .ocr-review-tools[open] > summary, .document-detail-page.is-post-ocr .ocr-review-support-drawer[open] > summary { justify-content: start; padding: 8px 12px; }
+.document-detail-page.is-post-ocr .ocr-review-tools[open] > summary span:first-child, .document-detail-page.is-post-ocr .ocr-review-support-drawer[open] > summary span:first-child { display: none; }
+.document-detail-page.is-post-ocr .ocr-review-tools[open] > summary span:last-child, .document-detail-page.is-post-ocr .ocr-review-support-drawer[open] > summary span:last-child { display: inline; }
 .document-detail-page.is-post-ocr .ocr-review-support { margin: 0; padding: 12px; }
 .document-detail-page.is-post-ocr .ocr-review-pdf { display: block; width: 100%; height: 100%; border: 0; }
 .document-detail-page.is-post-ocr .ocr-review-thumbnail img { width: 64px; height: 64px; object-fit: contain; }
