@@ -96,7 +96,7 @@ func (s *Store) CorrectDocumentType(ctx context.Context, user, org, doc, ocrJob,
 		return classification.Record{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,actor_user_id,event_type,target_type,target_id,outcome,occurred_at,metadata)
-		VALUES($1,$2,'classification.correct','document',$3,'success',$4,jsonb_build_object('ocr_job_id',$5,'corrected_type',$6))`, org, user, doc, now, ocrJob, kind)
+		VALUES($1,$2,'classification.correct','document',$3,'success',$4,jsonb_build_object('ocr_job_id',$5::text,'corrected_type',$6::text))`, org, user, doc, now, ocrJob, kind)
 	if err != nil {
 		return classification.Record{}, err
 	}
