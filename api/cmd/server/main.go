@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"plaiflow/api/internal/auth"
 	"plaiflow/api/internal/billing"
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/config"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
@@ -40,6 +42,33 @@ func main() {
 		logger.Error("matching_thresholds_invalid")
 		os.Exit(1)
 	}
+	classifierEnabled := os.Getenv("DOCUMENT_CLASSIFIER_ENABLED") == "true"
+	classifierAuto, classifierReview := .9, .7
+	if value := os.Getenv("DOCUMENT_CLASSIFIER_RULE_THRESHOLD"); value != "" {
+		classifierAuto, err = strconv.ParseFloat(value, 64)
+	}
+	if err == nil {
+		if value := os.Getenv("DOCUMENT_CLASSIFIER_REVIEW_THRESHOLD"); value != "" {
+			classifierReview, err = strconv.ParseFloat(value, 64)
+		}
+	}
+	if err != nil || classifierReview <= 0 || classifierReview >= classifierAuto || classifierAuto > 1 {
+		logger.Error("document_classifier_thresholds_invalid")
+		os.Exit(1)
+	}
+	var llmClassifier classification.DocumentClassifier
+	if classifierEnabled && os.Getenv("DOCUMENT_CLASSIFIER_URL") != "" {
+		if os.Getenv("DOCUMENT_CLASSIFIER_PROVIDER") != "runpod" {
+			logger.Error("document_classifier_provider_invalid")
+			os.Exit(1)
+		}
+		endpoint, parseErr := url.Parse(os.Getenv("DOCUMENT_CLASSIFIER_URL"))
+		if parseErr != nil || endpoint.Host == "" || endpoint.Scheme != "https" && !(endpoint.Scheme == "http" && (endpoint.Hostname() == "localhost" || endpoint.Hostname() == "127.0.0.1")) || os.Getenv("DOCUMENT_CLASSIFIER_MODEL") == "" {
+			logger.Error("document_classifier_endpoint_invalid")
+			os.Exit(1)
+		}
+		llmClassifier = classification.HTTPClassifier{URL: os.Getenv("DOCUMENT_CLASSIFIER_URL"), Model: os.Getenv("DOCUMENT_CLASSIFIER_MODEL"), Token: os.Getenv("DOCUMENT_CLASSIFIER_API_KEY"), Client: &http.Client{Timeout: 5 * time.Second}}
+	}
 	if settings.SkipDocumentScan {
 		logger.Warn("document_scan_bypassed")
 	}
@@ -64,6 +93,9 @@ func main() {
 	defer store.Close()
 	if os.Getenv("REVIEW_ENABLED") == "true" {
 		store.EnableReview()
+	}
+	if classifierEnabled {
+		store.EnableClassification()
 	}
 	matchingEnabled := os.Getenv("MATCHING_ENABLED") == "true"
 	if matchingEnabled {
@@ -187,6 +219,7 @@ func main() {
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", OCRPilotOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_PILOT_ORGANIZATION_IDS")), ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
+			Classification: store, ClassificationEnabled: classifierEnabled, ClassificationRuleThreshold: classifierAuto, ClassificationReviewThreshold: classifierReview, Classifier: llmClassifier,
 			OCRDefaultProvider: provider, OCRRunPodOrganizations: runPodOrganizations,
 			Matching: store, MatchingEnabled: matchingEnabled, AutoMatchThreshold: autoMatch, ReviewMatchThreshold: reviewMatch,
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,

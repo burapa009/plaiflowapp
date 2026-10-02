@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"plaiflow/api/internal/accounting"
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
@@ -226,6 +227,10 @@ func (s *server) accountingSuggestion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
 		return
 	}
+	if s.config.ClassificationEnabled && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
+		writeError(w, r, 409, "not_expense_candidate", "This document type is not an expense candidate")
+		return
+	}
 	result, err := s.config.Accounting.Evaluate(r.Context(), session.UserID, membership.OrganizationID, *review)
 	if errors.Is(err, accounting.ErrConflict) {
 		writeError(w, r, 409, "source_changed", "Source changed; review again")
@@ -277,6 +282,10 @@ func (s *server) approveAccounting(w http.ResponseWriter, r *http.Request) {
 	review, err := s.readReview(r.Context(), meta)
 	if err != nil {
 		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
+		return
+	}
+	if s.config.ClassificationEnabled && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
+		writeError(w, r, 409, "not_expense_candidate", "This document type is not an expense candidate")
 		return
 	}
 	if s.config.ReviewEnabled {

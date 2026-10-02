@@ -13,20 +13,22 @@ import (
 )
 
 type Store struct {
-	pool               *pgxpool.Pool
-	logger             *slog.Logger
-	reviewEnabled      bool
-	billingEnabled     bool
-	matchingEnabled    bool
-	requireMigration19 bool
+	pool                  *pgxpool.Pool
+	logger                *slog.Logger
+	reviewEnabled         bool
+	billingEnabled        bool
+	matchingEnabled       bool
+	requireMigration19    bool
+	classificationEnabled bool
 }
 
-const requiredMigrationVersion = 21
+const requiredMigrationVersion = 23
 
-func (s *Store) EnableReview()       { s.reviewEnabled = true }
-func (s *Store) EnableBilling()      { s.billingEnabled = true }
-func (s *Store) EnableMatching()     { s.matchingEnabled = true; s.requireMigration19 = true }
-func (s *Store) RequireMigration19() { s.requireMigration19 = true }
+func (s *Store) EnableReview()         { s.reviewEnabled = true }
+func (s *Store) EnableBilling()        { s.billingEnabled = true }
+func (s *Store) EnableMatching()       { s.matchingEnabled = true; s.requireMigration19 = true }
+func (s *Store) RequireMigration19()   { s.requireMigration19 = true }
+func (s *Store) EnableClassification() { s.classificationEnabled = true }
 
 func (s *Store) currentDraftSQL() string {
 	if !s.reviewEnabled {
@@ -68,6 +70,9 @@ func (s *Store) Ready(ctx context.Context) error {
 	}
 	if s.requireMigration19 {
 		minimum = max(minimum, 19)
+	}
+	if s.classificationEnabled {
+		minimum = max(minimum, 24)
 	}
 	if err := s.pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty); err != nil || dirty || version < minimum {
 		return errors.New("database migration is not ready")

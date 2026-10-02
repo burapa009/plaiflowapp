@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/tenant"
@@ -212,6 +213,23 @@ func (s *server) submitOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keep = saved == key
+	if keep && s.config.ClassificationEnabled && s.config.Classification != nil {
+		started := time.Now()
+		llmCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		prediction, llmUsed, classifyErr := classification.Hybrid(llmCtx, classification.Normalize(in.DocumentID, result),
+			s.config.Classifier, s.config.ClassificationRuleThreshold, s.config.ClassificationReviewThreshold)
+		cancel()
+		if classifyErr != nil {
+			s.config.Logger.Warn("classification_fallback", "document_id", in.DocumentID, "error", classifyErr)
+		}
+		if err = s.config.Classification.SaveClassification(r.Context(), in.OrganizationID, in.DocumentID, r.PathValue("job"), prediction); err != nil {
+			s.config.Logger.Error("classification_save_failed", "document_id", in.DocumentID, "error", err)
+		}
+		s.config.Logger.Info("document_classified", "document_id", in.DocumentID, "ocr_duration_ms", result.DurationMS,
+			"classification_duration_ms", time.Since(started).Milliseconds(), "classification_method", prediction.Method,
+			"document_type", prediction.DocumentType, "confidence", prediction.Confidence, "llm_used", llmUsed,
+			"classifier_model", prediction.ClassifierVersion, "requires_review", prediction.RequiresReview)
+	}
 	writeJSON(w, 200, map[string]string{"status": "Completed"})
 }
 func (s *server) stateOCR(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +243,16 @@ func (s *server) stateOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	url := ""
+	processingStatus := map[string]string{"NotScheduled": "uploaded", "Queued": "uploaded", "Running": "ocr_processing", "Completed": "ocr_completed", "Failed": "failed", "Cancelled": "failed"}[state.Status]
+	if state.Status == "Completed" && s.config.ClassificationEnabled && s.config.Classification != nil {
+		processingStatus = "classifying"
+		if record, classErr := s.config.Classification.GetClassification(r.Context(), session.UserID, m.OrganizationID, r.PathValue("document")); classErr == nil && record.EffectiveType != "" {
+			processingStatus = "ready"
+			if record.RequiresReview {
+				processingStatus = "review_required"
+			}
+		}
+	}
 	if state.Status == "Completed" && state.ObjectKey != "" {
 		token, e := s.config.OCRTokens.SignTTL(r.PathValue("document"), m.OrganizationID, session.UserID, s.config.Now(), 5*time.Minute)
 		if e != nil {
@@ -234,7 +262,7 @@ func (s *server) stateOCR(w http.ResponseWriter, r *http.Request) {
 		url = "/v1/ocr-results/" + r.PathValue("document") + "?token=" + token
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
-	writeJSON(w, 200, map[string]any{"ocr": state, "download_url": url})
+	writeJSON(w, 200, map[string]any{"ocr": state, "download_url": url, "processing_status": processingStatus})
 }
 func (s *server) retryOCR(w http.ResponseWriter, r *http.Request) {
 	session, m, ok := s.workContext(w, r, true)

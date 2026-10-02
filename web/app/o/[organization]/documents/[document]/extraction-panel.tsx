@@ -10,10 +10,11 @@ import { ReviewForm, ReviewSubmit, ReviewTotal, type ReviewState } from "./revie
 type Field = { presence: string; raw: string; normalized: string; confidence: string; evidence: { page: number; line: number }[] };
 type Warning = { code: string; field: string; severity: string };
 export type Extraction = {
-  draft: { document_type: string; fields: Record<string, Field>; warnings: Warning[]; accounting?: AccountingResult };
+  draft: { document_type: string; fields: Record<string, Field>; warnings: Warning[]; accounting?: AccountingResult; classification?: { document_type: string; effective_type: string; confidence: number; requires_review: boolean; candidate_types: { type: string; confidence: number }[]; signals: string[] } };
   ocr_job_id: string;
   revision: number;
   source_superseded: boolean;
+  possible_duplicate?: { possible_duplicate: boolean; matched_document_id: string; duplicate_confidence: number } | null;
   confirmed: { values: Record<string, string>; confirmed_at: string } | null;
   review_enabled?: boolean;
   saved_review?: { revision: number; values: Record<string, string>; decisions: Record<string, string> } | null;
@@ -35,7 +36,12 @@ const warningLabels: Record<string, string> = {
   invalid_value: "พบข้อความแต่แปลงค่าไม่ได้",
 };
 const documentTypeLabels: Record<string, string> = {
-  tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", invoice: "ใบแจ้งหนี้", receipt_tax_invoice: "ใบเสร็จรับเงิน / ใบกำกับภาษี", unknown: "ยังระบุไม่ได้",
+  tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", invoice: "ใบแจ้งหนี้", unknown: "ยังระบุไม่ได้",
+  tax_invoice_receipt: "ใบกำกับภาษี / ใบเสร็จรับเงิน",
+  billing_note: "ใบวางบิล", credit_note: "ใบลดหนี้", debit_note: "ใบเพิ่มหนี้",
+  withholding_tax_certificate: "หนังสือรับรองหัก ณ ที่จ่าย", payment_voucher: "ใบสำคัญจ่าย", receipt_voucher: "ใบสำคัญรับเงิน",
+  receipt_substitute: "ใบแทนใบเสร็จรับเงิน", expense_claim: "ใบเบิกค่าใช้จ่าย", petty_cash: "เอกสารเงินสดย่อย",
+  quotation: "ใบเสนอราคา", purchase_order: "ใบสั่งซื้อ", bank_slip: "หลักฐานการโอนเงิน", bank_statement: "รายการเดินบัญชี",
 };
 
 export default async function ExtractionPanel({ organization, document, nextHref = "", data, role, cancelHref, organizationName = "", branchType = "", preview = false, previewURL = "", result = "", attachmentCount = 0 }: {
@@ -90,8 +96,25 @@ export default async function ExtractionPanel({ organization, document, nextHref
     redirect(`${path}?extraction=reprocessing`);
   }
 
+  async function correctType(formData: FormData) {
+    "use server";
+    if (preview) return;
+    const body = new URLSearchParams({
+      ocr_job_id: data.ocr_job_id,
+      expected_type: data.draft.classification?.effective_type ?? "",
+      document_type: String(formData.get("document_type") ?? ""),
+    });
+    const response = await sessionPOST(`/v1${path}/document-type`, body);
+    if (!response?.ok) redirect(`${path}?extraction=type-error`);
+    revalidatePath(path);
+    redirect(`${path}?extraction=type-saved`);
+  }
+
   const amountKeys = new Set(["subtotal", "vat_amount", "total_amount"]);
-  const requiredKeys = new Set(["issue_date", "total_amount", ...(data.draft.document_type === "tax_invoice" ? ["document_number", "seller_name", "seller_tax_id"] : [])]);
+  const requiredKeys = new Set([
+    ...(["receipt", "invoice", "tax_invoice", "tax_invoice_receipt", "billing_note", "credit_note", "debit_note"].includes(data.draft.document_type) ? ["issue_date", "total_amount"] : []),
+    ...(["tax_invoice", "tax_invoice_receipt"].includes(data.draft.document_type) ? ["document_number", "seller_name", "seller_tax_id"] : []),
+  ]);
   const needsAttention = new Set(data.draft.warnings.map((warning) => warning.field));
   const editable = canConfirm || data.review_enabled;
   const accountingItems = data.draft.accounting?.items ?? [];
@@ -140,6 +163,16 @@ export default async function ExtractionPanel({ organization, document, nextHref
 
   return <section className="ocr-review-panel" aria-labelledby="extraction-heading">
     <h2 className="sr-only" id="extraction-heading">ตรวจข้อมูลจาก OCR</h2>
+    {data.possible_duplicate && <p className="ocr-review-alert" role="status">อาจเป็นเอกสารซ้ำ · ความมั่นใจ {Math.round(data.possible_duplicate.duplicate_confidence * 100)}% <Link href={`/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(data.possible_duplicate.matched_document_id)}`}>ดูเอกสารที่อาจซ้ำ</Link></p>}
+    {data.draft.classification && <section className="ocr-review-card" aria-labelledby="document-type-heading">
+      <h3 id="document-type-heading">ประเภทเอกสาร</h3>
+      <p className="ocr-review-card-intro">ระบบอ่านว่า {documentTypeLabels[data.draft.classification.document_type] ?? "ยังระบุไม่ได้"} · ความมั่นใจ {Math.round(data.draft.classification.confidence * 100)}%</p>
+      {data.draft.classification.requires_review && <p className="ocr-review-alert" role="status">โปรดตรวจประเภทเอกสารกับต้นฉบับก่อนยืนยัน</p>}
+      {data.draft.classification.signals.length > 0 && <p className="ocr-review-card-intro">หลักฐาน: {data.draft.classification.signals.join(" · ")}</p>}
+      {result === "type-saved" && <p className="ocr-review-success" role="status">บันทึกประเภทเอกสารแล้ว</p>}
+      {result === "type-error" && <p className="ocr-review-alert" role="alert">เปลี่ยนประเภทไม่สำเร็จ กรุณาโหลดหน้าใหม่และลองอีกครั้ง</p>}
+      {canConfirm && !data.confirmed && !preview ? <form action={correctType} className="field"><label htmlFor="document-type-select">แก้ประเภทเอกสาร</label><select id="document-type-select" name="document_type" defaultValue={data.draft.classification.effective_type}>{Object.entries(documentTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button className="secondary-button" type="submit">บันทึกประเภท</button></form> : <p className="ocr-review-card-intro">ประเภทที่ใช้: {documentTypeLabels[data.draft.classification.effective_type] ?? "ยังระบุไม่ได้"}</p>}
+    </section>}
     <ReviewForm action={submitReview}>
       <input type="hidden" name="ocr_job_id" value={data.ocr_job_id} />
       <input type="hidden" name="expected_revision" value={data.revision} />

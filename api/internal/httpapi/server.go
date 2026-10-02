@@ -19,6 +19,7 @@ import (
 	"plaiflow/api/internal/auth"
 	"plaiflow/api/internal/billing"
 	"plaiflow/api/internal/business"
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
 	"plaiflow/api/internal/extraction"
@@ -43,51 +44,56 @@ type Store interface {
 }
 
 type Config struct {
-	OCR                         ocr.Store
-	OCRJobs                     job.Store
-	OCRAuth                     *job.WorkerAuth
-	OCRTokens                   *job.ArtifactToken
-	OCRStorage                  job.ArtifactStore
-	Extraction                  extraction.Store
-	ExtractionEnabled           bool
-	OCRPilotOrganizations       map[string]bool
-	OCRDefaultProvider          string
-	OCRRunPodOrganizations      map[string]bool
-	Matching                    matching.Store
-	MatchingEnabled             bool
-	AutoMatchThreshold          float64
-	ReviewMatchThreshold        float64
-	ReviewEnabled               bool
-	FirmEnabled                 bool
-	Firm                        firm.Store
-	SecretaryEnabled            bool
-	Secretary                   secretary.Store
-	SecretaryPilotOrganizations map[string]bool
-	Accounting                  accounting.Store
-	AccountingEnabled           bool
-	LineSecret                  string
-	LineChannel                 string
-	DashboardTokens             []string
-	Logger                      *slog.Logger
-	Auth                        *auth.Service
-	Tenants                     tenant.Store
-	Work                        work.Store
-	Business                    business.Store
-	PlanStore                   plan.Store
-	Billing                     *billing.Service
-	BillingEnabled              bool
-	BillingTestOrganizationID   string
-	OmiseWebhookSecret          string
-	OmiseWebhookPreviousSecret  string
-	Drive                       *drive.Service
-	Documents                   *document.Service
-	Jobs                        job.Store
-	ReviewExports               job.DocumentExportStore
-	JobWorkerAuth               *job.WorkerAuth
-	JobArtifacts                job.ArtifactStore
-	ArtifactTokens              *job.ArtifactToken
-	Gate                        work.Gate
-	Now                         func() time.Time
+	OCR                           ocr.Store
+	OCRJobs                       job.Store
+	OCRAuth                       *job.WorkerAuth
+	OCRTokens                     *job.ArtifactToken
+	OCRStorage                    job.ArtifactStore
+	Extraction                    extraction.Store
+	Classification                classification.Store
+	ClassificationEnabled         bool
+	ClassificationRuleThreshold   float64
+	ClassificationReviewThreshold float64
+	Classifier                    classification.DocumentClassifier
+	ExtractionEnabled             bool
+	OCRPilotOrganizations         map[string]bool
+	OCRDefaultProvider            string
+	OCRRunPodOrganizations        map[string]bool
+	Matching                      matching.Store
+	MatchingEnabled               bool
+	AutoMatchThreshold            float64
+	ReviewMatchThreshold          float64
+	ReviewEnabled                 bool
+	FirmEnabled                   bool
+	Firm                          firm.Store
+	SecretaryEnabled              bool
+	Secretary                     secretary.Store
+	SecretaryPilotOrganizations   map[string]bool
+	Accounting                    accounting.Store
+	AccountingEnabled             bool
+	LineSecret                    string
+	LineChannel                   string
+	DashboardTokens               []string
+	Logger                        *slog.Logger
+	Auth                          *auth.Service
+	Tenants                       tenant.Store
+	Work                          work.Store
+	Business                      business.Store
+	PlanStore                     plan.Store
+	Billing                       *billing.Service
+	BillingEnabled                bool
+	BillingTestOrganizationID     string
+	OmiseWebhookSecret            string
+	OmiseWebhookPreviousSecret    string
+	Drive                         *drive.Service
+	Documents                     *document.Service
+	Jobs                          job.Store
+	ReviewExports                 job.DocumentExportStore
+	JobWorkerAuth                 *job.WorkerAuth
+	JobArtifacts                  job.ArtifactStore
+	ArtifactTokens                *job.ArtifactToken
+	Gate                          work.Gate
+	Now                           func() time.Time
 }
 
 type server struct {
