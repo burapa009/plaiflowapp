@@ -1,13 +1,23 @@
 "use client";
 
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 export default function ReviewTabs({ documentPanel, amountsPanel }: { documentPanel: ReactNode; amountsPanel: ReactNode }) {
   const [active, setActive] = useState(0);
   const id = useId();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const panels = [documentPanel, amountsPanel];
-  const labels = ["ข้อมูลรายจ่าย", "รายการและสรุปค่าใช้จ่าย"];
+  const labels = ["ข้อมูลเอกสารและคู่ค้า", "รายการ ยอดเงินและภาษี"];
+  useEffect(() => {
+    function reveal(event: Event) {
+      const field = document.getElementById((event as CustomEvent<string>).detail);
+      const panel = field?.closest('[role="tabpanel"]');
+      if (panel?.id === `${id}-panel-0`) setActive(0);
+      if (panel?.id === `${id}-panel-1`) setActive(1);
+    }
+    document.addEventListener("review-focus-field", reveal);
+    return () => document.removeEventListener("review-focus-field", reveal);
+  }, [id]);
 
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     let next = index;

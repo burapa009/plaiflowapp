@@ -405,7 +405,13 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 409, "ocr_changed", "OCR result changed; review again")
 		return
 	}
+	contract := r.PostForm.Get("field_review_version")
+	if contract != "" && contract != "1" {
+		writeError(w, r, 422, "invalid_field_review_version", "Unsupported field review version")
+		return
+	}
 	values := make(map[string]string, len(extraction.Keys))
+	decisions := make(map[string]string, len(extraction.Keys))
 	if s.config.ReviewEnabled {
 		saved, draftErr := s.config.Extraction.CurrentDraft(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
 		draftRevision, parseErr := strconv.Atoi(r.PostForm.Get("expected_draft_revision"))
@@ -423,6 +429,7 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			values[key] = saved.Values[key]
+			decisions[key] = saved.Decisions[key]
 		}
 		if !s.originalAvailable(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document")) {
 			writeError(w, r, 409, "original_unavailable", "Open the original before confirming")
@@ -431,6 +438,21 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 	} else {
 		for _, key := range extraction.Keys {
 			values[key] = strings.TrimSpace(r.PostForm.Get(key))
+		}
+	}
+	if contract == "1" {
+		if r.PostForm.Get("expected_document_type") != draft.DocumentType {
+			writeError(w, r, 409, "document_type_changed", "Document type changed; review again")
+			return
+		}
+		for _, key := range extraction.Keys {
+			if !s.config.ReviewEnabled {
+				decisions[key] = r.PostForm.Get(key + "_decision")
+			}
+		}
+		if err := extraction.ValidateDecisions(draft, values, decisions); err != nil {
+			writeError(w, r, 422, "invalid_field_decision", "Check every field against the original")
+			return
 		}
 	}
 	if err := extraction.ValidateReview(draft, values); err != nil {
@@ -445,6 +467,13 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 	review := extraction.Review{ID: id, OrganizationID: membership.OrganizationID, DocumentID: r.PathValue("document"), OCRJobID: ocrJob,
 		DocumentType: draft.DocumentType, Values: values, ConfirmedBy: session.UserID, ConfirmedAt: s.config.Now().UTC(),
 		ObjectKey: "extraction/" + membership.OrganizationID + "/" + id + ".json"}
+	if contract == "1" || s.config.ReviewEnabled {
+		review.Decisions = decisions
+		review.OriginalValues = make(map[string]string, len(extraction.Keys))
+		for _, key := range extraction.Keys {
+			review.OriginalValues[key] = draft.Fields[key].Normalized
+		}
+	}
 	if s.config.ReviewEnabled {
 		review.DraftRevision, _ = strconv.Atoi(r.PostForm.Get("expected_draft_revision"))
 	}

@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import AccountingResultPanel, { type AccountingResult } from "./accounting-result";
 import ReviewTabs from "./review-tabs";
+import { documentTypeLabels, documentTypeGroups, documentCategory } from "@/lib/document-types";
+import ReviewField from "./review-field";
 import OCRItems from "./ocr-items";
 import { ReviewForm, ReviewSubmit, ReviewTotal, type ReviewState } from "./review-form";
 
@@ -15,7 +17,7 @@ export type Extraction = {
   revision: number;
   source_superseded: boolean;
   possible_duplicate?: { possible_duplicate: boolean; matched_document_id: string; duplicate_confidence: number } | null;
-  confirmed: { values: Record<string, string>; confirmed_at: string } | null;
+  confirmed: { values: Record<string, string>; decisions?: Record<string, string>; confirmed_at: string } | null;
   review_enabled?: boolean;
   saved_review?: { revision: number; values: Record<string, string>; decisions: Record<string, string> } | null;
 	returned_review?: { reason_code: string; private_note: string; returned_at: string } | null;
@@ -35,14 +37,7 @@ const warningLabels: Record<string, string> = {
   ocr_low_quality: "OCR อ่านบรรทัดนี้ไม่มั่นใจ", amount_mismatch: "ยอดเงินไม่สัมพันธ์กัน",
   invalid_value: "พบข้อความแต่แปลงค่าไม่ได้",
 };
-export const documentTypeLabels: Record<string, string> = {
-  tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", pre_receipt: "ใบเสร็จก่อนรับเงิน", invoice: "ใบแจ้งหนี้", unknown: "ยังระบุไม่ได้",
-  tax_invoice_receipt: "ใบกำกับภาษี / ใบเสร็จรับเงิน",
-  billing_note: "ใบวางบิล", credit_note: "ใบลดหนี้", debit_note: "ใบเพิ่มหนี้",
-  withholding_tax_certificate: "หนังสือรับรองหัก ณ ที่จ่าย", payment_voucher: "ใบสำคัญจ่าย", receipt_voucher: "ใบสำคัญรับเงิน",
-  receipt_substitute: "ใบแทนใบเสร็จรับเงิน", expense_claim: "ใบเบิกค่าใช้จ่าย", petty_cash: "เอกสารเงินสดย่อย",
-  quotation: "ใบเสนอราคา", purchase_order: "ใบสั่งซื้อ", bank_slip: "หลักฐานการโอนเงิน", bank_statement: "รายการเดินบัญชี",
-};
+export { documentTypeLabels } from "@/lib/document-types";
 
 export default async function ExtractionPanel({ organization, document, nextHref = "", data, role, cancelHref, organizationName = "", branchType = "", preview = false, previewURL = "", result = "", attachmentCount = 0 }: {
   organization: string; document: string; nextHref?: string; data: Extraction; role: string; cancelHref: string; organizationName?: string; branchType?: string; preview?: boolean; previewURL?: string; result?: string; attachmentCount?: number;
@@ -61,6 +56,8 @@ export default async function ExtractionPanel({ organization, document, nextHref
       body.set(key, String(formData.get(key) ?? ""));
       body.set(`${key}_decision`, String(formData.get(`${key}_decision`) ?? ""));
     }
+    body.set("field_review_version", "1");
+    body.set("expected_document_type", data.draft.document_type);
     body.set("ocr_job_id", String(formData.get("ocr_job_id") ?? ""));
     body.set("expected_draft_revision", String(formData.get("expected_draft_revision") ?? "0"));
     if (!saveDraft) {
@@ -126,13 +123,8 @@ export default async function ExtractionPanel({ organization, document, nextHref
   function renderField([key, label]: [string, string]) {
     const field = data.draft.fields[key];
     const value = data.saved_review?.values[key] ?? data.confirmed?.values[key] ?? field?.normalized ?? "";
-    return <div key={key} className={`ocr-review-field${needsAttention.has(key) ? " needs-attention" : ""}`}>
-      <div className="ocr-review-field-heading">{editable ? <label htmlFor={`extraction-${key}`}>{label}{requiredKeys.has(key) && <span aria-hidden="true"> *</span>}</label> : <span>{label}</span>}{needsAttention.has(key) && <span className="ocr-review-field-warning">ต้องตรวจ</span>}</div>
-      {editable ? <input id={`extraction-${key}`} name={key} type={key === "issue_date" && (!value || /^\d{4}-\d{2}-\d{2}$/.test(value)) ? "date" : "text"} aria-required={requiredKeys.has(key)} maxLength={240} inputMode={amountKeys.has(key) ? "decimal" : undefined} defaultValue={value} className={amountKeys.has(key) ? "ocr-review-money-input" : ""} /> : <p className="ocr-review-readonly-value">{display(value)}</p>}
-      {data.review_enabled && <label className="ocr-review-decision">การตัดสินใจ<select name={`${key}_decision`} defaultValue={data.saved_review?.decisions[key] ?? ""}>
-        <option value="">ยังไม่ตัดสินใจ</option><option value="accepted">ยอมรับค่าที่เสนอ</option><option value="corrected">แก้ไขจากต้นฉบับ</option><option value="unknown">ไม่ทราบค่า</option>
-      </select></label>}
-    </div>;
+    if (editable) return <ReviewField key={key} fieldKey={key} label={label} initial={value} proposal={field?.normalized ?? ""} initialDecision={data.saved_review?.decisions[key] ?? (!data.source_superseded ? data.confirmed?.decisions?.[key] ?? "" : "")} required={requiredKeys.has(key)} attention={needsAttention.has(key)} money={amountKeys.has(key)} />;
+    return <div key={key} className="ocr-review-field"><span>{label}</span><p className="ocr-review-readonly-value">{display(value)}</p></div>;
   }
 
   const documentPanel = <div className="ocr-review-panel-content">
@@ -144,21 +136,21 @@ export default async function ExtractionPanel({ organization, document, nextHref
 
     <section className="ocr-review-card ocr-review-business-card"><h3>ธุรกิจ</h3><p className="ocr-review-business-name">{organizationName || "ยังไม่มีชื่อธุรกิจ"}</p>{branchType && <p className="ocr-review-card-intro">{({ head: "สำนักงานใหญ่", branch: "สาขา", none: "ไม่มีสาขา" } as Record<string, string>)[branchType] ?? branchType}</p>}</section>
     <section className="ocr-review-card ocr-review-evidence-card"><div className="ocr-review-card-heading"><div><h3>เอกสารหลักฐาน</h3><p className="ocr-review-card-intro">เอกสารประกอบเพิ่มเติม</p></div><a className="ocr-review-original-link" href={originalURL} target="_blank" rel="noopener noreferrer">เปิดเอกสารต้นฉบับ ↗</a></div><div className="ocr-review-evidence-empty"><span aria-hidden="true">▤</span><strong>{attachmentCount > 0 ? `แนบเอกสารเพิ่มเติมแล้ว ${attachmentCount} ไฟล์` : "ยังไม่มีเอกสารประกอบเพิ่มเติม"}</strong></div></section>
-    <section className="ocr-review-card"><h3>ข้อมูลรายจ่าย</h3><p className="ocr-review-card-intro">ประเภทที่ OCR อ่านได้: {documentTypeLabels[data.draft.document_type] ?? (data.draft.document_type || "ยังระบุไม่ได้")}</p><div className="ocr-review-fields">{fields.filter(([key]) => ["document_number", "issue_date", "currency"].includes(key)).map(renderField)}</div>{data.draft.accounting?.summary.paid_amount != null && <p className="ocr-review-card-intro">ยอดรับชำระที่ OCR อ่านได้: {displayMoney(data.draft.accounting.summary.paid_amount)} {currency}</p>}</section>
+    <section className="ocr-review-card"><h3>ข้อมูลเอกสาร</h3><p className="ocr-review-card-intro">{documentCategory(data.draft.document_type)} · ประเภทที่อ่านได้: {documentTypeLabels[data.draft.document_type] ?? (data.draft.document_type || "ยังระบุไม่ได้")}</p><div className="ocr-review-fields">{fields.filter(([key]) => ["document_number", "issue_date", "currency"].includes(key)).map(renderField)}</div>{data.draft.accounting?.summary.paid_amount != null && <p className="ocr-review-card-intro">ยอดรับชำระที่ OCR อ่านได้: {displayMoney(data.draft.accounting.summary.paid_amount)} {currency}</p>}</section>
     <section className="ocr-review-card"><div className="ocr-review-card-heading"><h3>ข้อมูลผู้ขาย</h3>{!preview && <Link className="ocr-review-original-link" href={`/o/${encodeURIComponent(organization)}/vendors`} target="_blank" rel="noopener noreferrer">ค้นหาผู้ขาย ↗</Link>}</div><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("seller_")).map(renderField)}</div><div className="ocr-review-readonly-block"><label htmlFor="review-seller-address">ที่อยู่ที่ OCR อ่านได้ · อ่านอย่างเดียว</label><textarea id="review-seller-address" readOnly value={display(data.draft.accounting?.seller.address)} rows={3} /></div></section>
   </div>;
   const amountsPanel = <div className="ocr-review-panel-content">
-    <section className="ocr-review-card ocr-review-items-card"><p className="ocr-review-item-info">รายการค่าใช้จ่ายจาก OCR ใช้ประกอบการตรวจ <span>{accountingItems.length} รายการ · {currency || "ไม่ระบุสกุลเงิน"}</span></p>
+    <section className="ocr-review-card ocr-review-items-card"><p className="ocr-review-item-info">รายการจากเอกสาร ใช้ประกอบการตรวจ <span>{accountingItems.length} รายการ · {currency || "ไม่ระบุสกุลเงิน"}</span></p>
       <OCRItems items={accountingItems} currency={currency} />
     </section>
-    <section className="ocr-review-card"><h3>สรุปรวมค่าใช้จ่าย</h3><p className="ocr-review-card-intro">ตัวเลขจาก OCR และค่าที่ตรวจแก้ได้ · ไม่มีการคำนวณภาษีใหม่ในหน้านี้</p><div className="ocr-review-summary-fields">{fields.filter(([key]) => amountKeys.has(key)).map(renderField)}</div>
+    <section className="ocr-review-card"><h3>ยอดเงินและภาษี</h3><p className="ocr-review-card-intro">ตัวเลขจาก OCR และค่าที่ตรวจแก้ได้ · ไม่มีการคำนวณภาษีใหม่ในหน้านี้</p><div className="ocr-review-summary-fields">{fields.filter(([key]) => amountKeys.has(key)).map(renderField)}</div>
       {accountingSummary && <dl className="ocr-review-summary-extra">{([
         ["discount", "ส่วนลดรวม"], ["amount_before_vat", "ยอดก่อน VAT ที่ OCR อ่านได้"], ["vat_rate", "อัตรา VAT (%)"],
         ["withholding_tax", "ภาษีหัก ณ ที่จ่าย"], ["service_charge", "ค่าบริการ"], ["other_charges", "ค่าใช้จ่ายอื่น"],
       ] as const).filter(([key]) => accountingSummary[key] != null).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{displayMoney(accountingSummary[key])}{key !== "vat_rate" ? ` ${currency}` : ""}</dd></div>)}</dl>}
     </section>
     {data.draft.accounting && <AccountingResultPanel result={data.draft.accounting} />}
-    <details className="ocr-review-card"><summary>ข้อมูลผู้ซื้อ</summary><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("buyer_")).map(renderField)}</div></details>
+    <section className="ocr-review-card"><h3>ข้อมูลผู้ซื้อ</h3><div className="ocr-review-fields">{fields.filter(([key]) => key.startsWith("buyer_")).map(renderField)}</div></section>
   </div>;
 
   return <section className="ocr-review-panel" aria-labelledby="extraction-heading">
@@ -171,9 +163,10 @@ export default async function ExtractionPanel({ organization, document, nextHref
       {data.draft.classification.signals.length > 0 && <p className="ocr-review-card-intro">หลักฐาน: {data.draft.classification.signals.join(" · ")}</p>}
       {result === "type-saved" && <p className="ocr-review-success" role="status">บันทึกประเภทเอกสารแล้ว</p>}
       {result === "type-error" && <p className="ocr-review-alert" role="alert">เปลี่ยนประเภทไม่สำเร็จ กรุณาโหลดหน้าใหม่และลองอีกครั้ง</p>}
-      {canConfirm && !data.confirmed && !preview ? <form action={correctType} className="field"><label htmlFor="document-type-select">แก้ประเภทเอกสาร</label><select id="document-type-select" name="document_type" defaultValue={data.draft.classification.effective_type}>{Object.entries(documentTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><button className="secondary-button" type="submit">บันทึกประเภท</button></form> : <p className="ocr-review-card-intro">ประเภทที่ใช้: {documentTypeLabels[data.draft.classification.effective_type] ?? "ยังระบุไม่ได้"}</p>}
+      {canConfirm && !data.confirmed && !preview ? <form action={correctType} className="field"><label htmlFor="document-type-select">แก้ประเภทเอกสาร</label><select id="document-type-select" name="document_type" defaultValue={data.draft.classification.effective_type}>{documentTypeGroups.map(group => <optgroup key={group.label} label={group.label}>{group.types.map(value => <option key={value} value={value}>{documentTypeLabels[value]}</option>)}</optgroup>)}</select><button className="secondary-button" type="submit">บันทึกประเภท</button></form> : <p className="ocr-review-card-intro">ประเภทที่ใช้: {documentTypeLabels[data.draft.classification.effective_type] ?? "ยังระบุไม่ได้"}</p>}
     </section>}
-    <ReviewForm action={submitReview}>
+    <ReviewForm action={submitReview} documentType={data.draft.document_type}>
+      {editable && <input type="hidden" name="field_review_version" value="1" />}
       <input type="hidden" name="ocr_job_id" value={data.ocr_job_id} />
       <input type="hidden" name="expected_revision" value={data.revision} />
       {data.review_enabled && <input type="hidden" name="expected_draft_revision" value={data.saved_review?.revision ?? 0} />}
