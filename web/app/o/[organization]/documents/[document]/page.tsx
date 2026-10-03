@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DocumentStatus } from "../document-visuals";
 import OCRPanel from "./ocr-panel";
-import ExtractionPanel, { type Extraction } from "./extraction-panel";
+import ExtractionPanel, { documentTypeLabels, type Extraction } from "./extraction-panel";
 import AccountingPanel from "./accounting-panel";
 import ReviewShortcuts from "./review-shortcuts";
 import DocumentPreview from "./document-preview";
@@ -88,7 +88,7 @@ export default async function DocumentDetailPage({ params, searchParams }: {
       {source.drive_revision && <span>Drive revision: {source.drive_revision}</span>}
     </li>)}</ol>}
   </section>;
-  const documentType = ({ tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", invoice: "ใบแจ้งหนี้", receipt_tax_invoice: "ใบเสร็จรับเงิน / ใบกำกับภาษี" } as Record<string, string>)[extraction?.draft.document_type ?? ""] ?? "ยังระบุไม่ได้";
+  const documentType = extraction?.draft.document_type === "receipt_tax_invoice" ? "ใบเสร็จรับเงิน / ใบกำกับภาษี" : documentTypeLabels[extraction?.draft.document_type ?? ""] ?? "ยังระบุไม่ได้";
   const viewer = <DocumentPreview src={`${originalURL}?preview=1`} filename={item.filename} mime={item.mime} documentType={documentType} ocrStatus={ocrStatus} organization={organization} document={document} attachments={attachments ?? []} />;
   const documentActions = <div className="card-actions">
     {previous && <Link data-review-previous className="secondary-button" href={`${base}/${encodeURIComponent(previous)}`}>← เอกสารก่อนหน้า</Link>}
