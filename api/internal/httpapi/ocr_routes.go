@@ -223,7 +223,7 @@ func (s *server) submitOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keep = saved == key
-	if keep && s.config.ClassificationEnabled && s.config.Classification != nil {
+	if keep && s.classificationAllowed(in.OrganizationID) && s.config.Classification != nil {
 		started := time.Now()
 		llmCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		prediction, llmUsed, classifyErr := classification.Hybrid(llmCtx, classification.Normalize(in.DocumentID, result),
@@ -254,7 +254,7 @@ func (s *server) stateOCR(w http.ResponseWriter, r *http.Request) {
 	}
 	url := ""
 	processingStatus := map[string]string{"NotScheduled": "uploaded", "Queued": "uploaded", "Running": "ocr_processing", "Completed": "ocr_completed", "Failed": "failed", "Cancelled": "failed"}[state.Status]
-	if state.Status == "Completed" && s.config.ClassificationEnabled && s.config.Classification != nil {
+	if state.Status == "Completed" && s.classificationAllowed(m.OrganizationID) && s.config.Classification != nil {
 		processingStatus = "classifying"
 		if record, classErr := s.config.Classification.GetClassification(r.Context(), session.UserID, m.OrganizationID, r.PathValue("document")); classErr == nil && record.EffectiveType != "" {
 			processingStatus = "ready"

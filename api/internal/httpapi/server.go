@@ -52,6 +52,7 @@ type Config struct {
 	Extraction                    extraction.Store
 	Classification                classification.Store
 	ClassificationEnabled         bool
+	ClassificationOrganizations   map[string]bool
 	ClassificationRuleThreshold   float64
 	ClassificationReviewThreshold float64
 	Classifier                    classification.DocumentClassifier

@@ -227,7 +227,7 @@ func (s *server) accountingSuggestion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
 		return
 	}
-	if s.config.ClassificationEnabled && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
+	if s.classificationAllowed(membership.OrganizationID) && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
 		writeError(w, r, 409, "not_expense_candidate", "This document type is not an expense candidate")
 		return
 	}
@@ -284,7 +284,7 @@ func (s *server) approveAccounting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
 		return
 	}
-	if s.config.ClassificationEnabled && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
+	if s.classificationAllowed(membership.OrganizationID) && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
 		writeError(w, r, 409, "not_expense_candidate", "This document type is not an expense candidate")
 		return
 	}

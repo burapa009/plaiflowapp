@@ -40,6 +40,10 @@ func (s *server) registerExtractionRoutes(m *http.ServeMux) {
 }
 
 func (s *server) getClassification(w http.ResponseWriter, r *http.Request) {
+	if !s.classificationAllowed(r.PathValue("organization")) {
+		http.NotFound(w, r)
+		return
+	}
 	session, membership, ok := s.workContext(w, r, false)
 	if !ok {
 		return
@@ -64,6 +68,10 @@ func (s *server) getClassification(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) correctDocumentType(w http.ResponseWriter, r *http.Request) {
+	if !s.classificationAllowed(r.PathValue("organization")) {
+		http.NotFound(w, r)
+		return
+	}
 	session, membership, ok := s.workContext(w, r, true)
 	if !ok {
 		return
@@ -187,6 +195,10 @@ func (s *server) ocrPilot(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (s *server) classificationAllowed(org string) bool {
+	return s.config.ClassificationEnabled && (s.config.ClassificationOrganizations["*"] || s.config.ClassificationOrganizations[org])
+}
+
 func (s *server) extractionDraft(ctx context.Context, user, org, doc string) (extraction.Draft, string, error) {
 	state, err := s.config.OCR.OCRState(ctx, user, org, doc)
 	if err != nil || state.Status != "Completed" || state.ObjectKey == "" {
@@ -205,7 +217,7 @@ func (s *server) extractionDraft(ctx context.Context, user, org, doc string) (ex
 	if err := json.Unmarshal(data, &result); err != nil || (result.SchemaVersion != 1 && result.SchemaVersion != 2 && result.SchemaVersion != 3) || len(result.Pages) == 0 || len(result.Pages) > 20 {
 		return extraction.Draft{}, "", errors.New("OCR result is invalid")
 	}
-	if !s.config.ClassificationEnabled || s.config.Classification == nil {
+	if !s.classificationAllowed(org) || s.config.Classification == nil {
 		return extraction.Extract(result), state.JobID, nil
 	}
 	record, err := s.config.Classification.GetClassification(ctx, user, org, doc)

@@ -219,7 +219,7 @@ func main() {
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
 			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", OCRPilotOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_PILOT_ORGANIZATION_IDS")), ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
-			Classification: store, ClassificationEnabled: classifierEnabled, ClassificationRuleThreshold: classifierAuto, ClassificationReviewThreshold: classifierReview, Classifier: llmClassifier,
+			Classification: store, ClassificationEnabled: classifierEnabled, ClassificationOrganizations: secretaryPilotOrganizations(os.Getenv("DOCUMENT_CLASSIFIER_ORGANIZATION_IDS")), ClassificationRuleThreshold: classifierAuto, ClassificationReviewThreshold: classifierReview, Classifier: llmClassifier,
 			OCRDefaultProvider: provider, OCRRunPodOrganizations: runPodOrganizations,
 			Matching: store, MatchingEnabled: matchingEnabled, AutoMatchThreshold: autoMatch, ReviewMatchThreshold: reviewMatch,
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
