@@ -62,7 +62,7 @@ export function UploadForm({ organization, preview = false }: { organization: st
       <span className="document-icon-circle"><DocumentIcon kind="upload" /></span>
       <strong>{filename || "ลากไฟล์มาวางที่นี่"}</strong><span>หรือ</span>
       <span className="document-file-picker"><DocumentIcon kind="file" />เลือกไฟล์</span>
-      <p id="document-file-help">รองรับไฟล์: PDF, JPG, JPEG, PNG (ขนาดไม่เกิน 20 MiB ต่อไฟล์)</p>
+      <p id="document-file-help">ครั้งละ 1 ไฟล์ · PDF, JPG, JPEG, PNG · ไม่เกิน 20 MiB</p>
       <input aria-label="เลือกไฟล์เอกสารหรือลากไฟล์มาวาง" aria-describedby="document-file-help" name="file" type="file" accept="application/pdf,image/jpeg,image/png" required disabled={busy} onChange={(event) => setFilename(event.target.files?.[0]?.name || "")} />
     </div>
     <button className="button document-upload-submit" type="submit" disabled={busy}><DocumentIcon kind="upload" />{busy ? "กำลังส่ง…" : "ส่งเอกสาร"}<DocumentIcon kind="arrow" /></button>

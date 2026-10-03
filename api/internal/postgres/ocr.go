@@ -28,6 +28,28 @@ func (s *Store) OCRInput(ctx context.Context, c job.LeaseCommand, worker string)
 	return in, err
 }
 
+func (s *Store) RecordProviderJob(ctx context.Context, c job.LeaseCommand, worker string, provider ocr.ProviderJob) error {
+	if provider.ID == "" || len(provider.ID) > 128 || provider.ExecutionMS < 0 || provider.QueueMS < 0 || len(provider.GPUClass) > 100 {
+		return errors.New("invalid provider job id")
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE document_ocr_runs o SET provider_job_id=$6,
+		provider_submitted_at=coalesce(provider_submitted_at,$4),
+		provider_execution_ms=coalesce(nullif($7::bigint,0),provider_execution_ms),
+		provider_queue_ms=coalesce(nullif($8::bigint,0),provider_queue_ms),
+		gpu_class=coalesce(nullif($9::text,''),gpu_class)
+		FROM durable_jobs j WHERE o.job_id=j.id AND j.id=$1 AND o.provider='runpod'
+		AND j.status='Running' AND j.current_attempt_id=$2 AND j.lease_token_hash=$3
+		AND j.lease_expires_at>$4 AND j.worker_id=$5`, c.JobID, c.AttemptID, leaseHash(c.LeaseToken), c.Now, worker,
+		provider.ID, provider.ExecutionMS, provider.QueueMS, provider.GPUClass)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return job.ErrLeaseLost
+	}
+	return nil
+}
+
 func (s *Store) CompleteOCR(ctx context.Context, c job.LeaseCommand, worker string, result ocr.Result, key, sha string, size int64) (string, error) {
 	in, err := s.OCRInput(ctx, c, worker)
 	if err != nil {
@@ -71,7 +93,13 @@ func (s *Store) CompleteOCR(ctx context.Context, c job.LeaseCommand, worker stri
 	if err != nil {
 		return "", err
 	}
-	_, err = tx.Exec(ctx, `UPDATE document_ocr_runs SET object_key=$2,result_sha256=$3,result_bytes=$4,page_count=$5,published_at=$6 WHERE job_id=$1`, c.JobID, key, sha, size, len(result.Pages), c.Now)
+	query := `UPDATE document_ocr_runs SET object_key=$2,result_sha256=$3,result_bytes=$4,page_count=$5,published_at=$6 WHERE job_id=$1`
+	args := []any{c.JobID, key, sha, size, len(result.Pages), c.Now}
+	if s.requireMigration19 {
+		query = `UPDATE document_ocr_runs SET object_key=$2,result_sha256=$3,result_bytes=$4,page_count=$5,published_at=$6,processing_ms=$7 WHERE job_id=$1`
+		args = append(args, result.DurationMS)
+	}
+	_, err = tx.Exec(ctx, query, args...)
 	if err != nil {
 		return "", err
 	}
@@ -122,7 +150,7 @@ func (s *Store) RetryOCR(ctx context.Context, user, org, doc string, now time.Ti
 	if err != nil || status == "Trash" || status == "Purged" {
 		return ocr.State{}, tenant.ErrNotFound
 	}
-	if err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM ocr_settings WHERE singleton AND enabled`).Scan(&model, &pre); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM document_ocr_model($1)`, org).Scan(&model, &pre); err != nil {
 		return ocr.State{}, tenant.ErrForbidden
 	}
 	fp := doc + ":" + sha + ":" + model + ":" + pre
@@ -169,7 +197,7 @@ func (s *Store) ReprocessOCR(ctx context.Context, user, org, doc, expectedOCR st
 	if err != nil || status != "Available" && status != "Archived" {
 		return ocr.State{}, tenant.ErrNotFound
 	}
-	err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM ocr_settings WHERE singleton AND enabled`).Scan(&model, &pre)
+	err = tx.QueryRow(ctx, `SELECT model_version,preprocessing_version FROM document_ocr_model($1)`, org).Scan(&model, &pre)
 	if err != nil {
 		return ocr.State{}, tenant.ErrForbidden
 	}

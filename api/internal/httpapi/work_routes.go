@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -373,19 +374,15 @@ func (s *server) exportTasks(w http.ResponseWriter, r *http.Request) {
 	if format == "xlsx" {
 		contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	}
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", `attachment; filename="tasks-`+s.config.Now().UTC().Format("20060102")+`-`+request.ID+`.`+format+`"`)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "private, no-store")
-	counter := &countingWriter{ResponseWriter: w}
+	output := &boundedExportBuffer{}
 	var exportWriter interface {
 		Write(work.ExportRow) error
 		Close() error
 	}
 	if format == "xlsx" {
-		exportWriter, err = work.NewXLSXWriter(counter)
+		exportWriter, err = work.NewXLSXWriter(output)
 	} else {
-		exportWriter, err = work.NewCSVWriter(counter)
+		exportWriter, err = work.NewCSVWriter(output)
 	}
 	if err == nil {
 		err = s.config.Work.ExportRows(r.Context(), session.UserID, membership.OrganizationID, filter, exportWriter.Write)
@@ -396,10 +393,16 @@ func (s *server) exportTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		_ = s.config.Work.AuditExport(r.Context(), request, "failed", count, counter.bytes, "stream_failed")
+		_ = s.config.Work.AuditExport(r.Context(), request, "failed", count, int64(output.Len()), "stream_failed")
+		writeError(w, r, http.StatusServiceUnavailable, "export_failed", "Export is unavailable")
 		return
 	}
-	_ = s.config.Work.AuditExport(r.Context(), request, "completed", count, counter.bytes, "")
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="tasks-`+s.config.Now().UTC().Format("20060102")+`-`+request.ID+`.`+format+`"`)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, no-store")
+	_, _ = w.Write(output.Bytes())
+	_ = s.config.Work.AuditExport(r.Context(), request, "completed", count, int64(output.Len()), "")
 	_ = s.config.Gate.Record(r.Context(), membership.OrganizationID, work.ExportTasks, count, request.ID)
 }
 
@@ -432,15 +435,13 @@ func (s *server) listExports(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, page)
 }
 
-type countingWriter struct {
-	http.ResponseWriter
-	bytes int64
-}
+type boundedExportBuffer struct{ bytes.Buffer }
 
-func (w *countingWriter) Write(value []byte) (int, error) {
-	n, err := w.ResponseWriter.Write(value)
-	w.bytes += int64(n)
-	return n, err
+func (b *boundedExportBuffer) Write(value []byte) (int, error) {
+	if len(value) > 128<<20-b.Len() {
+		return 0, errors.New("export exceeds 128 MiB")
+	}
+	return b.Buffer.Write(value)
 }
 
 func csvWriterClose(w *work.CSVWriter) error {

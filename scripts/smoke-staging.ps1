@@ -35,7 +35,7 @@ $catalog = Invoke-RestMethod "$ApiUrl/v1/plans"
 $catalogTimer.Stop()
 $starter = $catalog.plans | Where-Object key -eq 'Starter'
 $business = $catalog.plans | Where-Object key -eq 'Business'
-if ($catalog.billing_enabled -ne $false -or $starter.prices.six_months.total_satang -ne 109848 -or $business.entitlements.'business_contacts.export.drive' -ne $true) { throw 'Authoritative Plan catalog failed' }
+if ($catalog.billing_enabled -ne $false -or $starter.prices.six_months.total_satang -ne 85500 -or $business.entitlements.'business_contacts.export.drive' -ne $true) { throw 'Authoritative Plan catalog failed' }
 if ($catalogTimer.ElapsedMilliseconds -gt 5000) { throw 'Plan catalog response exceeded 5 seconds' }
 $requestID = 'smoke-' + [guid]::NewGuid().ToString('N')
 $baselineResponse = Invoke-WebRequest "$ApiUrl/v1/dashboard" -UseBasicParsing -Headers @{ Authorization = "Bearer $DashboardToken"; 'X-Request-ID' = $requestID }
@@ -64,6 +64,6 @@ if ($web.StatusCode -ne 200 -or $web.Content -notmatch 'PlaiFlow') { throw 'Web 
 $pricingTimer = [Diagnostics.Stopwatch]::StartNew()
 $pricing = Invoke-WebSmokeRequest '/pricing?interval=six_months'
 $pricingTimer.Stop()
-if ($pricing.StatusCode -ne 200 -or $pricing.Content -notmatch 'Starter' -or $pricing.Content -notmatch '1,098.48') { throw 'Pricing presentation failed' }
+if ($pricing.StatusCode -ne 200 -or $pricing.Content -notmatch 'Starter' -or $pricing.Content -notmatch '855.00') { throw 'Pricing presentation failed' }
 if ($pricingTimer.ElapsedMilliseconds -gt 10000) { throw 'Pricing response exceeded 10 seconds' }
 [pscustomobject]@{ webhook_ms = $timer.ElapsedMilliseconds; catalog_ms = $catalogTimer.ElapsedMilliseconds; pricing_ms = $pricingTimer.ElapsedMilliseconds; api = $snapshot.api; database = $snapshot.database; worker = $snapshot.worker }

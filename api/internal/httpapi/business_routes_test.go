@@ -58,7 +58,7 @@ func TestPlansAndVendorRoutesUseServerAuthority(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "https://app.example/v1/plans", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "six_months") || !strings.Contains(response.Body.String(), "109848") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "six_months") || !strings.Contains(response.Body.String(), "85500") {
 		t.Fatalf("catalog status=%d body=%s", response.Code, response.Body.String())
 	}
 

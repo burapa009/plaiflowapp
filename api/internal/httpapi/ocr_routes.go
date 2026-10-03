@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/tenant"
@@ -20,6 +23,7 @@ import (
 func (s *server) registerOCRRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /internal/v1/ocr/jobs/claim", s.claimOCR)
 	m.HandleFunc("POST /internal/v1/ocr/jobs/{job}/heartbeat", s.heartbeatOCR)
+	m.HandleFunc("POST /internal/v1/ocr/jobs/{job}/provider", s.providerOCR)
 	m.HandleFunc("POST /internal/v1/ocr/jobs/{job}/fail", s.failOCR)
 	m.HandleFunc("GET /internal/v1/ocr/jobs/{job}/input", s.inputOCR)
 	m.HandleFunc("GET /internal/v1/ocr/jobs/{job}/original", s.originalOCR)
@@ -27,6 +31,31 @@ func (s *server) registerOCRRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/ocr", s.stateOCR)
 	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/ocr/retry", s.retryOCR)
 	m.HandleFunc("GET /v1/ocr-results/{document}", s.retrieveOCR)
+}
+func (s *server) providerOCR(w http.ResponseWriter, r *http.Request) {
+	_, id, ok := s.ocrInputFor(w, r, "heartbeat")
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	var input struct {
+		ID          string `json:"provider_job_id"`
+		ExecutionMS int64  `json:"execution_ms"`
+		QueueMS     int64  `json:"queue_ms"`
+		GPUClass    string `json:"gpu_class"`
+	}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if dec.Decode(&input) != nil || input.ID == "" || len(input.ID) > 128 || input.ExecutionMS < 0 || input.QueueMS < 0 || len(input.GPUClass) > 100 {
+		writeError(w, r, 400, "invalid_provider_job", "Invalid provider job")
+		return
+	}
+	if err := s.config.OCR.RecordProviderJob(r.Context(), s.leaseCommand(r), id.WorkerID,
+		ocr.ProviderJob{ID: input.ID, ExecutionMS: input.ExecutionMS, QueueMS: input.QueueMS, GPUClass: input.GPUClass}); err != nil {
+		s.writeJobError(w, r, err)
+		return
+	}
+	w.WriteHeader(204)
 }
 func (s *server) authorizeOCR(w http.ResponseWriter, r *http.Request, scope string) (job.WorkerIdentity, bool) {
 	id, err := s.config.OCRAuth.Verify(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), "ocr:"+scope, s.config.Now())
@@ -42,14 +71,31 @@ func (s *server) claimOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
-	var input struct{}
+	var input struct {
+		Provider string `json:"provider"`
+		JobID    string `json:"job_id"`
+	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	if dec.Decode(&input) != nil {
-		writeError(w, r, 400, "invalid_claim", "Expected empty claim body")
+	if dec.Decode(&input) != nil || input.Provider != "" && input.Provider != "railway" && input.Provider != "runpod" {
+		writeError(w, r, 400, "invalid_claim", "Invalid OCR provider")
 		return
 	}
-	jobs, err := s.config.OCRJobs.ClaimJobs(r.Context(), job.ClaimCommand{WorkerID: id.WorkerID, Environment: id.Environment, Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: s.config.Now()})
+	if input.Provider == "" {
+		input.Provider = "railway"
+	}
+	if input.JobID != "" {
+		var id pgtype.UUID
+		if len(input.JobID) != 36 || id.Scan(input.JobID) != nil {
+			writeError(w, r, 400, "invalid_claim", "Invalid OCR job ID")
+			return
+		}
+	}
+	orgs := make([]string, 0, len(s.config.OCRRunPodOrganizations))
+	for organizationID := range s.config.OCRRunPodOrganizations {
+		orgs = append(orgs, organizationID)
+	}
+	jobs, err := s.config.OCRJobs.ClaimJobs(r.Context(), job.ClaimCommand{WorkerID: id.WorkerID, Environment: id.Environment, Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: s.config.Now(), OCRProvider: input.Provider, OCRDefaultProvider: s.config.OCRDefaultProvider, OCRRunPodOrganizations: orgs, OCRJobID: input.JobID})
 	if err != nil {
 		s.writeJobError(w, r, err)
 		return
@@ -177,6 +223,23 @@ func (s *server) submitOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keep = saved == key
+	if keep && s.classificationAllowed(in.OrganizationID) && s.config.Classification != nil {
+		started := time.Now()
+		llmCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		prediction, llmUsed, classifyErr := classification.Hybrid(llmCtx, classification.Normalize(in.DocumentID, result),
+			s.config.Classifier, s.config.ClassificationRuleThreshold, s.config.ClassificationReviewThreshold)
+		cancel()
+		if classifyErr != nil {
+			s.config.Logger.Warn("classification_fallback", "document_id", in.DocumentID, "error", classifyErr)
+		}
+		if err = s.config.Classification.SaveClassification(r.Context(), in.OrganizationID, in.DocumentID, r.PathValue("job"), prediction); err != nil {
+			s.config.Logger.Error("classification_save_failed", "document_id", in.DocumentID, "error", err)
+		}
+		s.config.Logger.Info("document_classified", "document_id", in.DocumentID, "ocr_duration_ms", result.DurationMS,
+			"classification_duration_ms", time.Since(started).Milliseconds(), "classification_method", prediction.Method,
+			"document_type", prediction.DocumentType, "confidence", prediction.Confidence, "llm_used", llmUsed,
+			"classifier_model", prediction.ClassifierVersion, "requires_review", prediction.RequiresReview)
+	}
 	writeJSON(w, 200, map[string]string{"status": "Completed"})
 }
 func (s *server) stateOCR(w http.ResponseWriter, r *http.Request) {
@@ -190,6 +253,16 @@ func (s *server) stateOCR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	url := ""
+	processingStatus := map[string]string{"NotScheduled": "uploaded", "Queued": "uploaded", "Running": "ocr_processing", "Completed": "ocr_completed", "Failed": "failed", "Cancelled": "failed"}[state.Status]
+	if state.Status == "Completed" && s.classificationAllowed(m.OrganizationID) && s.config.Classification != nil {
+		processingStatus = "classifying"
+		if record, classErr := s.config.Classification.GetClassification(r.Context(), session.UserID, m.OrganizationID, r.PathValue("document")); classErr == nil && record.EffectiveType != "" {
+			processingStatus = "ready"
+			if record.RequiresReview {
+				processingStatus = "review_required"
+			}
+		}
+	}
 	if state.Status == "Completed" && state.ObjectKey != "" {
 		token, e := s.config.OCRTokens.SignTTL(r.PathValue("document"), m.OrganizationID, session.UserID, s.config.Now(), 5*time.Minute)
 		if e != nil {
@@ -199,7 +272,7 @@ func (s *server) stateOCR(w http.ResponseWriter, r *http.Request) {
 		url = "/v1/ocr-results/" + r.PathValue("document") + "?token=" + token
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
-	writeJSON(w, 200, map[string]any{"ocr": state, "download_url": url})
+	writeJSON(w, 200, map[string]any{"ocr": state, "download_url": url, "processing_status": processingStatus})
 }
 func (s *server) retryOCR(w http.ResponseWriter, r *http.Request) {
 	session, m, ok := s.workContext(w, r, true)

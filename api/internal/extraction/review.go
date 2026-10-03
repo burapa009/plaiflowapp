@@ -18,6 +18,8 @@ type Review struct {
 	RequestID      string            `json:"-"`
 	DocumentType   string            `json:"document_type"`
 	Values         map[string]string `json:"values"`
+	Decisions      map[string]string `json:"decisions,omitempty"`
+	OriginalValues map[string]string `json:"original_values,omitempty"`
 	ConfirmedBy    string            `json:"confirmed_by"`
 	ConfirmedAt    time.Time         `json:"confirmed_at"`
 	ObjectKey      string            `json:"-"`
@@ -84,4 +86,29 @@ type Store interface {
 	AssignReviewTasks(context.Context, string, string, string, []Assignment, string, time.Time) ([]string, error)
 	ReturnReview(context.Context, ReturnInput) (int, error)
 	CurrentReturn(context.Context, string, string, string) (ReturnNotice, error)
+}
+
+// ValidateDecisions binds each human decision to its submitted value and OCR proposal.
+// Empty values require an explicit unknown decision; OCR never verifies itself.
+func ValidateDecisions(draft Draft, values, decisions map[string]string) error {
+	for _, key := range Keys {
+		value, decision := values[key], decisions[key]
+		switch decision {
+		case "unknown":
+			if value != "" {
+				return errors.New("unknown field has a value: " + key)
+			}
+		case "accepted":
+			if value == "" || value != draft.Fields[key].Normalized {
+				return errors.New("accepted field differs from proposal: " + key)
+			}
+		case "corrected":
+			if value == "" {
+				return errors.New("corrected field is empty: " + key)
+			}
+		default:
+			return errors.New("missing or invalid field decision: " + key)
+		}
+	}
+	return nil
 }

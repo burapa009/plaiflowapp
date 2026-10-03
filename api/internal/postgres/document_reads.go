@@ -327,6 +327,25 @@ func (s *Store) DocumentDetail(ctx context.Context, userID, organizationID, docu
 	if detail.Sources == nil {
 		detail.Sources = []document.Source{}
 	}
+	rows, err = tx.Query(ctx, `SELECT d.id,d.organization_id,d.display_filename,d.detected_mime,d.byte_size,d.status,d.accepted_at
+	    FROM document_attachments a JOIN documents d ON d.organization_id=a.organization_id AND d.id=a.document_id
+	    WHERE a.organization_id=$1 AND a.parent_document_id=$2 AND d.status IN ('Available','Archived')
+	    ORDER BY a.attached_at,a.document_id`, organizationID, documentID)
+	if err != nil {
+		return document.Detail{}, err
+	}
+	detail.Attachments, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (document.Document, error) {
+		var attached document.Document
+		err := row.Scan(&attached.ID, &attached.OrganizationID, &attached.Filename, &attached.MIME,
+			&attached.Size, &attached.Status, &attached.AcceptedAt)
+		return attached, err
+	})
+	if err != nil {
+		return document.Detail{}, err
+	}
+	if detail.Attachments == nil {
+		detail.Attachments = []document.Document{}
+	}
 	return detail, tx.Commit(ctx)
 }
 

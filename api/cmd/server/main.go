@@ -2,14 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"plaiflow/api/internal/auth"
+	"plaiflow/api/internal/billing"
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/config"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/drive"
@@ -25,6 +31,43 @@ func main() {
 	if err != nil {
 		logger.Error("configuration_invalid")
 		os.Exit(1)
+	}
+	provider := os.Getenv("OCR_PROVIDER")
+	if provider != "" && provider != "railway" && provider != "runpod" {
+		logger.Error("ocr_provider_invalid")
+		os.Exit(1)
+	}
+	autoMatch, reviewMatch, err := matchingThresholds()
+	if err != nil {
+		logger.Error("matching_thresholds_invalid")
+		os.Exit(1)
+	}
+	classifierEnabled := os.Getenv("DOCUMENT_CLASSIFIER_ENABLED") == "true"
+	classifierAuto, classifierReview := .9, .7
+	if value := os.Getenv("DOCUMENT_CLASSIFIER_RULE_THRESHOLD"); value != "" {
+		classifierAuto, err = strconv.ParseFloat(value, 64)
+	}
+	if err == nil {
+		if value := os.Getenv("DOCUMENT_CLASSIFIER_REVIEW_THRESHOLD"); value != "" {
+			classifierReview, err = strconv.ParseFloat(value, 64)
+		}
+	}
+	if err != nil || classifierReview <= 0 || classifierReview >= classifierAuto || classifierAuto > 1 {
+		logger.Error("document_classifier_thresholds_invalid")
+		os.Exit(1)
+	}
+	var llmClassifier classification.DocumentClassifier
+	if classifierEnabled && os.Getenv("DOCUMENT_CLASSIFIER_URL") != "" {
+		if os.Getenv("DOCUMENT_CLASSIFIER_PROVIDER") != "runpod" {
+			logger.Error("document_classifier_provider_invalid")
+			os.Exit(1)
+		}
+		endpoint, parseErr := url.Parse(os.Getenv("DOCUMENT_CLASSIFIER_URL"))
+		if parseErr != nil || endpoint.Host == "" || endpoint.Scheme != "https" && !(endpoint.Scheme == "http" && (endpoint.Hostname() == "localhost" || endpoint.Hostname() == "127.0.0.1")) || os.Getenv("DOCUMENT_CLASSIFIER_MODEL") == "" {
+			logger.Error("document_classifier_endpoint_invalid")
+			os.Exit(1)
+		}
+		llmClassifier = classification.HTTPClassifier{URL: os.Getenv("DOCUMENT_CLASSIFIER_URL"), Model: os.Getenv("DOCUMENT_CLASSIFIER_MODEL"), Token: os.Getenv("DOCUMENT_CLASSIFIER_API_KEY"), Client: &http.Client{Timeout: 5 * time.Second}}
 	}
 	if settings.SkipDocumentScan {
 		logger.Warn("document_scan_bypassed")
@@ -50,6 +93,36 @@ func main() {
 	defer store.Close()
 	if os.Getenv("REVIEW_ENABLED") == "true" {
 		store.EnableReview()
+	}
+	if classifierEnabled {
+		store.EnableClassification()
+	}
+	matchingEnabled := os.Getenv("MATCHING_ENABLED") == "true"
+	if matchingEnabled {
+		store.EnableMatching()
+	}
+	runPodOrganizations := secretaryPilotOrganizations(os.Getenv("OCR_RUNPOD_ENABLED_ORGS"))
+	if provider == "runpod" || len(runPodOrganizations) > 0 {
+		store.RequireMigration19()
+	}
+	billingEnabled := os.Getenv("BILLING_ENABLED") == "true"
+	var billingService *billing.Service
+	if billingEnabled {
+		secretKey, webhookSecret := os.Getenv("OMISE_SECRET_KEY"), os.Getenv("OMISE_WEBHOOK_SECRET")
+		previousSecret := os.Getenv("OMISE_WEBHOOK_PREVIOUS_SECRET")
+		decodedSecret, decodeErr := base64.StdEncoding.DecodeString(webhookSecret)
+		decodedPrevious, previousErr := base64.StdEncoding.DecodeString(previousSecret)
+		validKey := (settings.Environment == "production" && strings.HasPrefix(secretKey, "skey_live_")) ||
+			(settings.Environment != "production" && strings.HasPrefix(secretKey, "skey_test_"))
+		if !validKey || decodeErr != nil || len(decodedSecret) < 16 ||
+			(previousSecret != "" && (previousErr != nil || len(decodedPrevious) < 16 || previousSecret == webhookSecret)) {
+			logger.Error("billing_configuration_invalid")
+			os.Exit(1)
+		}
+		store.EnableBilling()
+		billingService = &billing.Service{Store: store, Provider: billing.Omise{SecretKey: secretKey},
+			Live: settings.Environment == "production", Now: time.Now, Logger: logger}
+		go runBilling(ctx, *billingService, logger)
 	}
 	authService, err := auth.NewService(auth.ServiceConfig{WebOrigin: settings.WebBaseURL, Providers: []auth.Provider{
 		auth.NewLINEProvider(auth.ProviderConfig{ClientID: settings.LineLoginChannel, ClientSecret: settings.LineLoginSecret, RedirectURI: lineCallback}),
@@ -126,7 +199,7 @@ func main() {
 	}
 	var artifactTokens *job.ArtifactToken
 	if len(settings.JobWorkerAuthKey) > 0 {
-		workerAuth, err = job.NewWorkerAuth(settings.JobWorkerAuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:artifact", "jobs:fail"})
+		workerAuth, err = job.NewWorkerAuth(settings.JobWorkerAuthKey, settings.Environment, []string{"jobs:claim", "jobs:heartbeat", "jobs:read", "jobs:generate", "jobs:artifact", "jobs:fail"})
 		if err != nil {
 			logger.Error("job_worker_auth_initialization_failed")
 			os.Exit(1)
@@ -145,8 +218,16 @@ func main() {
 			Gate: plan.Gate{Store: store}, Drive: driveService, Documents: documentService,
 			Jobs: store, JobWorkerAuth: workerAuth, JobArtifacts: artifactStore, ArtifactTokens: artifactTokens,
 			OCR: store, OCRJobs: store, OCRAuth: ocrAuth, OCRTokens: ocrTokens, OCRStorage: documentService.Intake.Temporary,
-			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
+			Extraction: store, ExtractionEnabled: os.Getenv("EXTRACTION_ENABLED") == "true", OCRPilotOrganizations: secretaryPilotOrganizations(os.Getenv("OCR_PILOT_ORGANIZATION_IDS")), ReviewEnabled: os.Getenv("REVIEW_ENABLED") == "true",
+			Classification: store, ClassificationEnabled: classifierEnabled, ClassificationOrganizations: secretaryPilotOrganizations(os.Getenv("DOCUMENT_CLASSIFIER_ORGANIZATION_IDS")), ClassificationRuleThreshold: classifierAuto, ClassificationReviewThreshold: classifierReview, Classifier: llmClassifier,
+			OCRDefaultProvider: provider, OCRRunPodOrganizations: runPodOrganizations,
+			Matching: store, MatchingEnabled: matchingEnabled, AutoMatchThreshold: autoMatch, ReviewMatchThreshold: reviewMatch,
 			Accounting: store, AccountingEnabled: os.Getenv("ACCOUNTING_ENABLED") == "true", ReviewExports: store,
+			Firm: store, FirmEnabled: os.Getenv("FIRM_ENABLED") == "true",
+			Secretary: store, SecretaryEnabled: os.Getenv("SECRETARY_ENABLED") == "true",
+			SecretaryPilotOrganizations: secretaryPilotOrganizations(os.Getenv("SECRETARY_PILOT_ORGANIZATION_IDS")),
+			Billing:                     billingService, BillingEnabled: billingEnabled, BillingTestOrganizationID: os.Getenv("BILLING_TEST_ORGANIZATION_ID"),
+			OmiseWebhookSecret: os.Getenv("OMISE_WEBHOOK_SECRET"), OmiseWebhookPreviousSecret: os.Getenv("OMISE_WEBHOOK_PREVIOUS_SECRET"),
 		}, store),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 	}
@@ -161,4 +242,69 @@ func main() {
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = server.Shutdown(shutdown)
+}
+
+func runBilling(ctx context.Context, service billing.Service, logger *slog.Logger) {
+	events := time.NewTicker(5 * time.Second)
+	reconcile := time.NewTicker(15 * time.Minute)
+	defer events.Stop()
+	defer reconcile.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-events.C:
+			work, cancel := context.WithTimeout(ctx, 20*time.Second)
+			count, err := service.ProcessDue(work)
+			cancel()
+			if err != nil {
+				logger.Warn("billing_event_processing_unavailable")
+			} else if count > 0 {
+				logger.Info("billing_events_processed", "count", count)
+			}
+		case <-reconcile.C:
+			work, cancel := context.WithTimeout(ctx, 30*time.Second)
+			count, err := service.ReconcilePending(work)
+			cancel()
+			if err != nil {
+				logger.Warn("billing_reconciliation_unavailable", "checked", count)
+			} else {
+				logger.Info("billing_reconciliation", "checked", count)
+			}
+			if count == 100 {
+				logger.Warn("billing_reconciliation_capacity", "checked", count)
+			}
+		}
+	}
+}
+
+func secretaryPilotOrganizations(value string) map[string]bool {
+	organizations := map[string]bool{}
+	for _, id := range strings.Split(value, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			organizations[id] = true
+		}
+	}
+	return organizations
+}
+
+func matchingThresholds() (float64, float64, error) {
+	parse := func(name string, fallback float64) (float64, error) {
+		if os.Getenv(name) == "" {
+			return fallback, nil
+		}
+		return strconv.ParseFloat(os.Getenv(name), 64)
+	}
+	auto, err := parse("OCR_AUTO_MATCH_THRESHOLD", .9)
+	if err != nil {
+		return 0, 0, err
+	}
+	review, err := parse("OCR_REVIEW_THRESHOLD", .7)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !(review > 0 && review < auto && auto <= 1) {
+		return 0, 0, strconv.ErrRange
+	}
+	return auto, review, nil
 }

@@ -16,8 +16,9 @@ var ErrLeaseLost = errors.New("job lease is no longer current")
 type Kind string
 
 const (
-	Export Kind = "export"
-	OCR    Kind = "ocr"
+	Export    Kind = "export"
+	OCR       Kind = "ocr"
+	Secretary Kind = "secretary"
 )
 
 type Status string
@@ -45,12 +46,16 @@ type Job struct {
 }
 
 type ClaimCommand struct {
-	WorkerID    string
-	Environment string
-	Kinds       []Kind
-	Limit       int
-	Lease       time.Duration
-	Now         time.Time
+	WorkerID               string
+	Environment            string
+	Kinds                  []Kind
+	Limit                  int
+	Lease                  time.Duration
+	Now                    time.Time
+	OCRProvider            string
+	OCRDefaultProvider     string
+	OCRRunPodOrganizations []string
+	OCRJobID               string
 }
 
 type Claimed struct {

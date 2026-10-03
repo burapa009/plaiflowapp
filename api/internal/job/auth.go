@@ -96,7 +96,11 @@ func (a *WorkerAuth) Verify(token, requiredScope string, now time.Time) (WorkerI
 		return WorkerIdentity{}, ErrUnauthorized
 	}
 	var claims workerClaims
-	if json.Unmarshal(payload, &claims) != nil || claims.WorkerID == "" || len(claims.Nonce) != 32 || claims.Environment != a.environment || claims.IssuedAt > now.UTC().Add(time.Minute).Unix() || claims.ExpiresAt <= now.UTC().Unix() || claims.ExpiresAt-claims.IssuedAt > int64((5*time.Minute).Seconds()) {
+	maxTTL := 5 * time.Minute
+	if requiredScope == "ocr:input" {
+		maxTTL = 15 * time.Minute // Lease validation still gates each source read.
+	}
+	if json.Unmarshal(payload, &claims) != nil || claims.WorkerID == "" || len(claims.Nonce) != 32 || claims.Environment != a.environment || claims.IssuedAt > now.UTC().Add(time.Minute).Unix() || claims.ExpiresAt <= now.UTC().Unix() || claims.ExpiresAt-claims.IssuedAt > int64(maxTTL.Seconds()) {
 		return WorkerIdentity{}, ErrUnauthorized
 	}
 	for _, scope := range claims.Scopes {

@@ -14,10 +14,70 @@ import (
 	"time"
 
 	"plaiflow/api/internal/extraction"
+	"plaiflow/api/internal/matching"
 	"plaiflow/api/internal/ocr"
 )
 
 type extractionOCR struct{ ocr.Store }
+
+type matchingStoreDouble struct {
+	matching.Store
+	organizations []string
+}
+
+func (s *matchingStoreDouble) FindMatchCandidates(_ context.Context, _, org string, _ matching.Facts) ([]matching.Facts, error) {
+	s.organizations = append(s.organizations, org)
+	return []matching.Facts{}, nil
+}
+
+func TestMatchingRouteRejectsOtherOrganizationBeforeQuery(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	authService, _ := newTestAuth(now)
+	sample, _ := json.Marshal(ocr.Result{SchemaVersion: 1, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{{Text: "Receipt", Confidence: .98}}}}})
+	matcher := &matchingStoreDouble{}
+	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{},
+		OCRStorage: &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}},
+		Extraction: &extractionStore{}, ExtractionEnabled: true, Matching: matcher, MatchingEnabled: true,
+		OCRPilotOrganizations: map[string]bool{"*": true}, Now: func() time.Time { return now }}, &fakeStore{})
+	for _, tc := range []struct {
+		org    string
+		status int
+		calls  int
+	}{{"org-1", 200, 1}, {"org-2", 404, 1}} {
+		req := httptest.NewRequest(http.MethodGet, "https://app.example/v1/o/"+tc.org+"/documents/doc-1/matches", nil)
+		req.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != tc.status || len(matcher.organizations) != tc.calls {
+			t.Fatalf("org=%s status=%d calls=%v", tc.org, response.Code, matcher.organizations)
+		}
+	}
+}
+
+func TestOCRPilotDeniesUnlistedOrganization(t *testing.T) {
+	s := &server{config: Config{OCRPilotOrganizations: map[string]bool{"pilot": true}}}
+	handler := s.ocrPilot(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	request := httptest.NewRequest(http.MethodGet, "/v1/o/other/documents/doc/extraction", nil)
+	request.SetPathValue("organization", "other")
+	response := httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unlisted organization status=%d", response.Code)
+	}
+	request.SetPathValue("organization", "pilot")
+	response = httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("pilot organization status=%d", response.Code)
+	}
+	s.config.OCRPilotOrganizations = map[string]bool{"*": true}
+	request.SetPathValue("organization", "other")
+	response = httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("all-organization rollout status=%d", response.Code)
+	}
+}
 
 func (extractionOCR) OCRState(context.Context, string, string, string) (ocr.State, error) {
 	return ocr.State{JobID: "ocr-1", Status: "Completed", ObjectKey: "ocr/result.json"}, nil
@@ -68,7 +128,7 @@ func TestReviewerCanSaveDraftWithoutConfirmingAndStaleSaveConflicts(t *testing.T
 	blobs := &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}}
 	store := &extractionStore{}
 	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{}, OCRStorage: blobs,
-		Extraction: store, ExtractionEnabled: true, ReviewEnabled: true, Now: func() time.Time { return now }}, &fakeStore{})
+		Extraction: store, ExtractionEnabled: true, OCRPilotOrganizations: map[string]bool{"org-1": true}, ReviewEnabled: true, Now: func() time.Time { return now }}, &fakeStore{})
 	base := "https://app.example/v1/o/org-1/documents/doc-1/extraction"
 	form := url.Values{"csrf_token": {"csrf"}, "ocr_job_id": {"ocr-1"}, "expected_draft_revision": {"0"},
 		"document_number": {"INV-42"}, "document_number_decision": {"corrected"}}
@@ -122,7 +182,7 @@ func TestThaiTaxInvoiceCanBeReviewedAndExportedAsOneStructuredRow(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	sample, _ := json.Marshal(ocr.Result{SchemaVersion: 1, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+	sample, _ := json.Marshal(ocr.Result{SchemaVersion: 2, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
 		{Text: "ใบกำกับภาษี", Confidence: .99}, {Text: "เลขที่ INV-42", Confidence: .98},
 		{Text: "วันที่ 23/09/2569", Confidence: .97}, {Text: "ผู้ขาย: บริษัท ตัวอย่าง จำกัด", Confidence: .95},
 		{Text: "เลขประจำตัวผู้เสียภาษี 0123456789012", Confidence: .92},
@@ -132,7 +192,7 @@ func TestThaiTaxInvoiceCanBeReviewedAndExportedAsOneStructuredRow(t *testing.T) 
 	blobs := &extractionBlobs{objects: map[string][]byte{"ocr/result.json": sample}}
 	store := &extractionStore{}
 	handler := New(Config{Auth: authService, Tenants: &tenantStore{allowed: "org-1"}, OCR: extractionOCR{}, OCRStorage: blobs,
-		Extraction: store, ExtractionEnabled: true, Now: func() time.Time { return now }}, &fakeStore{})
+		Extraction: store, ExtractionEnabled: true, OCRPilotOrganizations: map[string]bool{"org-1": true}, Now: func() time.Time { return now }}, &fakeStore{})
 	base := "https://app.example/v1/o/org-1/documents/doc-1/extraction"
 	request := httptest.NewRequest(http.MethodGet, base, nil)
 	request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})
@@ -140,6 +200,20 @@ func TestThaiTaxInvoiceCanBeReviewedAndExportedAsOneStructuredRow(t *testing.T) 
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"raw":"1,070.00"`) || !strings.Contains(response.Body.String(), `"normalized":"1070.00"`) {
 		t.Fatalf("draft status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Draft struct {
+			Accounting struct {
+				Summary struct {
+					Total *json.Number `json:"total_amount"`
+				} `json:"summary"`
+				RawText string `json:"raw_text"`
+			} `json:"accounting"`
+		} `json:"draft"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.Draft.Accounting.Summary.Total == nil ||
+		payload.Draft.Accounting.Summary.Total.String() != "1070.00" || !strings.Contains(payload.Draft.Accounting.RawText, "ยอดรวม 1,070.00") || response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("accounting JSON/evidence/cache contract failed: %v", err)
 	}
 	request = httptest.NewRequest(http.MethodGet, "https://app.example/v1/o/another-org/documents/doc-1/extraction", nil)
 	request.AddCookie(&http.Cookie{Name: "__Host-plaiflow-session", Value: "session"})

@@ -21,7 +21,7 @@ func (s *Store) SaveAttempt(ctx context.Context, attempt drive.Attempt) error {
 	if err != nil {
 		return err
 	}
-	if role != tenant.Owner {
+	if role != tenant.Owner && role != tenant.Admin {
 		return drive.ErrInvalidAttempt
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO drive_oauth_attempts
@@ -56,7 +56,7 @@ func (s *Store) SaveConnection(ctx context.Context, connection drive.Connection)
 	if err != nil {
 		return err
 	}
-	if role != tenant.Owner {
+	if role != tenant.Owner && role != tenant.Admin {
 		return drive.ErrInvalidAttempt
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO drive_connections
@@ -130,7 +130,7 @@ func (s *Store) Disconnect(ctx context.Context, actorUserID, organizationID stri
 	if err != nil {
 		return drive.Connection{}, err
 	}
-	if role != tenant.Owner {
+	if role != tenant.Owner && role != tenant.Admin {
 		return drive.Connection{}, tenant.ErrForbidden
 	}
 	var connection drive.Connection

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from plaiflow_ocr.worker import run_job
+from plaiflow_ocr.worker import MODEL_VERSION, PREPROCESSING_VERSION, run_job
 
 
 class Protocol:
@@ -29,7 +29,7 @@ class WorkerTest(unittest.TestCase):
         claim = {
             "job": {
                 "id": "job",
-                "payload": {"model_version": "v1", "preprocessing_version": "v1"},
+                "payload": {"model_version": MODEL_VERSION, "preprocessing_version": PREPROCESSING_VERSION},
             }
         }
 
@@ -61,7 +61,7 @@ class WorkerTest(unittest.TestCase):
             page["lines"][0]["polygon"],
             [[0.1, 0.1], [0.9, 0.1], [0.9, 0.2], [0.1, 0.2]],
         )
-        self.assertEqual(protocol.result["schema_version"], 1)
+        self.assertEqual(protocol.result["schema_version"], 2)
 
     def test_failed_inference_never_submits_partial_result(self):
         protocol = Protocol()
@@ -71,7 +71,7 @@ class WorkerTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaises(TimeoutError):
-                run_job(protocol, {"job": {"payload": {}}}, fail, Path(root))
+                run_job(protocol, {"job": {"payload": {"model_version": MODEL_VERSION, "preprocessing_version": PREPROCESSING_VERSION}}}, fail, Path(root))
             self.assertEqual(list(Path(root).iterdir()), [])
         self.assertIsNone(protocol.result)
 

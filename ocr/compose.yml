@@ -1,0 +1,20 @@
+services:
+  ocr:
+    build:
+      context: ..
+      dockerfile: ocr/Dockerfile
+    command: ["python", "-m", "plaiflow_ocr.api"]
+    environment:
+      OCR_SERVICE_TOKEN: ${OCR_SERVICE_TOKEN:-}
+      OCR_DEVICE: cpu
+      OCR_MIN_CONFIDENCE: ${OCR_MIN_CONFIDENCE:-0.30}
+      OCR_MAX_FILE_SIZE_MB: ${OCR_MAX_FILE_SIZE_MB:-20}
+      OCR_MAX_PDF_PAGES: ${OCR_MAX_PDF_PAGES:-50}
+      OCR_INCLUDE_RAW_RESULT: "false"
+    ports:
+      - "127.0.0.1:8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -109,6 +109,19 @@ func (s *server) listMemberships(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"memberships": memberships})
 }
 
+func (s *server) listPendingInvitations(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.authenticated(w, r)
+	if !ok {
+		return
+	}
+	invitations, err := s.config.Tenants.ListPendingInvitations(r.Context(), session.UserID, r.PathValue("organization"))
+	if err != nil {
+		writeTenantError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"invitations": invitations})
+}
+
 func (s *server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	session, ok := s.formMutation(w, r)
 	if !ok {

@@ -48,7 +48,7 @@ func (lineResolve) ResolveLINEDocument(context.Context, inbound.Event) (string, 
 type lineDownload struct{}
 
 func (lineDownload) Download(context.Context, string) (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader([]byte("%PDF-1.7"))), nil
+	return io.NopCloser(bytes.NewReader([]byte("%PDF-1.7\n%%EOF"))), nil
 }
 
 type expiredLineDownload struct{}

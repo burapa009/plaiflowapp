@@ -8,11 +8,13 @@ import threading
 import time
 
 from .engine import Engine
+from .client import ServiceClient
 from .protocol import Protocol
 from .worker import run_job
+from .runpod_client import RunPodClient
 
 
-def main():
+def main() -> None:
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -26,7 +28,10 @@ def main():
         ):
             shutil.rmtree(entry)
     protocol = Protocol()
-    engine = Engine()
+    provider = os.environ.get("OCR_PROVIDER", "railway")
+    if provider not in {"railway", "runpod"}:
+        raise ValueError("invalid_ocr_provider")
+    engine = RunPodClient() if provider == "runpod" else ServiceClient() if os.environ.get("OCR_SERVICE_URL") else Engine()
     engine.start()
     delay = 1
     try:
@@ -46,7 +51,13 @@ def main():
                             {
                                 "event": "ocr.completed",
                                 "job_id": claim["job"]["id"],
+                                "organization_id": claim["job"]["organization_id"],
+                                "document_id": claim["job"]["payload"]["document_id"],
                                 "peak_rss": engine.peak_rss,
+                                "provider": provider,
+                                "provider_job_id": getattr(engine, "provider_job_id", ""),
+                                "provider_execution_ms": getattr(engine, "provider_execution_ms", 0),
+                                "provider_queue_ms": getattr(engine, "provider_queue_ms", 0),
                                 **metrics,
                             }
                         ),
@@ -63,6 +74,8 @@ def main():
                             {
                                 "event": "ocr.failed",
                                 "job_id": claim["job"]["id"],
+                                "provider": provider,
+                                "provider_job_id": getattr(engine, "provider_job_id", ""),
                                 "code": code,
                             }
                         ),

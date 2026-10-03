@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 type OCRState = { ocr: { status: string; enabled: boolean; page_count: number; failure_code?: string }; download_url: string };
-type OCRResult = { pages: { page_number: number; text: string; lines: { confidence: number }[] }[] };
+type OCRResult = { schema_version: number; pages: { page_number: number; text: string; lines: { text: string; confidence: number; is_low_confidence?: boolean; bbox?: { x_min: number; y_min: number; x_max: number; y_max: number }; reading_order?: number }[] }[] };
 
 export default async function OCRPanel({ organization, document, unavailable }: { organization: string; document: string; unavailable: boolean }) {
   const path = `/o/${encodeURIComponent(organization)}/documents/${encodeURIComponent(document)}`;
@@ -33,6 +33,13 @@ export default async function OCRPanel({ organization, document, unavailable }: 
     {result?.pages.map(page => <article key={page.page_number} className="mt-4 border-t border-line pt-4">
       <h3>หน้า {page.page_number}</h3>
       <p className="whitespace-pre-wrap break-words">{page.text || "ไม่พบข้อความในหน้านี้"}</p>
+      {result.schema_version === 2 && page.lines.length > 0 && <details className="mt-3 rounded-xl border border-line p-3">
+        <summary className="cursor-pointer font-semibold">ดูตำแหน่งและความมั่นใจของข้อความ {page.lines.length} รายการ</summary>
+        <ol className="mt-3 grid gap-2 text-sm">{page.lines.map((line, index) => <li key={index} className="break-words border-t border-line pt-2">
+          <span className="font-semibold">{line.reading_order ?? index + 1}. {line.text}</span>
+          <span className="block text-muted">ความมั่นใจ {(line.confidence * 100).toFixed(1)}%{line.is_low_confidence ? " · ควรตรวจต้นฉบับ" : ""}{line.bbox ? ` · ตำแหน่ง (${line.bbox.x_min}, ${line.bbox.y_min})–(${line.bbox.x_max}, ${line.bbox.y_max})` : ""}</span>
+        </li>)}</ol>
+      </details>}
       <p className="text-sm text-muted">ข้อความจาก OCR อาจคลาดเคลื่อน โปรดตรวจเทียบต้นฉบับ</p>
     </article>)}
     {state.ocr.enabled && (role === "Owner" || role === "Admin") && !["Queued", "Running"].includes(state.ocr.status) &&

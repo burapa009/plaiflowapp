@@ -11,12 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"plaiflow/api/internal/document"
+	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
 )
 
 func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) (document.CommitResult, error) {
 	if (input.Channel != "Web" && input.Channel != "LINE" && input.Channel != "Drive") || (input.LINEGroup && input.Channel != "LINE") || input.Now.IsZero() || input.Size < 1 || input.Size > document.MaxFileBytes || (input.Channel == "Drive" && (input.DriveConnectionID == "" || input.DriveFileID == "" || input.DriveRevision == "" || input.DriveProviderMIME == "" || input.DriveSelectedAt.IsZero())) {
 		return document.CommitResult{}, errors.New("invalid prepared document")
+	}
+	if input.AttachToDocumentID != "" && (input.Channel != "Web" || !documentUUID.MatchString(input.AttachToDocumentID)) {
+		return document.CommitResult{}, errors.New("invalid attachment target")
 	}
 	digest, err := hex.DecodeString(input.SHA256)
 	if err != nil || len(digest) != 32 {
@@ -29,6 +33,21 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	defer tx.Rollback(ctx)
 	if _, err := membershipFor(ctx, tx, input.ActorUserID, input.OrganizationID); err != nil {
 		return document.CommitResult{}, tenant.ErrNotFound
+	}
+	if input.AttachToDocumentID != "" {
+		var parentID string
+		err := tx.QueryRow(ctx, `SELECT d.id FROM documents d WHERE d.organization_id=$1 AND d.id=$2
+		    AND d.status IN ('Available','Archived') AND (organization_role($3::uuid,$1::uuid) IN ('Owner','Admin')
+		    OR (d.submitted_by_user_id=$3::uuid AND NOT d.group_restricted) OR d.assignee_user_id=$3::uuid
+		    OR EXISTS (SELECT 1 FROM document_sources ds WHERE ds.organization_id=d.organization_id AND ds.document_id=d.id
+		        AND ds.submitted_by_user_id=$3::uuid AND NOT ds.group_source))`,
+			input.OrganizationID, input.AttachToDocumentID, input.ActorUserID).Scan(&parentID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return document.CommitResult{}, tenant.ErrNotFound
+		}
+		if err != nil {
+			return document.CommitResult{}, err
+		}
 	}
 	// A short transaction lock serializes unique-content and hard-quota decisions per Organization.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, input.OrganizationID); err != nil {
@@ -64,6 +83,12 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 		if !bytes.Equal(previousHash, digest) {
 			return document.CommitResult{}, document.ErrSourceConflict
 		}
+		if input.AttachToDocumentID != "" && previous.Status == "Trash" {
+			return document.CommitResult{}, document.ErrTrashed
+		}
+		if err := attachDocument(ctx, tx, input, previous.ID); err != nil {
+			return document.CommitResult{}, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return document.CommitResult{}, err
 		}
@@ -93,6 +118,9 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 				return document.CommitResult{}, err
 			}
 			return document.CommitResult{Document: document.Document{ID: existingID, OrganizationID: input.OrganizationID, Status: existingStatus}, Duplicate: true}, nil
+		}
+		if err := attachDocument(ctx, tx, input, existingID); err != nil {
+			return document.CommitResult{}, err
 		}
 		if err := tx.QueryRow(ctx, `SELECT id,organization_id,display_filename,detected_mime,byte_size,status,storage_key,accepted_at
 		    FROM documents WHERE organization_id=$1 AND id=$2`, input.OrganizationID, existingID).Scan(
@@ -156,6 +184,9 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	    VALUES ($1,$2,$3,$4)`, input.OrganizationID, id, periodStart, input.Now); err != nil {
 		return document.CommitResult{}, err
 	}
+	if err := attachDocument(ctx, tx, input, id); err != nil {
+		return document.CommitResult{}, err
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO document_intake_attempts
 	    (id,organization_id,actor_user_id,channel,origin_key,status,document_id,created_at,updated_at,expires_at)
 		    VALUES ($1,$2,$3,$4,$5,'Accepted',$6,$7,$7,$7::timestamptz+interval '90 days')
@@ -172,6 +203,26 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	}
 	return document.CommitResult{Document: document.Document{ID: id, OrganizationID: input.OrganizationID, Filename: input.Filename, MIME: input.MIME,
 		Size: input.Size, Status: "Available", StorageKey: input.TemporaryKey, AcceptedAt: input.Now}, Accepted: true}, nil
+}
+
+func attachDocument(ctx context.Context, tx pgx.Tx, input document.CommitInput, documentID string) error {
+	if input.AttachToDocumentID == "" {
+		return nil
+	}
+	if input.AttachToDocumentID == documentID {
+		return document.ErrStatusConflict
+	}
+	result, err := tx.Exec(ctx, `INSERT INTO document_attachments
+	    (organization_id,parent_document_id,document_id,attached_by_user_id,attached_at)
+	    VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+		input.OrganizationID, input.AttachToDocumentID, documentID, input.ActorUserID, input.Now)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() > 0 {
+		return auditTenant(ctx, tx, input.OrganizationID, input.ActorUserID, "document.attach", "document", documentID, input.Now)
+	}
+	return nil
 }
 
 func insertDocumentSource(ctx context.Context, tx pgx.Tx, input document.CommitInput, documentID string) error {
@@ -261,11 +312,8 @@ func documentLimit(ctx context.Context, tx pgx.Tx, organizationID string, now ti
 	if source == "trial" {
 		return 100, start, end, nil
 	}
-	if key == "Starter" {
-		return 300, time.Time{}, time.Time{}, nil
-	}
-	if key == "Business" {
-		return 1000, time.Time{}, time.Time{}, nil
+	if definition, ok := plan.Lookup(plan.Key(key)); ok {
+		return definition.Limits.DocumentsPerMonth, time.Time{}, time.Time{}, nil
 	}
 	return 0, time.Time{}, time.Time{}, errors.New("invalid document plan")
 }

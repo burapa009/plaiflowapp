@@ -1,12 +1,14 @@
 package extraction
 
 import (
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/ocr"
 )
 
@@ -14,9 +16,19 @@ const SchemaVersion = 1
 
 var Keys = []string{"document_number", "issue_date", "seller_name", "seller_tax_id", "seller_branch", "buyer_name", "buyer_tax_id", "currency", "subtotal", "vat_amount", "total_amount"}
 
+func SupportedCurrency(value string) bool {
+	switch value {
+	case "THB", "USD", "EUR", "GBP", "JPY", "CNY", "SGD", "MYR", "VND", "KRW", "AUD", "HKD", "TWD", "IDR", "PHP", "LAK":
+		return true
+	}
+	return false
+}
+
 type Evidence struct {
-	Page int `json:"page"`
-	Line int `json:"line"`
+	Page          int              `json:"page"`
+	Line          int              `json:"line"`
+	BBox          *ocr.BoundingBox `json:"bbox,omitempty"`
+	OCRConfidence float64          `json:"ocr_confidence,omitempty"`
 }
 
 type Field struct {
@@ -25,6 +37,7 @@ type Field struct {
 	Normalized string     `json:"normalized"`
 	Confidence string     `json:"confidence"`
 	Evidence   []Evidence `json:"evidence"`
+	Source     string     `json:"source,omitempty"`
 }
 
 type Warning struct {
@@ -34,10 +47,12 @@ type Warning struct {
 }
 
 type Draft struct {
-	SchemaVersion int              `json:"schema_version"`
-	DocumentType  string           `json:"document_type"`
-	Fields        map[string]Field `json:"fields"`
-	Warnings      []Warning        `json:"warnings"`
+	Accounting     *AccountingDocument    `json:"accounting,omitempty"`
+	Classification *classification.Record `json:"classification,omitempty"`
+	SchemaVersion  int                    `json:"schema_version"`
+	DocumentType   string                 `json:"document_type"`
+	Fields         map[string]Field       `json:"fields"`
+	Warnings       []Warning              `json:"warnings"`
 }
 
 var patterns = map[string]*regexp.Regexp{
@@ -50,14 +65,19 @@ var patterns = map[string]*regexp.Regexp{
 	"buyer_tax_id":    regexp.MustCompile(`(?:เลขประจำตัวผู้เสียภาษีผู้ซื้อ|เลขผู้เสียภาษีผู้ซื้อ)\s*[:：]?\s*([0-9๐-๙ -]{13,20})`),
 	"subtotal":        regexp.MustCompile(`(?i)(?:มูลค่าก่อนภาษี|รวมก่อนภาษี|subtotal)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
 	"vat_amount":      regexp.MustCompile(`(?i)(?:ภาษีมูลค่าเพิ่ม|vat)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
-	"total_amount":    regexp.MustCompile(`(?i)(?:ยอดรวม|รวมทั้งสิ้น|ยอดสุทธิ|grand total)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
+	"total_amount":    regexp.MustCompile(`(?i)(?:ยอดรวม|รวมทั้งสิ้น|ยอดสุทธิ|grand total|^รวม)\s*[:：]?\s*([0-9๐-๙,]+(?:\.[0-9๐-๙]{2})?)`),
 }
 
 var moneyPattern = regexp.MustCompile(`^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]{2})?$`)
 
 // Extract keeps OCR candidates separate from human-reviewed values. A rule match is never a calibrated confidence score.
 func Extract(result ocr.Result) Draft {
-	draft := Draft{SchemaVersion: SchemaVersion, DocumentType: "unknown", Fields: make(map[string]Field, len(Keys))}
+	if result.SchemaVersion == 3 {
+		return extractTranscription(result)
+	}
+	draft := Draft{SchemaVersion: SchemaVersion, DocumentType: "unknown", Fields: make(map[string]Field, len(Keys)), Warnings: []Warning{}}
+	accounting := ExtractAccounting(result)
+	draft.Accounting = &accounting
 	for _, key := range Keys {
 		draft.Fields[key] = Field{Presence: "not_found", Confidence: "unrated", Evidence: []Evidence{}}
 	}
@@ -83,7 +103,8 @@ func Extract(result ocr.Result) Draft {
 					continue
 				}
 				field := draft.Fields[key]
-				field.Evidence = append(field.Evidence, Evidence{Page: page.Number, Line: i + 1})
+				field.Evidence = append(field.Evidence, Evidence{Page: page.Number, Line: i + 1, BBox: line.BBox, OCRConfidence: line.Confidence})
+				field.Source = "ocr_rule"
 				if field.Presence == "not_found" {
 					field.Presence, field.Raw, field.Normalized = "found", raw, normalized
 				} else if field.Presence == "ambiguous" || field.Normalized != normalized {
@@ -104,7 +125,7 @@ func Extract(result ocr.Result) Draft {
 				currencyRaw = "THB"
 			}
 			if currencyRaw != "" {
-				draft.Fields["currency"] = Field{Presence: "found", Raw: currencyRaw, Normalized: "THB", Confidence: "unrated", Evidence: []Evidence{{Page: page.Number, Line: i + 1}}}
+				draft.Fields["currency"] = Field{Presence: "found", Raw: currencyRaw, Normalized: "THB", Confidence: "unrated", Evidence: []Evidence{{Page: page.Number, Line: i + 1, BBox: line.BBox, OCRConfidence: line.Confidence}}, Source: "ocr_rule"}
 			}
 		}
 	}
@@ -125,8 +146,35 @@ func Extract(result ocr.Result) Draft {
 	a, aok := cents(draft.Fields["subtotal"].Normalized)
 	b, bok := cents(draft.Fields["vat_amount"].Normalized)
 	c, cok := cents(draft.Fields["total_amount"].Normalized)
-	if aok && bok && cok && (a+b-c > 1 || c-a-b > 1) {
+	if aok && bok && cok && (a+b-c > 2 || c-a-b > 2) {
 		draft.warn("amount_mismatch", "total_amount", "blocker")
+	}
+	// Do not prefill legacy review inputs when the stricter accounting parser disagrees.
+	beforeVAT := accounting.Summary.AmountBeforeVAT
+	if beforeVAT == nil {
+		beforeVAT = accounting.Summary.Subtotal
+	}
+	for key, value := range map[string]*json.Number{"subtotal": beforeVAT, "vat_amount": accounting.Summary.VATAmount, "total_amount": accounting.Summary.TotalAmount} {
+		field := draft.Fields[key]
+		if field.Presence == "found" && (value == nil || field.Normalized != value.String()) {
+			field.Presence, field.Normalized = "ambiguous", ""
+			draft.Fields[key] = field
+			draft.warn("multiple_candidates", key, "review")
+		}
+	}
+	for key, value := range map[string]*string{
+		"document_number": accounting.Document.DocumentNumber, "issue_date": accounting.Document.DocumentDate,
+		"seller_name": accounting.Seller.Name, "seller_tax_id": accounting.Seller.TaxID,
+		"seller_branch": accounting.Seller.Branch,
+		"buyer_name":    accounting.Buyer.Name, "buyer_tax_id": accounting.Buyer.TaxID,
+		"currency": accounting.Document.Currency,
+	} {
+		field := draft.Fields[key]
+		if field.Presence == "found" && (value == nil || field.Normalized != *value) {
+			field.Presence, field.Normalized = "ambiguous", ""
+			draft.Fields[key] = field
+			draft.warn("multiple_candidates", key, "review")
+		}
 	}
 	return draft
 }
@@ -228,7 +276,7 @@ func cents(value string) (int64, bool) {
 
 // ValidateReview checks values explicitly submitted by a reviewer; extraction candidates are never confirmation defaults.
 func ValidateReview(draft Draft, values map[string]string) error {
-	if draft.DocumentType != "tax_invoice" && draft.DocumentType != "receipt" && draft.DocumentType != "invoice" {
+	if !classification.Valid(draft.DocumentType) || draft.DocumentType == "unknown" {
 		return errors.New("unsupported document type")
 	}
 	allowed := make(map[string]bool, len(Keys))
@@ -243,7 +291,7 @@ func ValidateReview(draft Draft, values map[string]string) error {
 			continue
 		}
 		if key == "currency" {
-			if value != "THB" {
+			if !SupportedCurrency(value) {
 				return errors.New("unsupported currency")
 			}
 		} else if key == "issue_date" {
@@ -265,8 +313,12 @@ func ValidateReview(draft Draft, values map[string]string) error {
 			}
 		}
 	}
-	required := []string{"issue_date", "total_amount"}
-	if draft.DocumentType == "tax_invoice" {
+	required := []string{}
+	switch draft.DocumentType {
+	case "receipt", "invoice", "tax_invoice", "tax_invoice_receipt", "billing_note", "credit_note", "debit_note":
+		required = []string{"issue_date", "total_amount"}
+	}
+	if draft.DocumentType == "tax_invoice" || draft.DocumentType == "tax_invoice_receipt" {
 		required = append(required, "document_number", "seller_name", "seller_tax_id")
 	}
 	for _, key := range required {
@@ -277,7 +329,7 @@ func ValidateReview(draft Draft, values map[string]string) error {
 	a, aok := cents(values["subtotal"])
 	b, bok := cents(values["vat_amount"])
 	c, cok := cents(values["total_amount"])
-	if aok && bok && cok && (a+b-c > 1 || c-a-b > 1) {
+	if aok && bok && cok && (a+b-c > 2 || c-a-b > 2) {
 		return errors.New("reviewed amounts disagree")
 	}
 	return nil

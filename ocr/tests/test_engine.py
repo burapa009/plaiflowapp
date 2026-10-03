@@ -4,12 +4,45 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import numpy as np
 from PIL import Image
 
 from plaiflow_ocr.engine import Engine, _serve
 
 
 class EngineFailureTest(unittest.TestCase):
+    def test_resize_maps_polygons_back_and_pdf_renders_each_page(self):
+        def predict(array):
+            height, width = array.shape[:2]
+            return iter([{
+                "doc_preprocessor_res": {"output_img": array, "angle": 0},
+                "rec_texts": ["ไทย Invoice"], "rec_scores": [0.9],
+                "rec_polys": [np.array([[0, 0], [width / 2, 0], [width / 2, height / 2], [0, height / 2]])],
+            }])
+
+        with tempfile.TemporaryDirectory() as directory:
+            image = Image.new("RGB", (4000, 100), "white")
+            paths = [Path(directory) / "large.png", Path(directory) / "two.pdf"]
+            image.save(paths[0])
+            small = Image.new("RGB", (100, 100), "white")
+            small.save(paths[1], format="PDF", save_all=True, append_images=[small])
+            for path, expected_count in ((paths[0], 1), (paths[1], 2)):
+                with self.subTest(path=path.name):
+                    connection = Mock()
+                    connection.recv.side_effect = [str(path), None]
+                    model = Mock()
+                    model.predict.side_effect = predict
+                    with patch("plaiflow_ocr.engine.create_model", return_value=model):
+                        _serve(connection)
+                    messages = [call.args[0] for call in connection.send.call_args_list]
+                    self.assertEqual(messages[1]["count"], expected_count)
+                    pages = [message["page"] for message in messages if "page" in message]
+                    self.assertEqual([page["page_number"] for page in pages], list(range(1, expected_count + 1)))
+                    if expected_count == 1:
+                        self.assertEqual(pages[0]["width"], 4000)
+                        self.assertEqual(model.predict.call_args.args[0].shape[1], 1600)
+                        self.assertAlmostEqual(pages[0]["lines"][0]["polygon"][1][0], 2000)
+
     def test_invalid_files_are_terminal_but_model_failures_are_retryable(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "original"
@@ -38,7 +71,7 @@ class EngineFailureTest(unittest.TestCase):
                         engine.connection = Mock()
                         with self.assertRaises(ValueError if invalid else RuntimeError):
                             engine(path, time.monotonic() + 60)
-                        close.assert_called_once()
+                        self.assertEqual(close.call_count, 0 if invalid else 1)
 
 
 if __name__ == "__main__":

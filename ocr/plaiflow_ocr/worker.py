@@ -1,63 +1,66 @@
 import hashlib
 import json
-import math
 import os
 import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any, Callable
+
+from .normalize import normalize_pages
+from . import generative
 
 MAX_FILE = 20 << 20
 MAX_RESULT = 8 << 20
 MAX_TEMP = 512 << 20
+MODEL_VERSION = "paddleocr-3.7.0-ppocrv5-th-v2"
+PREPROCESSING_VERSION = "v2"
 
 
-def normalize(pages):
+def normalize(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not 1 <= len(pages) <= 20:
         raise ValueError("invalid_input")
-    for number, page in enumerate(pages, 1):
-        width, height = page["width"], page["height"]
-        if (
-            width <= 0
-            or height <= 0
-            or width * height > 25_000_000
-            or len(page["lines"]) > 5000
-        ):
-            raise ValueError("invalid_input")
-        page["page_number"] = number
-        for line in page["lines"]:
-            if (
-                len(line["text"].encode("utf-8")) > 16384
-                or not 0 <= line["confidence"] <= 1
-            ):
-                raise ValueError("invalid_input")
-            points = line["polygon"]
-            if len(points) != 4 or any(
-                not math.isfinite(v) for point in points for v in point
-            ):
-                raise ValueError("invalid_input")
-            # Image coordinates have y pointing down; positive signed area is clockwise.
+    canonical = normalize_pages(pages, float(os.environ.get("OCR_MIN_CONFIDENCE", "0.30")))
+    result = []
+    for source, page in zip(pages, canonical, strict=True):
+        lines = []
+        for line in page.lines:
+            points = line.polygon
+            # Preserve the existing normalized polygon contract for extraction.
             area = sum(
                 points[i][0] * points[(i + 1) % 4][1]
                 - points[(i + 1) % 4][0] * points[i][1]
                 for i in range(4)
             )
-            if area < 0:
-                points = list(reversed(points))
-            line["polygon"] = [
-                [max(0.0, min(1.0, x / width)), max(0.0, min(1.0, y / height))]
-                for x, y in points
+            ordered = points if area >= 0 else list(reversed(points))
+            item = line.model_dump()
+            item["pixel_polygon"] = item.pop("polygon")
+            item["polygon"] = [
+                [max(0.0, min(1.0, x / page.width)), max(0.0, min(1.0, y / page.height))]
+                for x, y in ordered
             ]
-        page["text"] = "\n".join(line["text"] for line in page["lines"])
-    return pages
+            lines.append(item)
+        result.append({
+            "page_number": page.page, "width": page.width, "height": page.height,
+            "rotation": page.rotation, "duration_ms": source["duration_ms"],
+            "text": page.full_text, "average_confidence": page.average_confidence,
+            "low_confidence_count": page.low_confidence_count, "line_count": page.line_count,
+            "lines": lines,
+        })
+    return result
 
 
-def run_job(protocol, claim, infer, temp_root):
+def run_job(protocol: Any, claim: dict[str, Any], infer: Callable[[Path, float], list[dict[str, Any]]], temp_root: Path) -> dict[str, int]:
+    payload = claim["job"]["payload"]
+    versions = (payload.get("model_version"), payload.get("preprocessing_version"))
+    generative_job = versions == (generative.MODEL_VERSION, generative.PREPROCESSING_VERSION)
+    if versions != (MODEL_VERSION, PREPROCESSING_VERSION) and not (generative_job and getattr(infer, "remote", False)):
+        raise RuntimeError("incompatible_ocr_version")
     started = time.monotonic()
     stop = threading.Event()
     lease_errors = []
 
-    def heartbeat():
+    def heartbeat() -> None:
         while not stop.wait(30):
             try:
                 protocol.heartbeat(claim)
@@ -70,22 +73,33 @@ def run_job(protocol, claim, infer, temp_root):
     try:
         with tempfile.TemporaryDirectory(prefix="attempt-", dir=temp_root) as directory:
             os.chmod(directory, 0o700)
-            original = Path(directory) / "original"
-            metadata = protocol.download(claim, original)
-            if not 0 < original.stat().st_size <= MAX_FILE:
-                raise ValueError("invalid_input")
-            with original.open("rb") as body:
-                digest = hashlib.file_digest(body, "sha256").hexdigest()
-            if digest != metadata["sha256"]:
-                raise ValueError("invalid_input")
-            pages = normalize(infer(original, started + 900))
+            if getattr(infer, "remote", False):
+                # The API owns authorization and decrypts the source; only a
+                # short-lived, lease-bound input capability crosses to RunPod.
+                digest = payload["sha256"]
+                raw_pages = infer(claim, protocol.delegation(claim), started + 900, protocol)
+            else:
+                original = Path(directory) / "original"
+                metadata = protocol.download(claim, original)
+                if not 0 < original.stat().st_size <= MAX_FILE:
+                    raise ValueError("invalid_input")
+                with original.open("rb") as body:
+                    digest = hashlib.file_digest(body, "sha256").hexdigest()
+                if digest != metadata["sha256"]:
+                    raise ValueError("invalid_input")
+                raw_pages = infer(original, started + 900)
+            try:
+                pages = generative.normalize_pages(raw_pages) if generative_job else normalize(raw_pages)
+            except (ValueError, TypeError, KeyError) as error:
+                if not getattr(infer, "remote", False):
+                    raise
+                raise RuntimeError("invalid_runpod_output") from error
             if lease_errors:
                 raise lease_errors[0]
             if time.monotonic() > started + 900:
                 raise TimeoutError()
-            payload = claim["job"]["payload"]
             result = {
-                "schema_version": 1,
+                "schema_version": 3 if generative_job else 2,
                 "input_sha256": digest,
                 "model_version": payload["model_version"],
                 "preprocessing_version": payload["preprocessing_version"],

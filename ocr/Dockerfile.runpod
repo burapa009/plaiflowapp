@@ -1,0 +1,28 @@
+FROM ollama/ollama:0.34.4 AS runtime
+ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PATH=/opt/venv/bin:$PATH \
+    OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS=/opt/ollama \
+    OLLAMA_NUM_PARALLEL=1 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_KEEP_ALIVE=-1 \
+    HF_HUB_DISABLE_TELEMETRY=1 DO_NOT_TRACK=1
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates \
+    && rm -rf /var/lib/apt/lists/* && python3 -m venv /opt/venv
+WORKDIR /app
+RUN pip install --no-cache-dir torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu128 \
+    && pip install --no-cache-dir transformers==4.57.3 pillow==11.3.0 pypdfium2==4.30.0 pydantic==2.13.5 runpod==1.12.0
+COPY ocr/plaiflow_ocr ./plaiflow_ocr
+COPY ocr/generative_models.py ./generative_models.py
+COPY ocr/runpod_handler.py ./runpod_handler.py
+COPY ocr/start_generative.py ./start_generative.py
+
+FROM runtime AS weights
+RUN python generative_models.py --download \
+    && split -b 6000000000 /opt/ollama/blobs/sha256-8a53bc6612576dffeb1f988bb5eede4321b004bf23f28a6f0e6173b4a0780f52 /opt/openthai-part- \
+    && rm /opt/ollama/blobs/sha256-8a53bc6612576dffeb1f988bb5eede4321b004bf23f28a6f0e6173b4a0780f52
+
+FROM runtime
+# GHCR permits at most 10 GB per layer; the GGUF is 16.8 GB.
+COPY --from=weights /opt/typhoon /opt/typhoon
+COPY --from=weights /opt/ollama /opt/ollama
+COPY --from=weights /opt/openthai-part-aa /opt/openthai-part-aa
+COPY --from=weights /opt/openthai-part-ab /opt/openthai-part-ab
+COPY --from=weights /opt/openthai-part-ac /opt/openthai-part-ac
+ENTRYPOINT ["python", "-u", "start_generative.py"]

@@ -111,7 +111,7 @@ func TestOwnerConnectsAndDisconnectsDriveThroughAuthenticatedBoundary(t *testing
 	}
 }
 
-func TestOnlyOwnerCanStartDriveConnection(t *testing.T) {
+func TestClientAdminCanStartDriveConnection(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	store := &httpDriveStore{}
 	service, _ := drive.New(drive.Config{Provider: &httpDriveProvider{}, Store: store, EncryptionKey: make([]byte, 32), Now: func() time.Time { return now }})
@@ -121,7 +121,7 @@ func TestOnlyOwnerCanStartDriveConnection(t *testing.T) {
 		Tenants: &tenantStore{allowed: "org-1", role: tenant.Admin}, Drive: service, PlanStore: planStore, Gate: plan.Gate{Store: planStore}, Now: func() time.Time { return now }}, &fakeStore{})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, authenticatedForm(http.MethodPost, "https://app.example/v1/o/org-1/drive/connect", "csrf_token=csrf"))
-	if response.Code != http.StatusForbidden || store.attempt.StateHash != nil {
+	if response.Code != http.StatusSeeOther || store.attempt.StateHash == nil {
 		t.Fatalf("status=%d attempt=%+v", response.Code, store.attempt)
 	}
 }

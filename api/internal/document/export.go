@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
-	"unicode"
-	"unicode/utf8"
+
+	"plaiflow/api/internal/spreadsheetsafe"
 )
 
 var exportHeader = []string{"document_id", "display_filename", "detected_type", "byte_size", "status", "first_source_channel", "source_count", "submitter", "assignee", "received_at", "updated_at"}
@@ -28,11 +27,12 @@ func WriteExport(output io.Writer, format string, rows []ExportRow) error {
 
 // WriteTable reuses the fixed CSV/XLSX safety rules for other structured document exports.
 func WriteTable(output io.Writer, format string, header []string, values [][]string) error {
+	limited := &workbookLimit{writer: output, remaining: 128 << 20}
 	switch format {
 	case "csv":
-		return writeCSV(output, header, values)
+		return writeCSV(limited, header, values)
 	case "xlsx":
-		return writeXLSX(output, header, values)
+		return writeXLSX(limited, header, values)
 	default:
 		return errors.New("unsupported document export format")
 	}
@@ -44,17 +44,11 @@ func writeCSV(output io.Writer, header []string, rows [][]string) error {
 	}
 	w := csv.NewWriter(output)
 	w.UseCRLF = true
-	if err := w.Write(header); err != nil {
+	if err := w.Write(spreadsheetsafe.CSVRow(header)); err != nil {
 		return err
 	}
 	for _, row := range rows {
-		values := append([]string(nil), row...)
-		for i, value := range values {
-			if spreadsheetFormula(value) {
-				values[i] = "'" + value
-			}
-		}
-		if err := w.Write(values); err != nil {
+		if err := w.Write(spreadsheetsafe.CSVRow(row)); err != nil {
 			return err
 		}
 	}
@@ -65,12 +59,6 @@ func writeCSV(output io.Writer, header []string, rows [][]string) error {
 func ExportValues(row ExportRow) []string {
 	return []string{row.ID, row.Filename, row.MIME, strconv.FormatInt(row.Size, 10), row.Status, row.SourceChannel,
 		strconv.FormatInt(row.SourceCount, 10), row.SubmitterName, row.AssigneeName, row.AcceptedAt.UTC().Format("2006-01-02T15:04:05Z"), row.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z")}
-}
-
-func spreadsheetFormula(value string) bool {
-	trimmed := strings.TrimLeftFunc(value, func(r rune) bool { return unicode.IsSpace(r) || r == '\ufeff' })
-	first, _ := utf8.DecodeRuneInString(trimmed)
-	return strings.ContainsRune("=+-@＝＋－＠", first)
 }
 
 func writeXLSX(output io.Writer, header []string, rows [][]string) error {
@@ -106,12 +94,7 @@ func writeXLSX(output io.Writer, header []string, rows [][]string) error {
 			if _, err := fmt.Fprintf(buffer, `<c r="%s%d" t="inlineStr"><is><t xml:space="preserve">`, columnName(column), index); err != nil {
 				return err
 			}
-			value = strings.Map(func(r rune) rune {
-				if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
-					return '\ufffd'
-				}
-				return r
-			}, value)
+			value = spreadsheetsafe.XMLText(value)
 			if err := xml.EscapeText(buffer, []byte(value)); err != nil {
 				return err
 			}

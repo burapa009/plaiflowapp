@@ -85,6 +85,11 @@ type Invitation struct {
 	ExpiresAt        time.Time `json:"expires_at"`
 }
 
+type PendingInvitation struct {
+	ID        string    `json:"id"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 type LineConnection struct {
 	ID        string     `json:"id"`
 	GroupID   string     `json:"group_id"`
@@ -118,6 +123,7 @@ type Store interface {
 	ListOrganizations(context.Context, string) ([]Organization, error)
 	ResolveMembership(context.Context, string, string) (Membership, error)
 	ListMemberships(context.Context, string, string) ([]Membership, error)
+	ListPendingInvitations(context.Context, string, string) ([]PendingInvitation, error)
 	CreateInvitation(context.Context, InviteCreate) error
 	ClaimInvitation(context.Context, InviteClaim) (Invitation, error)
 	AcceptInvitation(context.Context, []byte, string, time.Time) (Organization, error)

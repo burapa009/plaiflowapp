@@ -7,12 +7,15 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/extraction"
+	"plaiflow/api/internal/matching"
 	"plaiflow/api/internal/ocr"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
@@ -23,10 +26,177 @@ const maxReviewBytes = 32 << 10
 var structuredHeader = []string{"document_id", "document_type", "issue_date", "document_number", "seller_name", "seller_tax_id", "buyer_name", "buyer_tax_id", "currency", "subtotal", "vat_amount", "total_amount", "confirmed_at", "confirmed_by", "extraction_schema_version"}
 
 func (s *server) registerExtractionRoutes(m *http.ServeMux) {
-	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/extraction", s.getExtraction)
-	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/confirm", s.confirmExtraction)
-	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.csv", s.exportExtractions)
-	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.xlsx", s.exportExtractions)
+	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/extraction", s.ocrPilot(s.getExtraction))
+	if s.config.ClassificationEnabled && s.config.Classification != nil {
+		m.HandleFunc("GET /v1/o/{organization}/documents/{document}/classification", s.ocrPilot(s.getClassification))
+		m.HandleFunc("POST /v1/o/{organization}/documents/{document}/document-type", s.ocrPilot(s.correctDocumentType))
+	}
+	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/extraction/confirm", s.ocrPilot(s.confirmExtraction))
+	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.csv", s.ocrPilot(s.exportExtractions))
+	m.HandleFunc("GET /v1/o/{organization}/documents/extraction.xlsx", s.ocrPilot(s.exportExtractions))
+	if s.config.MatchingEnabled && s.config.Matching != nil {
+		m.HandleFunc("GET /v1/o/{organization}/documents/{document}/matches", s.ocrPilot(s.getMatches))
+	}
+}
+
+func (s *server) getClassification(w http.ResponseWriter, r *http.Request) {
+	if !s.classificationAllowed(r.PathValue("organization")) {
+		http.NotFound(w, r)
+		return
+	}
+	session, membership, ok := s.workContext(w, r, false)
+	if !ok {
+		return
+	}
+	// Materialize legacy OCR results through the same path as the review page.
+	draft, _, err := s.extractionDraft(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
+	if err != nil {
+		writeError(w, r, 409, "classification_unavailable", "Completed OCR is required")
+		return
+	}
+	record, err := s.config.Classification.GetClassification(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
+	if err != nil {
+		writeError(w, r, 503, "classification_unavailable", "Classification is unavailable")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, map[string]any{"document_type": record.EffectiveType, "original_prediction": record.DocumentType,
+		"confidence": record.Confidence, "classification_method": record.Method, "requires_review": record.RequiresReview,
+		"review_status": record.ReviewStatus, "candidate_types": record.CandidateTypes, "signals": record.Signals,
+		"accounting": record.Accounting, "extracted_fields": draft.Fields, "validation_results": draft.Accounting.Validation,
+		"corrected_by": record.CorrectedBy, "corrected_at": record.CorrectedAt})
+}
+
+func (s *server) correctDocumentType(w http.ResponseWriter, r *http.Request) {
+	if !s.classificationAllowed(r.PathValue("organization")) {
+		http.NotFound(w, r)
+		return
+	}
+	session, membership, ok := s.workContext(w, r, true)
+	if !ok {
+		return
+	}
+	if membership.Role != tenant.Owner && membership.Role != tenant.Admin {
+		writeError(w, r, 403, "forbidden", "Owner or Admin required")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	if err := r.ParseForm(); err != nil || !classification.Valid(r.PostForm.Get("document_type")) {
+		writeError(w, r, 422, "invalid_document_type", "Document type is invalid")
+		return
+	}
+	record, err := s.config.Classification.CorrectDocumentType(r.Context(), session.UserID, membership.OrganizationID,
+		r.PathValue("document"), r.PostForm.Get("ocr_job_id"), r.PostForm.Get("expected_type"), r.PostForm.Get("document_type"), s.config.Now().UTC())
+	if errors.Is(err, extraction.ErrConflict) {
+		writeError(w, r, 409, "ocr_changed", "OCR changed; reload")
+		return
+	}
+	if err != nil {
+		writeError(w, r, 503, "classification_unavailable", "Document type could not be saved")
+		return
+	}
+	s.config.Logger.Info("classification_corrected", "document_id", r.PathValue("document"), "document_type", record.EffectiveType)
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, record)
+}
+
+func (s *server) getMatches(w http.ResponseWriter, r *http.Request) {
+	session, member, ok := s.workContext(w, r, false)
+	if !ok {
+		return
+	}
+	draft, ocrJob, err := s.extractionDraft(r.Context(), session.UserID, member.OrganizationID, r.PathValue("document"))
+	if err != nil {
+		writeError(w, r, 409, "ocr_unavailable", "Complete OCR is required before matching")
+		return
+	}
+	value := func(key string) string {
+		field := draft.Fields[key]
+		if field.Presence == "found" {
+			return field.Normalized
+		}
+		return ""
+	}
+	source := matching.Facts{DocumentID: r.PathValue("document"), DocumentType: draft.DocumentType,
+		IssueDate: value("issue_date"), TotalAmount: value("total_amount"), DocumentNumber: value("document_number"),
+		SellerTaxID: value("seller_tax_id"), SellerName: value("seller_name")}
+	if draft.Accounting != nil {
+		if source.IssueDate == "" && draft.Accounting.Document.DocumentDate != nil {
+			source.IssueDate = *draft.Accounting.Document.DocumentDate
+		}
+		if source.TotalAmount == "" && draft.Accounting.Summary.TotalAmount != nil {
+			source.TotalAmount = draft.Accounting.Summary.TotalAmount.String()
+		}
+		if source.DocumentNumber == "" && draft.Accounting.Document.DocumentNumber != nil {
+			source.DocumentNumber = *draft.Accounting.Document.DocumentNumber
+		}
+		if source.SellerTaxID == "" && draft.Accounting.Seller.TaxID != nil {
+			source.SellerTaxID = *draft.Accounting.Seller.TaxID
+		}
+		if source.SellerName == "" && draft.Accounting.Seller.Name != nil {
+			source.SellerName = *draft.Accounting.Seller.Name
+		}
+	}
+	needsReview := true
+	current, err := s.config.Extraction.CurrentReview(r.Context(), session.UserID, member.OrganizationID, source.DocumentID)
+	if err != nil {
+		writeError(w, r, 503, "matching_unavailable", "Matches are unavailable")
+		return
+	}
+	if current.ID != "" && current.OCRJobID == ocrJob {
+		confirmed, err := s.readReview(r.Context(), current)
+		if err != nil {
+			writeError(w, r, 503, "matching_unavailable", "Matches are unavailable")
+			return
+		}
+		source.DocumentType = confirmed.DocumentType
+		source.IssueDate = confirmed.Values["issue_date"]
+		source.TotalAmount = confirmed.Values["total_amount"]
+		source.DocumentNumber = confirmed.Values["document_number"]
+		source.SellerTaxID = confirmed.Values["seller_tax_id"]
+		source.SellerName = confirmed.Values["seller_name"]
+		needsReview = false
+	}
+	targets, err := s.config.Matching.FindMatchCandidates(r.Context(), session.UserID, member.OrganizationID, source)
+	if err != nil {
+		writeError(w, r, 503, "matching_unavailable", "Matches are unavailable")
+		return
+	}
+	auto, review := s.config.AutoMatchThreshold, s.config.ReviewMatchThreshold
+	if auto == 0 {
+		auto = .9
+	}
+	if review == 0 {
+		review = .7
+	}
+	candidates := make([]matching.Candidate, 0, len(targets))
+	for _, target := range targets {
+		candidate := matching.Score(source, target, auto, review, needsReview)
+		if candidate.Status != "no_match" {
+			candidates = append(candidates, candidate)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Score > candidates[j].Score })
+	if len(candidates) > 20 {
+		candidates = candidates[:20]
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, 200, map[string]any{"source_document_id": source.DocumentID, "candidates": candidates,
+		"status": "suggestions_only", "source_review_required": needsReview})
+}
+
+func (s *server) ocrPilot(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.config.OCRPilotOrganizations["*"] && !s.config.OCRPilotOrganizations[r.PathValue("organization")] {
+			http.NotFound(w, r)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *server) classificationAllowed(org string) bool {
+	return s.config.ClassificationEnabled && (s.config.ClassificationOrganizations["*"] || s.config.ClassificationOrganizations[org])
 }
 
 func (s *server) extractionDraft(ctx context.Context, user, org, doc string) (extraction.Draft, string, error) {
@@ -44,10 +214,25 @@ func (s *server) extractionDraft(ctx context.Context, user, org, doc string) (ex
 		return extraction.Draft{}, "", errors.New("OCR result exceeds limit")
 	}
 	var result ocr.Result
-	if err := json.Unmarshal(data, &result); err != nil || result.SchemaVersion != 1 || len(result.Pages) == 0 || len(result.Pages) > 20 {
+	if err := json.Unmarshal(data, &result); err != nil || (result.SchemaVersion != 1 && result.SchemaVersion != 2 && result.SchemaVersion != 3) || len(result.Pages) == 0 || len(result.Pages) > 20 {
 		return extraction.Draft{}, "", errors.New("OCR result is invalid")
 	}
-	return extraction.Extract(result), state.JobID, nil
+	if !s.classificationAllowed(org) || s.config.Classification == nil {
+		return extraction.Extract(result), state.JobID, nil
+	}
+	record, err := s.config.Classification.GetClassification(ctx, user, org, doc)
+	if err != nil {
+		return extraction.Draft{}, "", err
+	}
+	if record.EffectiveType == "" {
+		prediction := classification.ClassifyRule(classification.Normalize(doc, result), s.config.ClassificationReviewThreshold)
+		classification.Review(&prediction, s.config.ClassificationRuleThreshold, s.config.ClassificationReviewThreshold)
+		if err = s.config.Classification.SaveClassification(ctx, org, doc, state.JobID, prediction); err != nil {
+			return extraction.Draft{}, "", err
+		}
+		record = classification.Record{Result: prediction, EffectiveType: prediction.DocumentType}
+	}
+	return extraction.ExtractClassified(result, record), state.JobID, nil
 }
 
 func (s *server) getExtraction(w http.ResponseWriter, r *http.Request) {
@@ -101,12 +286,49 @@ func (s *server) getExtraction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
+	duplicate := s.possibleDuplicate(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"), draft)
 	writeJSON(w, 200, map[string]any{"draft": draft, "ocr_job_id": ocrJob, "revision": current.Revision, "confirmed": confirmed,
-		"review_enabled": s.config.ReviewEnabled,
-		"saved_review":   saved, "review_history": history, "returned_review": returned,
+		"possible_duplicate": duplicate,
+		"review_enabled":     s.config.ReviewEnabled,
+		"saved_review":       saved, "review_history": history, "returned_review": returned,
 		"source_superseded": current.ID != "" && current.OCRJobID != ocrJob})
 	s.config.Logger.Info("extraction_generated", "duration_ms", time.Since(started).Milliseconds(), "fields", len(draft.Fields), "provider_cost_usd", 0,
 		"compute_cost_status", "not_metered")
+}
+
+func (s *server) possibleDuplicate(ctx context.Context, user, org, doc string, draft extraction.Draft) any {
+	if !s.config.MatchingEnabled || s.config.Matching == nil {
+		return nil
+	}
+	value := func(key string) string {
+		f := draft.Fields[key]
+		if f.Presence == "found" {
+			return f.Normalized
+		}
+		return ""
+	}
+	source := matching.Facts{DocumentID: doc, DocumentType: draft.DocumentType, IssueDate: value("issue_date"),
+		TotalAmount: value("total_amount"), DocumentNumber: value("document_number"), SellerTaxID: value("seller_tax_id"), SellerName: value("seller_name")}
+	if source.DocumentNumber == "" || source.SellerTaxID == "" || source.TotalAmount == "" || source.IssueDate == "" {
+		return nil
+	}
+	targets, err := s.config.Matching.FindMatchCandidates(ctx, user, org, source)
+	if err != nil {
+		s.config.Logger.Warn("duplicate_lookup_failed", "document_id", doc, "error", err)
+		return nil
+	}
+	var best matching.Candidate
+	for _, target := range targets {
+		candidate := matching.Score(source, target, s.config.AutoMatchThreshold, s.config.ReviewMatchThreshold, true)
+		if candidate.MatchType == "duplicate_document" && candidate.Score > best.Score {
+			best = candidate
+		}
+	}
+	if best.TargetDocumentID == "" || best.Score < s.config.ReviewMatchThreshold {
+		return nil
+	}
+	return map[string]any{"possible_duplicate": true, "matched_document_id": best.TargetDocumentID,
+		"duplicate_confidence": best.Score}
 }
 
 func (s *server) saveExtractionDraft(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +357,7 @@ func (s *server) saveExtractionDraft(w http.ResponseWriter, r *http.Request) {
 	for _, key := range extraction.Keys {
 		value := strings.TrimSpace(r.PostForm.Get(key))
 		decision := r.PostForm.Get(key + "_decision")
-		if len([]rune(value)) > 240 || decision != "" && decision != "accepted" && decision != "corrected" && decision != "unknown" ||
+		if len([]rune(value)) > 240 || key == "currency" && value != "" && !extraction.SupportedCurrency(value) || decision != "" && decision != "accepted" && decision != "corrected" && decision != "unknown" ||
 			decision == "unknown" && value != "" || decision == "accepted" && value != proposal.Fields[key].Normalized {
 			writeError(w, r, 422, "invalid_review", "Review field is invalid")
 			return
@@ -183,7 +405,13 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 409, "ocr_changed", "OCR result changed; review again")
 		return
 	}
+	contract := r.PostForm.Get("field_review_version")
+	if contract != "" && contract != "1" {
+		writeError(w, r, 422, "invalid_field_review_version", "Unsupported field review version")
+		return
+	}
 	values := make(map[string]string, len(extraction.Keys))
+	decisions := make(map[string]string, len(extraction.Keys))
 	if s.config.ReviewEnabled {
 		saved, draftErr := s.config.Extraction.CurrentDraft(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document"))
 		draftRevision, parseErr := strconv.Atoi(r.PostForm.Get("expected_draft_revision"))
@@ -201,6 +429,7 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			values[key] = saved.Values[key]
+			decisions[key] = saved.Decisions[key]
 		}
 		if !s.originalAvailable(r.Context(), session.UserID, membership.OrganizationID, r.PathValue("document")) {
 			writeError(w, r, 409, "original_unavailable", "Open the original before confirming")
@@ -209,6 +438,21 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 	} else {
 		for _, key := range extraction.Keys {
 			values[key] = strings.TrimSpace(r.PostForm.Get(key))
+		}
+	}
+	if contract == "1" {
+		if r.PostForm.Get("expected_document_type") != draft.DocumentType {
+			writeError(w, r, 409, "document_type_changed", "Document type changed; review again")
+			return
+		}
+		for _, key := range extraction.Keys {
+			if !s.config.ReviewEnabled {
+				decisions[key] = r.PostForm.Get(key + "_decision")
+			}
+		}
+		if err := extraction.ValidateDecisions(draft, values, decisions); err != nil {
+			writeError(w, r, 422, "invalid_field_decision", "Check every field against the original")
+			return
 		}
 	}
 	if err := extraction.ValidateReview(draft, values); err != nil {
@@ -223,6 +467,13 @@ func (s *server) confirmExtraction(w http.ResponseWriter, r *http.Request) {
 	review := extraction.Review{ID: id, OrganizationID: membership.OrganizationID, DocumentID: r.PathValue("document"), OCRJobID: ocrJob,
 		DocumentType: draft.DocumentType, Values: values, ConfirmedBy: session.UserID, ConfirmedAt: s.config.Now().UTC(),
 		ObjectKey: "extraction/" + membership.OrganizationID + "/" + id + ".json"}
+	if contract == "1" || s.config.ReviewEnabled {
+		review.Decisions = decisions
+		review.OriginalValues = make(map[string]string, len(extraction.Keys))
+		for _, key := range extraction.Keys {
+			review.OriginalValues[key] = draft.Fields[key].Normalized
+		}
+	}
 	if s.config.ReviewEnabled {
 		review.DraftRevision, _ = strconv.Atoi(r.PostForm.Get("expected_draft_revision"))
 	}
@@ -284,7 +535,7 @@ func (s *server) readReview(ctx context.Context, meta extraction.Review) (*extra
 	}
 	var review extraction.Review
 	if err := json.Unmarshal(data, &review); err != nil || review.ID != meta.ID || review.OrganizationID != meta.OrganizationID ||
-		review.DocumentID != meta.DocumentID || review.OCRJobID != meta.OCRJobID || len(review.Values) > len(extraction.Keys) {
+		review.DocumentID != meta.DocumentID || review.OCRJobID != meta.OCRJobID || len(review.Values) > len(extraction.Keys)+3 {
 		return nil, errors.New("review artifact is invalid")
 	}
 	review.Revision, review.ConfirmedBy, review.ConfirmedAt = meta.Revision, meta.ConfirmedBy, meta.ConfirmedAt

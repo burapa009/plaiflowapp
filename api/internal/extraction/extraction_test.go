@@ -1,11 +1,27 @@
 package extraction_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"plaiflow/api/internal/extraction"
 	"plaiflow/api/internal/ocr"
 )
+
+func TestUnknownDocumentReturnsEmptyWarningsArray(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1}}})
+	body, err := json.Marshal(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if warnings, ok := decoded["warnings"].([]any); !ok || len(warnings) != 0 {
+		t.Fatalf("warnings must be an empty JSON array: %s", body)
+	}
+}
 
 func TestThaiTaxInvoiceProducesTraceableFieldsWithoutInventingMissingValues(t *testing.T) {
 	input := ocr.Result{SchemaVersion: 1, Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
@@ -65,6 +81,18 @@ func TestEnglishAmountLabelsAreCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestBareThaiTotalDoesNotSwallowBeforeTaxAmount(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+		{Text: "ใบเสร็จรับเงิน", Confidence: .99},
+		{Text: "รวมก่อนภาษี 1,000.00", Confidence: .99},
+		{Text: "ภาษีมูลค่าเพิ่ม 70.00", Confidence: .99},
+		{Text: "รวม 1,070.00 บาท", Confidence: .99},
+	}}}})
+	if draft.Fields["subtotal"].Normalized != "1000.00" || draft.Fields["total_amount"].Normalized != "1070.00" || draft.Accounting.Summary.TotalAmount == nil || draft.Accounting.Summary.TotalAmount.String() != "1070.00" {
+		t.Fatalf("bare Thai total or before-tax amount misread: %+v", draft)
+	}
+}
+
 func TestThaiNumeralsNormalizeWithoutChangingRawEvidence(t *testing.T) {
 	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
 		{Text: "ใบกำกับภาษี", Confidence: .99},
@@ -109,5 +137,29 @@ func TestSellerBranchMustBeReviewedAndNeverDefaultsToHeadOffice(t *testing.T) {
 	values["seller_branch"] = "head"
 	if err := extraction.ValidateReview(draft, values); err == nil {
 		t.Fatal("invalid branch accepted")
+	}
+}
+
+func TestDetailedAccountingCannotLeaveMisreadLegacyReviewDefaults(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+		{Text: "Tax Invoice", Confidence: .99},
+		{Text: "VAT 7% 70.00", Confidence: .99},
+		{Text: "ยอดรวม 1O0.00", Confidence: .99},
+	}}}})
+	if draft.Accounting == nil || draft.Accounting.Summary.VATAmount == nil || draft.Accounting.Summary.VATAmount.String() != "70.00" {
+		t.Fatal("detailed VAT amount missing")
+	}
+	if draft.Fields["vat_amount"].Normalized != "" || draft.Fields["total_amount"].Normalized != "" {
+		t.Fatal("partial numeric tokens must not become review defaults")
+	}
+}
+
+func TestBuyerBranchCannotPrefillSellerBranch(t *testing.T) {
+	draft := extraction.Extract(ocr.Result{Pages: []ocr.Page{{Number: 1, Lines: []ocr.Line{
+		{Text: "ผู้ซื้อ: บริษัท ลูกค้า จำกัด", Confidence: .99},
+		{Text: "สาขา 00001", Confidence: .99},
+	}}}})
+	if draft.Fields["seller_branch"].Normalized != "" {
+		t.Fatal("buyer branch was proposed as seller branch")
 	}
 }

@@ -1,4 +1,7 @@
 import Image from "next/image";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { sessionGET } from "@/lib/session-api";
 import { LoginButton } from "./login-button";
 
 const capabilities = [
@@ -36,7 +39,10 @@ function BusinessIcon({ type }: { type: (typeof businessCategories)[number]["ico
   return <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[type]}</svg>;
 }
 
-export default function Welcome() {
+export default async function Welcome() {
+  const session = await sessionGET("/v1/session");
+  if (session?.ok) redirect("/open/dashboard");
+  if (session?.status !== 401) return <section className="error-state" role="alert"><h1>ยังเปิดหน้าแรกไม่ได้</h1><Link className="button inline-button" href="/">ลองใหม่</Link></section>;
   return (
     <div className="auth-page landing-page" id="top">
       <header className="landing-header">

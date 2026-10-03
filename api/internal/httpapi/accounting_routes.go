@@ -9,25 +9,26 @@ import (
 	"time"
 
 	"plaiflow/api/internal/accounting"
+	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/document"
 	"plaiflow/api/internal/plan"
 	"plaiflow/api/internal/tenant"
 )
 
 func (s *server) registerAccountingRoutes(m *http.ServeMux) {
-	m.HandleFunc("GET /v1/o/{organization}/accounting/categories", s.accountingCategories)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories", s.accountingCategories)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/archive", s.accountingCategoryStatus)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/restore", s.accountingCategoryStatus)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/rename", s.renameAccountingCategory)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/rules", s.accountingRule)
-	m.HandleFunc("GET /v1/o/{organization}/accounting/rules", s.listAccountingRules)
-	m.HandleFunc("POST /v1/o/{organization}/accounting/rules/{rule}/retire", s.retireAccountingRule)
-	m.HandleFunc("GET /v1/o/{organization}/accounting/review-queue", s.accountingReviewQueue)
-	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/accounting", s.accountingSuggestion)
-	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/accounting/approve", s.approveAccounting)
-	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.csv", s.exportAccounting)
-	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.xlsx", s.exportAccounting)
+	m.HandleFunc("GET /v1/o/{organization}/accounting/categories", s.ocrPilot(s.accountingCategories))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories", s.ocrPilot(s.accountingCategories))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/archive", s.ocrPilot(s.accountingCategoryStatus))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/restore", s.ocrPilot(s.accountingCategoryStatus))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/categories/{category}/rename", s.ocrPilot(s.renameAccountingCategory))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/rules", s.ocrPilot(s.accountingRule))
+	m.HandleFunc("GET /v1/o/{organization}/accounting/rules", s.ocrPilot(s.listAccountingRules))
+	m.HandleFunc("POST /v1/o/{organization}/accounting/rules/{rule}/retire", s.ocrPilot(s.retireAccountingRule))
+	m.HandleFunc("GET /v1/o/{organization}/accounting/review-queue", s.ocrPilot(s.accountingReviewQueue))
+	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/accounting", s.ocrPilot(s.accountingSuggestion))
+	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/accounting/approve", s.ocrPilot(s.approveAccounting))
+	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.csv", s.ocrPilot(s.exportAccounting))
+	m.HandleFunc("GET /v1/o/{organization}/documents/accounting.xlsx", s.ocrPilot(s.exportAccounting))
 }
 
 func (s *server) listAccountingRules(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +227,10 @@ func (s *server) accountingSuggestion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
 		return
 	}
+	if s.classificationAllowed(membership.OrganizationID) && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
+		writeError(w, r, 409, "not_expense_candidate", "This document type is not an expense candidate")
+		return
+	}
 	result, err := s.config.Accounting.Evaluate(r.Context(), session.UserID, membership.OrganizationID, *review)
 	if errors.Is(err, accounting.ErrConflict) {
 		writeError(w, r, 409, "source_changed", "Source changed; review again")
@@ -277,6 +282,10 @@ func (s *server) approveAccounting(w http.ResponseWriter, r *http.Request) {
 	review, err := s.readReview(r.Context(), meta)
 	if err != nil {
 		writeError(w, r, 503, "accounting_unavailable", "Confirmed review is unavailable")
+		return
+	}
+	if s.classificationAllowed(membership.OrganizationID) && !classification.AccountingFor(review.DocumentType).ExpenseCandidate {
+		writeError(w, r, 409, "not_expense_candidate", "This document type is not an expense candidate")
 		return
 	}
 	if s.config.ReviewEnabled {
