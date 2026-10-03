@@ -87,13 +87,16 @@ class Protocol:
         ):
             pass
 
-    def claim(self):
+    def claim(self, job_id=None):
         provider = os.environ.get("OCR_PROVIDER", "railway")
         if provider not in {"railway", "runpod"}:
             raise ValueError("invalid_ocr_provider")
+        data = {"provider": provider}
+        if job_id is not None:
+            data["job_id"] = job_id
         with self.request(
             "POST", "/internal/v1/ocr/jobs/claim", "claim",
-            data=json.dumps({"provider": provider}).encode(),
+            data=json.dumps(data).encode(),
         ) as response:
             return json.loads(response.read(1 << 20))["jobs"]
 

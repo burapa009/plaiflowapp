@@ -74,3 +74,33 @@ func TestOCRWorkerCannotClaimExportOrUseExportCredential(t *testing.T) {
 		t.Fatalf("wrong key status %d", response.Code)
 	}
 }
+
+func TestOCRTargetedClaimKeepsWorkerScope(t *testing.T) {
+	now := time.Now().UTC()
+	auth, _ := job.NewWorkerAuth(bytes.Repeat([]byte{1}, 32), "staging", []string{"ocr:claim"})
+	for _, test := range []struct {
+		body   string
+		status int
+		target string
+	}{
+		{`{"provider":"runpod","job_id":"ca18ce81-4b0d-4428-83ba-516c06ea528e"}`, 200, "ca18ce81-4b0d-4428-83ba-516c06ea528e"},
+		{`{"provider":"runpod","job_id":"not-a-job"}`, 400, ""},
+	} {
+		store := &ocrStoreDouble{}
+		handler := New(Config{OCR: store, OCRJobs: store, OCRAuth: auth, OCRDefaultProvider: "railway", Now: func() time.Time { return now }}, nil)
+		token, _ := auth.Sign("ocr-recovery", []string{"ocr:claim"}, now, time.Minute)
+		req := httptest.NewRequest("POST", "/internal/v1/ocr/jobs/claim", bytes.NewBufferString(test.body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != test.status {
+			t.Fatalf("status=%d want=%d", response.Code, test.status)
+		}
+		if test.status == 200 && (store.lastClaim.OCRJobID != test.target || store.lastClaim.OCRProvider != "runpod" || len(store.lastClaim.Kinds) != 1 || store.lastClaim.Kinds[0] != job.OCR || store.lastClaim.Limit != 1) {
+			t.Fatalf("claim=%+v", store.lastClaim)
+		}
+		if test.status != 200 && store.claims != 0 {
+			t.Fatal("invalid ID reached store")
+		}
+	}
+}

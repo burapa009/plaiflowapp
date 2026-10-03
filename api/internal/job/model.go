@@ -55,6 +55,7 @@ type ClaimCommand struct {
 	OCRProvider            string
 	OCRDefaultProvider     string
 	OCRRunPodOrganizations []string
+	OCRJobID               string
 }
 
 type Claimed struct {

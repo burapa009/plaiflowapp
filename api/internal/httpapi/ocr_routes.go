@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"plaiflow/api/internal/classification"
 	"plaiflow/api/internal/job"
 	"plaiflow/api/internal/ocr"
@@ -71,6 +73,7 @@ func (s *server) claimOCR(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	var input struct {
 		Provider string `json:"provider"`
+		JobID    string `json:"job_id"`
 	}
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -81,11 +84,18 @@ func (s *server) claimOCR(w http.ResponseWriter, r *http.Request) {
 	if input.Provider == "" {
 		input.Provider = "railway"
 	}
+	if input.JobID != "" {
+		var id pgtype.UUID
+		if len(input.JobID) != 36 || id.Scan(input.JobID) != nil {
+			writeError(w, r, 400, "invalid_claim", "Invalid OCR job ID")
+			return
+		}
+	}
 	orgs := make([]string, 0, len(s.config.OCRRunPodOrganizations))
 	for organizationID := range s.config.OCRRunPodOrganizations {
 		orgs = append(orgs, organizationID)
 	}
-	jobs, err := s.config.OCRJobs.ClaimJobs(r.Context(), job.ClaimCommand{WorkerID: id.WorkerID, Environment: id.Environment, Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: s.config.Now(), OCRProvider: input.Provider, OCRDefaultProvider: s.config.OCRDefaultProvider, OCRRunPodOrganizations: orgs})
+	jobs, err := s.config.OCRJobs.ClaimJobs(r.Context(), job.ClaimCommand{WorkerID: id.WorkerID, Environment: id.Environment, Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: s.config.Now(), OCRProvider: input.Provider, OCRDefaultProvider: s.config.OCRDefaultProvider, OCRRunPodOrganizations: orgs, OCRJobID: input.JobID})
 	if err != nil {
 		s.writeJobError(w, r, err)
 		return

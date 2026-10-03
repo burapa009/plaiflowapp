@@ -35,13 +35,14 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
 		UPDATE durable_jobs SET status='Failed',failed_at=$1,failure_code='attempts_exhausted',
 			current_attempt_id=NULL,lease_token_hash=NULL,lease_expires_at=NULL,worker_id=NULL
 		WHERE status='Running' AND lease_expires_at<=$1 AND attempt_count>=max_attempts
+		  AND ($2::text='' OR id=NULLIF($2::text,'')::uuid)
 		RETURNING id,organization_id,legacy_export_job_id
 	), legacy AS (
 		UPDATE export_jobs e SET status='Failed',failed_at=$1,failure_code='attempts_exhausted'
 		FROM exhausted x WHERE e.id=x.legacy_export_job_id RETURNING e.id
 	)
 	INSERT INTO audit_events (organization_id,event_type,target_type,target_id,outcome,reason_code,occurred_at)
-	SELECT organization_id,'job.failed','durable_job',id,'failed','attempts_exhausted',$1 FROM exhausted`, now)
+	SELECT organization_id,'job.failed','durable_job',id,'failed','attempts_exhausted',$1 FROM exhausted`, now, command.OCRJobID)
 	if err != nil {
 		return nil, err
 	}
@@ -52,12 +53,13 @@ func (s *Store) ClaimJobs(ctx context.Context, command job.ClaimCommand) ([]job.
 	rows, err := tx.Query(ctx, `SELECT id,organization_id,coalesce(requester_user_id::text,''),kind,status,payload,
         attempt_count,created_at FROM durable_jobs
 		WHERE kind=ANY($1) AND attempt_count<max_attempts AND
+		  ($8::text='' OR id=NULLIF($8::text,'')::uuid) AND
 		  ($4::text='' OR kind<>'ocr' OR (($4::text='runpod') =
 		    ($5::text='runpod' OR coalesce(organization_id::text=ANY($6::text[]),false)
 		     OR payload->>'model_version'=$7::text))) AND
 		  ((status='Queued' AND available_at<=$2) OR (status='Running' AND lease_expires_at<=$2))
 		ORDER BY available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT $3`, kinds, now, command.Limit,
-		command.OCRProvider, command.OCRDefaultProvider, command.OCRRunPodOrganizations, ocr.GenerativeModelVersion)
+		command.OCRProvider, command.OCRDefaultProvider, command.OCRRunPodOrganizations, ocr.GenerativeModelVersion, command.OCRJobID)
 	if err != nil {
 		return nil, err
 	}

@@ -52,6 +52,35 @@ func TestOCRModelPilotSelection(t *testing.T) {
 			t.Fatalf("job model=%s err=%v", model, err)
 		}
 	}
+	// A focused recovery must skip older queued jobs and preserve model routing.
+	accepted, err := s.CommitPrepared(ctx, document.CommitInput{AcceptInput: document.AcceptInput{
+		OrganizationID: pilot, ActorUserID: user, AttemptID: postgresUUID(), OriginKey: "target-recovery", Filename: "target.png", Channel: "Web", Now: time.Now().UTC()},
+		TemporaryKey: "test/target", SHA256: strings.Repeat("b", 64), MIME: "image/png", Size: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.RetryOCR(ctx, user, pilot, accepted.Document.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := job.ClaimCommand{WorkerID: "target-recovery", Environment: "test", Kinds: []job.Kind{job.OCR}, Limit: 1, Lease: 2 * time.Minute, Now: time.Now().UTC(), OCRProvider: "railway", OCRDefaultProvider: "railway", OCRJobID: target.JobID}
+	claimed, err := s.ClaimJobs(ctx, command)
+	if err != nil || len(claimed) != 0 {
+		t.Fatalf("CPU claimed generative target: %v %v", claimed, err)
+	}
+	command.OCRProvider = "runpod"
+	claimed, err = s.ClaimJobs(ctx, command)
+	if err != nil || len(claimed) != 1 || claimed[0].Job.ID != target.JobID {
+		t.Fatalf("target claim: %v %v", claimed, err)
+	}
+	claimed, err = s.ClaimJobs(ctx, command)
+	if err != nil || len(claimed) != 0 {
+		t.Fatalf("target claim fell through to older job: %v %v", claimed, err)
+	}
+	var untouched int
+	if err = s.pool.QueryRow(ctx, `SELECT count(*) FROM durable_jobs WHERE kind='ocr' AND status='Queued' AND attempt_count=0`).Scan(&untouched); err != nil || untouched != 2 {
+		t.Fatalf("untouched=%d err=%v", untouched, err)
+	}
 	// During cutover, new-model jobs must never be claimed by the CPU worker.
 	for _, scope := range []struct{ provider, org string }{{"railway", other}, {"runpod", pilot}} {
 		claimed, err := s.ClaimJobs(ctx, job.ClaimCommand{WorkerID: "model-" + scope.provider,
