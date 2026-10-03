@@ -25,6 +25,8 @@ func TestFallbackKeepsRuleAndRequestsReview(t *testing.T) {
 func TestRules(t *testing.T) {
 	cases := []struct{ name, text, want string }{
 		{"receipt", "ใบเสร็จรับเงิน\nชำระแล้ว\nยอดรวม 100", "receipt"},
+		{"before payment receipt", "ใบเสร็จก่อนรับเงิน\nรหัสลูกหนี้ ก-0002\nยอดชำระ 100\nได้รับเงินตามเอกสารเลขที่", "pre_receipt"},
+		{"before payment receipt with later receipt reference", "ใบเสร็จก่อนรับเงิน\nรหัสลูกหนี้ ก-0002\nยอดชำระ 100\nโปรดขอใบเสร็จรับเงินภายหลัง", "pre_receipt"},
 		{"tax", "ใบกำกับภาษี\nเลขประจำตัวผู้เสียภาษี\nVAT 7%\nยอดรวม", "tax_invoice"},
 		{"combined", "ใบกำกับภาษี / ใบเสร็จรับเงิน\nเลขประจำตัวผู้เสียภาษี\nVAT 7%\nชำระแล้ว\nยอดรวม", "tax_invoice_receipt"},
 		{"invoice", "ใบแจ้งหนี้\nกำหนดชำระ\nเลขที่ 123", "invoice"},
@@ -53,6 +55,13 @@ func TestRules(t *testing.T) {
 				t.Fatalf("got %s %.2f, want %s: %+v", got.DocumentType, got.Confidence, tc.want, got.CandidateTypes)
 			}
 		})
+	}
+}
+
+func TestPreReceiptIsNotPaymentEvidenceOrExpense(t *testing.T) {
+	meta := AccountingFor("pre_receipt")
+	if meta.ExpenseCandidate || meta.PaymentEvidence || meta.VATDocument || meta.InputVATCandidate {
+		t.Fatalf("pre-receipt must not imply payment or expense: %+v", meta)
 	}
 }
 

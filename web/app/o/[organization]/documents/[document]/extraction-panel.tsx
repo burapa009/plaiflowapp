@@ -36,7 +36,7 @@ const warningLabels: Record<string, string> = {
   invalid_value: "พบข้อความแต่แปลงค่าไม่ได้",
 };
 const documentTypeLabels: Record<string, string> = {
-  tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", invoice: "ใบแจ้งหนี้", unknown: "ยังระบุไม่ได้",
+  tax_invoice: "ใบกำกับภาษี", receipt: "ใบเสร็จรับเงิน", pre_receipt: "ใบเสร็จก่อนรับเงิน", invoice: "ใบแจ้งหนี้", unknown: "ยังระบุไม่ได้",
   tax_invoice_receipt: "ใบกำกับภาษี / ใบเสร็จรับเงิน",
   billing_note: "ใบวางบิล", credit_note: "ใบลดหนี้", debit_note: "ใบเพิ่มหนี้",
   withholding_tax_certificate: "หนังสือรับรองหัก ณ ที่จ่าย", payment_voucher: "ใบสำคัญจ่าย", receipt_voucher: "ใบสำคัญรับเงิน",

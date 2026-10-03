@@ -10,10 +10,10 @@ import (
 	"plaiflow/api/internal/ocr"
 )
 
-const Version = "rules-v1"
+const Version = "rules-v2"
 
 var Labels = map[string]string{
-	"receipt": "ใบเสร็จรับเงิน", "tax_invoice": "ใบกำกับภาษี", "tax_invoice_receipt": "ใบกำกับภาษี/ใบเสร็จรับเงิน",
+	"receipt": "ใบเสร็จรับเงิน", "pre_receipt": "ใบเสร็จก่อนรับเงิน", "tax_invoice": "ใบกำกับภาษี", "tax_invoice_receipt": "ใบกำกับภาษี/ใบเสร็จรับเงิน",
 	"invoice": "ใบแจ้งหนี้", "billing_note": "ใบวางบิล", "credit_note": "ใบลดหนี้", "debit_note": "ใบเพิ่มหนี้",
 	"withholding_tax_certificate": "หนังสือรับรองหัก ณ ที่จ่าย", "payment_voucher": "ใบสำคัญจ่าย",
 	"receipt_voucher": "ใบสำคัญรับเงิน", "receipt_substitute": "ใบแทนใบเสร็จรับเงิน", "expense_claim": "ใบเบิกค่าใช้จ่าย",
@@ -120,6 +120,7 @@ type rule struct {
 
 var rules = map[string]rule{
 	"receipt":                     {[]string{"ใบเสร็จรับเงิน", "receipt"}, []signal{{[]string{"ชำระแล้ว", "paid", "ได้รับเงิน"}, .25}, {[]string{"ยอดรวม", "total", "จำนวนเงิน"}, .15}}},
+	"pre_receipt":                 {[]string{"ใบเสร็จก่อนรับเงิน"}, []signal{{[]string{"รหัสลูกหนี้", "ชื่อลูกหนี้"}, .23}, {[]string{"ยอดคงค้าง", "ยอดชำระ", "จำนวนเงิน"}, .14}}},
 	"tax_invoice":                 {[]string{"ใบกำกับภาษี", "tax invoice"}, []signal{{[]string{"เลขประจำตัวผู้เสียภาษี", "tax id"}, .16}, {[]string{"vat", "ภาษีมูลค่าเพิ่ม"}, .16}, {[]string{"ยอดรวม", "total", "subtotal"}, .12}}},
 	"tax_invoice_receipt":         {[]string{"ใบกำกับภาษี/ใบเสร็จรับเงิน", "ใบกำกับภาษี / ใบเสร็จรับเงิน", "tax invoice / receipt"}, []signal{{[]string{"เลขประจำตัวผู้เสียภาษี", "tax id"}, .13}, {[]string{"vat", "ภาษีมูลค่าเพิ่ม"}, .13}, {[]string{"ชำระแล้ว", "paid", "ได้รับเงิน"}, .12}, {[]string{"ยอดรวม", "total"}, .08}}},
 	"invoice":                     {[]string{"ใบแจ้งหนี้", "invoice"}, []signal{{[]string{"payment due", "due date", "กำหนดชำระ", "ยอดที่ต้องชำระ"}, .24}, {[]string{"เลขที่", "invoice no", "ยอดรวม"}, .14}}},
@@ -230,6 +231,13 @@ func ClassifyRule(in Input, reviewThreshold float64) Result {
 	if strings.Contains(full, "ยังไม่ได้รับชำระ") || strings.Contains(full, "unpaid") {
 		for i := range candidates {
 			if candidates[i].Type == "receipt" || candidates[i].Type == "tax_invoice_receipt" {
+				candidates[i].Confidence = min(candidates[i].Confidence, .49)
+			}
+		}
+	}
+	if strings.Contains(full, "ใบเสร็จก่อนรับเงิน") {
+		for i := range candidates {
+			if candidates[i].Type == "receipt" {
 				candidates[i].Confidence = min(candidates[i].Confidence, .49)
 			}
 		}
