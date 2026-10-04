@@ -21,7 +21,7 @@ export default function ReviewWorkspace({ viewer, form, support, formLabel = "�
       else { event.preventDefault(); event.stopPropagation(); }
     }
     function confirmOtherAction(event: SubmitEvent) {
-      if (!dirty.current || !(event.target instanceof HTMLFormElement) || event.target.matches(".ocr-review-form") || !event.target.closest(".ocr-review-shell")) return;
+      if (!dirty.current || !(event.target instanceof HTMLFormElement) || event.target.matches(".ocr-review-form")) return;
       if (window.confirm("มีข้อมูลที่ยังไม่ได้บันทึก ต้องการดำเนินการต่อและละทิ้งการแก้ไขหรือไม่?")) dirty.current = false;
       else { event.preventDefault(); event.stopPropagation(); }
     }

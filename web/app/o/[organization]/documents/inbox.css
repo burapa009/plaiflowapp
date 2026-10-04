@@ -1,0 +1,47 @@
+.inbox-upload-workspace { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(180px, .7fr) minmax(180px, .8fr); gap: 24px; padding: 24px; margin-bottom: 20px; border: 1px solid var(--pf-border-soft); border-radius: var(--pf-radius-lg); background: var(--pf-surface); }
+.inbox-upload-workspace h2 { font-size: 22px; font-weight: 700; }
+.inbox-upload-workspace svg { width: 22px; height: 22px; flex-shrink: 0; }
+.inbox-upload-workspace .document-icon-circle svg { width: 28px; height: 28px; }
+.inbox-upload-workspace .document-upload-submit { display: flex; justify-content: center; align-items: center; gap: 10px; }
+.inbox-description, .inbox-sources p { color: var(--pf-text-secondary); margin: 4px 0 12px; }
+.inbox-upload-workspace .document-dropzone { padding: 16px; border-radius: var(--pf-radius-sm); }
+.inbox-upload-workspace .document-dropzone strong { font-size: 18px; }
+.inbox-upload-workspace .document-dropzone p { font-size: 12px; margin-top: 8px; }
+.inbox-upload-workspace .document-upload-submit { min-height: 44px; }
+.inbox-workflow { border-left: 1px solid var(--pf-border-soft); padding-left: 24px; }
+.inbox-workflow h3, .inbox-sources h3 { font-weight: 600; }
+.inbox-workflow ol { list-style: none; padding: 0; counter-reset: workflow; display: grid; gap: 16px; margin-top: 16px; }
+.inbox-workflow li { counter-increment: workflow; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.inbox-workflow li::before { content: counter(workflow); display: grid; place-items: center; width: 24px; height: 24px; flex-shrink: 0; background: var(--pf-primary-600); color: var(--pf-text-inverse); border-radius: 50%; font-size: 12px; }
+.inbox-sources { padding: 20px; border-radius: var(--pf-radius-md); background: var(--pf-primary-50); display: flex; flex-direction: column; align-items: start; gap: 12px; }
+.inbox-sources summary, .inbox-sources a { min-height: 44px; padding: 10px 0; color: var(--pf-primary-700); cursor: pointer; }
+.inbox-sources details, .inbox-sources input { max-width: 100%; }
+.inbox-results { background: var(--pf-surface); border: 1px solid var(--pf-border-soft); border-radius: var(--pf-radius-md); padding: 12px; }
+.inbox-table-scroll { overflow-x: auto; }
+.inbox-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.inbox-table caption { text-align: left; color: var(--pf-text-secondary); padding: 12px; }
+.inbox-table th, .inbox-table td { text-align: left; padding: 12px; border-bottom: 1px solid var(--pf-border-soft); white-space: nowrap; }
+.inbox-table thead th { background: var(--pf-bg-soft); color: var(--pf-text-secondary); font-weight: 600; }
+.inbox-table tbody th { min-width: 200px; max-width: 340px; white-space: normal; overflow-wrap: anywhere; font-weight: 500; }
+.inbox-table tbody th a { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.inbox-table svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--pf-primary-600); }
+.inbox-table tbody tr:hover { background: var(--pf-surface-hover); }
+.inbox-table .inbox-number { text-align: right; font-variant-numeric: tabular-nums; }
+.inbox-row-actions { display: flex; gap: 8px; align-items: center; }
+.inbox-row-actions .secondary-button { min-height: 44px; min-width: 44px; margin: 0; }
+.inbox-upload-results { max-height: 160px; overflow-y: auto; overflow-wrap: anywhere; font-size: 14px; }
+.inbox-review { margin-top: 20px; scroll-margin-top: 20px; border: 1px solid var(--pf-border-default); border-radius: var(--pf-radius-md); overflow: hidden; }
+.inbox-review .document-detail-page.is-post-ocr { height: 850px; max-height: 95dvh; }
+@media (max-width: 1100px) { .inbox-upload-workspace { grid-template-columns: minmax(0, 1fr) 220px; } .inbox-sources { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .inbox-upload-workspace { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; } .inbox-workflow { border-left: 0; padding: 0; } .inbox-workflow ol { gap: 10px; } .inbox-results { padding: 4px; } }
+.inbox-table td[data-label]::before { display: none; }
+@media (max-width: 640px) {
+  .inbox-table, .inbox-table tbody { display: block; }
+  .inbox-table caption { display: block; width: 100%; }
+  .inbox-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .inbox-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr); padding: 12px; border-bottom: 1px solid var(--pf-border-default); }
+  .inbox-table tbody th, .inbox-table td { display: block; min-width: 0; max-width: none; padding: 6px 0; border: 0; white-space: normal; overflow-wrap: anywhere; }
+  .inbox-table td[data-label] { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .inbox-table td[data-label]::before { display: block; content: attr(data-label); color: var(--pf-text-secondary); text-align: left; }
+  .inbox-row-actions { flex-wrap: wrap; }
+}
