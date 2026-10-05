@@ -160,7 +160,7 @@ func (s *Store) CommitPrepared(ctx context.Context, input document.CommitInput) 
 	if used >= limit {
 		if _, err := tx.Exec(ctx, `INSERT INTO document_intake_attempts
 		    (id,organization_id,actor_user_id,channel,origin_key,status,rejection_code,created_at,updated_at,expires_at)
-		    VALUES ($1,$2,$3,$4,$5,'Rejected','quota_exhausted',$6,$6,$6+interval '90 days')
+		    VALUES ($1,$2,$3,$4,$5,'Rejected','quota_exhausted',$6,$6,$6::timestamptz+interval '90 days')
 		    ON CONFLICT (organization_id,channel,origin_key) DO NOTHING`,
 			input.AttemptID, input.OrganizationID, input.ActorUserID, input.Channel, input.OriginKey, input.Now); err != nil {
 			return document.CommitResult{}, err

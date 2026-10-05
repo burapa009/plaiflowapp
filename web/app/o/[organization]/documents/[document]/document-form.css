@@ -1,0 +1,16 @@
+.document-form-panel { padding: 16px; overflow-y: auto; min-width: 0; }
+.canonical-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.canonical-fields input,.canonical-fields select,.canonical-fields textarea { width: 100%; min-width: 0; min-height: 44px; }
+.canonical-row { margin-block: 16px; padding: 16px; border: 1px solid var(--pf-border-default); border-radius: var(--pf-radius-sm); }
+.canonical-row legend { color: var(--pf-text-secondary); }
+.canonical-actions { padding: 16px; background: var(--pf-surface); border-top: 1px solid var(--pf-border-default); }
+.canonical-actions label { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.canonical-actions input { width: 20px; height: 20px; }
+.canonical-hint { color: var(--pf-text-secondary); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.canonical-hint > a { margin-inline-start: 8px; text-decoration: underline; }
+.canonical-evidence { padding: 16px; background: var(--pf-warning-50); border: 1px solid var(--pf-warning-700); border-radius: var(--pf-radius-sm); }
+.canonical-calculated { color: var(--pf-text-primary); background: var(--pf-bg-soft); padding: 8px; font-variant-numeric: tabular-nums; }
+.document-form-panel summary { min-height: 44px; padding-block: 8px; cursor: pointer; }
+.document-form-panel :is(input,select,textarea)[aria-invalid="true"] { border-color: var(--pf-danger-700); }
+.document-form-panel :is(p,label,li,summary) { overflow-wrap: anywhere; }
+@media(max-width:640px) { .canonical-fields { grid-template-columns: minmax(0,1fr); } .canonical-row { padding: 12px; } }

@@ -47,6 +47,22 @@ func (s *Store) SaveReview(ctx context.Context, review extraction.Review, expect
 		return extraction.Review{}, tenant.ErrNotFound
 	}
 	var currentOCR string
+	// An old open browser must not replace a canonical confirmation with the legacy payload.
+	if review.Canonical == nil {
+		var installed bool
+		if err = tx.QueryRow(ctx, `SELECT to_regclass('document_forms') IS NOT NULL`).Scan(&installed); err != nil {
+			return extraction.Review{}, err
+		}
+		if installed {
+			var exists bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM document_forms WHERE organization_id=$1 AND document_id=$2)`, review.OrganizationID, review.DocumentID).Scan(&exists); err != nil {
+				return extraction.Review{}, err
+			}
+			if exists {
+				return extraction.Review{}, extraction.ErrConflict
+			}
+		}
+	}
 	if err = tx.QueryRow(ctx, `SELECT job_id FROM document_ocr_runs WHERE organization_id=$1 AND document_id=$2
         AND published_at IS NOT NULL AND superseded_at IS NULL AND deleted_at IS NULL`, review.OrganizationID, review.DocumentID).Scan(&currentOCR); err != nil || currentOCR != review.OCRJobID {
 		return extraction.Review{}, extraction.ErrConflict
@@ -75,6 +91,11 @@ func (s *Store) SaveReview(ctx context.Context, review extraction.Review, expect
 			return extraction.Review{}, err
 		}
 	}
+	if review.Canonical != nil {
+		if _, err = saveForm(ctx, tx, review.ConfirmedBy, review.OrganizationID, review.DocumentID, review.OCRJobID, *review.Canonical, review.ExpectedFormRevision, review.ExpectedLegacyDraftRevision, "Confirmed", review.RequestID, review.ConfirmedAt); err != nil {
+			return extraction.Review{}, err
+		}
+	}
 	review.Revision = revision + 1
 	if s.reviewEnabled {
 		_, err = tx.Exec(ctx, `INSERT INTO document_extraction_reviews
@@ -89,6 +110,11 @@ func (s *Store) SaveReview(ctx context.Context, review extraction.Review, expect
 	}
 	if err != nil {
 		return extraction.Review{}, err
+	}
+	if review.Canonical != nil {
+		if _, err = tx.Exec(ctx, `UPDATE document_extraction_reviews SET form_revision=$2 WHERE id=$1`, review.ID, review.ExpectedFormRevision+1); err != nil {
+			return extraction.Review{}, err
+		}
 	}
 	if s.matchingEnabled {
 		_, err = tx.Exec(ctx, `INSERT INTO document_match_index

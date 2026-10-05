@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feat/accounting-document-forms]
 
 permissions:
   contents: read
@@ -35,7 +35,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: |
-          pnpm build
+          pnpm build --webpack
           ! grep -R --fixed-strings "$DASHBOARD_API_TOKEN" .next/static
         env: { API_BASE_URL: "https://api.staging.invalid", DASHBOARD_API_TOKEN: "ci-not-a-secret" }
 
@@ -72,6 +72,7 @@ jobs:
       - run: cd api && OCR_TEST_ADMIN_URL="$TEST_DATABASE_URL" go test ./internal/postgres -run '^Test(OCRModelPilotSelection|OCRIsolatedDatabaseLifecycle)$' -count=1 -v
       - run: cd api && OCR_TEST_ADMIN_URL="$TEST_DATABASE_URL" go test ./internal/postgres -run '^TestDocumentAttachmentsStayInTheirParentOrganization$' -count=1 -v
       - run: cd api && OCR_TEST_ADMIN_URL="$TEST_DATABASE_URL" go test ./internal/postgres -run '^TestDocumentClassificationCorrectionKeepsOCRAndPrediction$' -count=1 -v
+      - run: cd api && OCR_TEST_ADMIN_URL="$TEST_DATABASE_URL" go test ./internal/postgres -run '^Test(DocumentFormsPersistenceAndIsolation|DocumentFormsReadinessRequiresMigration25|DocumentQuotaRejectsWithoutSQLFailure)$' -count=1 -v
 
   secrets:
     runs-on: ubuntu-latest

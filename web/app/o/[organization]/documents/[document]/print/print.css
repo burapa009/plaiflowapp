@@ -1,0 +1,7 @@
+.document-print { max-width: 210mm; margin: auto; padding: 16px; color: var(--pf-text-primary); background: var(--pf-surface); }
+.document-print h1 { font-size: 24px; font-weight: 700; }.document-print h2 { font-size: 18px; font-weight: 600; margin-top: 20px; }
+.document-print dl>div { display:grid;grid-template-columns:1fr 2fr;gap:12px; }.document-print dd { white-space:pre-wrap;overflow-wrap:anywhere; }
+.document-print table { width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px; }.document-print td,.document-print th { padding:6px;border:1px solid var(--pf-border-default);overflow-wrap:anywhere;text-align:left; }
+.document-print td.print-number { text-align:right;font-variant-numeric:tabular-nums; }
+@page { size:A4;margin:15mm; }
+@media print { .print-control,body>header,nav { display:none!important; }.document-print { padding:0;max-width:none; }.document-print thead { display:table-header-group; }.document-print tr,.document-print dl>div { break-inside:avoid; }.document-print h2 { break-after:avoid; } }

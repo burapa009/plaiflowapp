@@ -1,0 +1,279 @@
+[
+  {
+    "name": "abbreviated does not require buyer or separate VAT",
+    "data": {
+      "version": 1,
+      "type": "abbreviated_tax_invoice",
+      "fields": {},
+      "tables": {}
+    },
+    "missing": [
+      "seller_name",
+      "vat_included_text"
+    ],
+    "notMissing": [
+      "buyer_name",
+      "buyer_address",
+      "buyer_tax_id",
+      "buyer_branch",
+      "vat_amount"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "non VAT buyer branch is not required",
+    "data": {
+      "version": 1,
+      "type": "tax_invoice",
+      "fields": {
+        "buyer_vat_registered": "no",
+        "buyer_tax_required": "no"
+      },
+      "tables": {}
+    },
+    "notMissing": [
+      "buyer_branch",
+      "buyer_tax_id"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "unknown VAT is not false",
+    "data": {
+      "version": 1,
+      "type": "tax_invoice",
+      "fields": {
+        "buyer_vat_registered": "unknown"
+      },
+      "tables": {}
+    },
+    "unknown": [
+      "buyer_branch",
+      "buyer_tax_id"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "VAT buyer needs branch",
+    "data": {
+      "version": 1,
+      "type": "tax_invoice",
+      "fields": {
+        "buyer_vat_registered": "yes",
+        "buyer_tax_required": "yes"
+      },
+      "tables": {}
+    },
+    "missing": [
+      "buyer_branch",
+      "buyer_tax_id"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "delivery statutory scope checks price",
+    "data": {
+      "version": 1,
+      "type": "delivery_note",
+      "fields": {
+        "delivery_scope": "section_105_quater"
+      },
+      "tables": {
+        "deliveries": [
+          {
+            "description": "สินค้า",
+            "quantity": "1"
+          }
+        ]
+      }
+    },
+    "missing": [
+      "deliveries.0.unit_price"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "internal delivery needs no price",
+    "data": {
+      "version": 1,
+      "type": "delivery_note",
+      "fields": {
+        "delivery_scope": "internal"
+      },
+      "tables": {
+        "deliveries": [
+          {
+            "description": "สินค้า",
+            "delivered": "1"
+          }
+        ]
+      }
+    },
+    "hidden": [
+      "deliveries.unit_price",
+      "deliveries.amount"
+    ],
+    "notMissing": [
+      "deliveries.0.unit_price"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "cash receipt has no bank requirement",
+    "data": {
+      "version": 1,
+      "type": "receipt",
+      "fields": {
+        "payment_method": "cash",
+        "record_payment": "yes"
+      },
+      "tables": {}
+    },
+    "hidden": [
+      "payment_reference",
+      "bank_account",
+      "bank_name"
+    ],
+    "notMissing": [
+      "payment_reference",
+      "bank_account"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "slip never requires items or VAT",
+    "data": {
+      "version": 1,
+      "type": "bank_slip",
+      "fields": {},
+      "tables": {}
+    },
+    "hidden": [
+      "vat_amount",
+      "items.amount"
+    ],
+    "notMissing": [
+      "vat_amount",
+      "items.description"
+    ],
+    "calculated": {}
+  },
+  {
+    "name": "exact calculation keeps source total separate",
+    "data": {
+      "version": 1,
+      "type": "invoice",
+      "fields": {
+        "price_mode": "exclusive",
+        "discount": "0",
+        "vat_rate": "7",
+        "total_amount": "999"
+      },
+      "tables": {
+        "items": [
+          {
+            "quantity": "3",
+            "unit_price": "0.335",
+            "discount": "0"
+          }
+        ]
+      }
+    },
+    "calculated": {
+      "items.0.amount": "1.01",
+      "subtotal": "1.01",
+      "vat_amount": "0.07",
+      "total_amount": "1.08"
+    }
+  },
+  {
+    "name": "unknown discount is not invented zero",
+    "data": {
+      "version": 1,
+      "type": "invoice",
+      "fields": {
+        "price_mode": "exclusive",
+        "vat_rate": "7"
+      },
+      "tables": {
+        "items": [
+          {
+            "quantity": "3",
+            "unit_price": "100"
+          }
+        ]
+      }
+    },
+    "calculated": {}
+  },
+  {
+    "name": "bill uses multiple allocations",
+    "data": {
+      "version": 1,
+      "type": "billing_note",
+      "fields": {},
+      "tables": {
+        "references": [
+          {
+            "allocated": "0.10"
+          },
+          {
+            "allocated": "0.20"
+          }
+        ]
+      }
+    },
+    "calculated": {
+      "total_amount": "0.30"
+    }
+  },
+  {
+    "name": "WHT does not default to three percent",
+    "data": {
+      "version": 1,
+      "type": "withholding_tax_certificate",
+      "fields": {},
+      "tables": {
+        "income": [
+          {
+            "amount": "100",
+            "tax": "5",
+            "rate": "5"
+          },
+          {
+            "amount": "200",
+            "tax": "2",
+            "rate": "1"
+          }
+        ]
+      }
+    },
+    "calculated": {
+      "income_total": "300.00",
+      "withholding_tax": "7.00"
+    }
+  },
+  {
+    "name": "combined invoice retains full invoice duties when receipt conditions are false",
+    "data": {
+      "version": 1,
+      "type": "tax_invoice_receipt",
+      "fields": {
+        "receipt_105": "no",
+        "receipt_goods_detail": "no"
+      },
+      "tables": {}
+    },
+    "missing": [
+      "seller_name",
+      "seller_tax_id",
+      "document_number",
+      "issue_date",
+      "buyer_name",
+      "buyer_address",
+      "items.description",
+      "items.quantity"
+    ],
+    "calculated": {}
+  }
+]

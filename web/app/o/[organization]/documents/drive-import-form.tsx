@@ -14,7 +14,8 @@ export function DriveImportForm({ organization }: { organization: string }) {
   const [message, setMessage] = useState("");
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
     const fileId = String(data.get("file_id") || "").trim();
     const revision = String(data.get("revision") || "").trim();
     const csrf = csrfToken();
@@ -36,7 +37,7 @@ export function DriveImportForm({ organization }: { organization: string }) {
         return;
       }
       setMessage(result.duplicate ? "ไฟล์นี้อยู่ในเอกสารแล้ว" : "นำเข้าไฟล์จาก Drive แล้ว");
-      event.currentTarget.reset();
+      form.reset();
       router.refresh();
     } catch {
       setMessage("เชื่อมต่อ Google Drive ไม่สำเร็จ");
