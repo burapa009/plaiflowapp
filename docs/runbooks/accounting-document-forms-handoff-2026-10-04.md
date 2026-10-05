@@ -82,3 +82,11 @@ Go: `.tools/go127/go/bin/go.exe`, `GOTOOLCHAIN=local`, `GOCACHE=F:/Project/plaif
 Disposable DB tests: `OCR_TEST_ADMIN_URL=postgres://form_test@127.0.0.1:55439/postgres?sslmode=disable`. Opt-in browser fixture additionally needs `FORM_BROWSER_TEST=1`, `-timeout 30m`, Next API_BASE_URL=http://127.0.0.1:55440 and REVIEW_ENABLED=true. Stop it via candidate `.form-browser-stop`; wait for the Go test to finish so its DB cleanup runs. Never use production credentials or DB for these tests.
 
 Continue from this candidate and report file; do not redo passed checks unless changes or new evidence justify it.
+
+## Live release update — 2026-10-05
+
+User subsequently authorized push and real deployment. Implementation HEAD `d054226638bfec80fcb44fbe91f58c68264ca7c3` is pushed; both push and PR CI passed. Migration25 has now been applied to the database used by the live app (Railway environment named staging). Vercel production build is READY with primary-domain promotion pending the API deployment. Earlier statements above that CI/live migration are absent are superseded by the [live release report](accounting-document-forms-release-2026-10-05.md). Continue using that report's exact deployment IDs; preserve unrelated main-worktree changes.
+
+### Cutover complete
+
+Railway retry `d9a5c017-d077-4d6a-a8cb-a84ba71e2ced` reached SUCCESS; Vercel deployment `dpl_Buq8jX1wvaQuGEoXAJWHsUWX6HWp` was promoted to the primary live alias. Authenticated unchanged-draft save/reload and saved-data print summary passed. See the release report for evidence, rollback IDs and remaining confirmation/PDF scope.
