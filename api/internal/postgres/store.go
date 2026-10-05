@@ -22,7 +22,8 @@ type Store struct {
 	classificationEnabled bool
 }
 
-const requiredMigrationVersion = 23
+// Canonical document form routes require migration 25 even with classification off.
+const requiredMigrationVersion = 25
 
 func (s *Store) EnableReview()         { s.reviewEnabled = true }
 func (s *Store) EnableBilling()        { s.billingEnabled = true }
@@ -31,11 +32,13 @@ func (s *Store) RequireMigration19()   { s.requireMigration19 = true }
 func (s *Store) EnableClassification() { s.classificationEnabled = true }
 
 func (s *Store) currentDraftSQL() string {
+	// to_jsonb keeps pre-migration reads compatible without naming absent columns.
+	canonical := ` AND (to_jsonb(e)->>'form_invalidated_at') IS NULL`
 	if !s.reviewEnabled {
-		return ""
+		return canonical
 	}
-	return ` AND NOT EXISTS (SELECT 1 FROM document_review_drafts rd WHERE rd.organization_id=e.organization_id
-		AND rd.document_id=e.document_id AND rd.revision>e.draft_revision)`
+	return canonical + ` AND (coalesce((to_jsonb(e)->>'form_revision')::integer,0)>0 OR NOT EXISTS (SELECT 1 FROM document_review_drafts rd WHERE rd.organization_id=e.organization_id
+		AND rd.document_id=e.document_id AND rd.revision>e.draft_revision))`
 }
 
 func New(ctx context.Context, databaseURL string, maxConnections int32, logger *slog.Logger) (*Store, error) {

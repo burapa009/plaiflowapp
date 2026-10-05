@@ -117,6 +117,21 @@ func (s *Store) SaveDraft(ctx context.Context, draft extraction.ReviewDraft, exp
 	if err != nil {
 		return extraction.ReviewDraft{}, tenant.ErrNotFound
 	}
+	// Once converted, an old browser must reload the canonical editor rather
+	// than save an invisible legacy proposal. Keep pre-migration callers working.
+	var formsInstalled bool
+	if err = tx.QueryRow(ctx, `SELECT to_regclass('document_forms') IS NOT NULL`).Scan(&formsInstalled); err != nil {
+		return extraction.ReviewDraft{}, err
+	}
+	if formsInstalled {
+		var exists bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM document_forms WHERE organization_id=$1 AND document_id=$2)`, draft.OrganizationID, draft.DocumentID).Scan(&exists); err != nil {
+			return extraction.ReviewDraft{}, err
+		}
+		if exists {
+			return extraction.ReviewDraft{}, extraction.ErrConflict
+		}
+	}
 	var currentOCR string
 	err = tx.QueryRow(ctx, `SELECT job_id FROM document_ocr_runs WHERE organization_id=$1 AND document_id=$2
 		AND published_at IS NOT NULL AND superseded_at IS NULL AND deleted_at IS NULL`, draft.OrganizationID, draft.DocumentID).Scan(&currentOCR)
@@ -159,7 +174,7 @@ func (s *Store) SaveDraft(ctx context.Context, draft extraction.ReviewDraft, exp
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,actor_user_id,event_type,target_type,target_id,
 		request_id,outcome,occurred_at,metadata) VALUES($1,$2,'review.draft.save','document',$3,$4,'success',$5,
-		jsonb_build_object('old_revision',$6,'new_revision',$7))`, draft.OrganizationID, draft.UpdatedBy,
+		jsonb_build_object('old_revision',$6::integer,'new_revision',$7::integer))`, draft.OrganizationID, draft.UpdatedBy,
 		draft.DocumentID, requestID, draft.UpdatedAt, revision, draft.Revision)
 	if err != nil {
 		return extraction.ReviewDraft{}, err

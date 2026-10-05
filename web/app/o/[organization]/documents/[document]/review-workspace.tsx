@@ -26,11 +26,15 @@ export default function ReviewWorkspace({ viewer, form, support, formLabel = "เน
       else { event.preventDefault(); event.stopPropagation(); }
     }
     const revealForm = () => setMobileView("form");
+    const saved = () => { dirty.current = false; };
+    const changed = () => { dirty.current = true; };
+    document.addEventListener("review-dirty", changed);
+    document.addEventListener("review-saved", saved);
     document.addEventListener("review-focus-field", revealForm);
     window.addEventListener("beforeunload", beforeUnload);
     document.addEventListener("click", confirmExit, true);
     document.addEventListener("submit", confirmOtherAction, true);
-    return () => { document.removeEventListener("review-focus-field", revealForm); window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", confirmExit, true); document.removeEventListener("submit", confirmOtherAction, true); };
+    return () => { document.removeEventListener("review-dirty", changed); document.removeEventListener("review-saved", saved); document.removeEventListener("review-focus-field", revealForm); window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", confirmExit, true); document.removeEventListener("submit", confirmOtherAction, true); };
   }, []);
 
   return <div className="ocr-review-shell" data-mobile-view={mobileView} onInputCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }} onChangeCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}>

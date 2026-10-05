@@ -9,20 +9,23 @@ import (
 var ErrConflict = errors.New("extraction revision changed")
 
 type Review struct {
-	ID             string            `json:"id"`
-	OrganizationID string            `json:"organization_id"`
-	DocumentID     string            `json:"document_id"`
-	OCRJobID       string            `json:"ocr_job_id"`
-	Revision       int               `json:"revision"`
-	DraftRevision  int               `json:"-"`
-	RequestID      string            `json:"-"`
-	DocumentType   string            `json:"document_type"`
-	Values         map[string]string `json:"values"`
-	Decisions      map[string]string `json:"decisions,omitempty"`
-	OriginalValues map[string]string `json:"original_values,omitempty"`
-	ConfirmedBy    string            `json:"confirmed_by"`
-	ConfirmedAt    time.Time         `json:"confirmed_at"`
-	ObjectKey      string            `json:"-"`
+	Canonical                   *DocumentForm     `json:"canonical,omitempty"`
+	ExpectedFormRevision        int               `json:"-"`
+	ExpectedLegacyDraftRevision int               `json:"-"`
+	ID                          string            `json:"id"`
+	OrganizationID              string            `json:"organization_id"`
+	DocumentID                  string            `json:"document_id"`
+	OCRJobID                    string            `json:"ocr_job_id"`
+	Revision                    int               `json:"revision"`
+	DraftRevision               int               `json:"-"`
+	RequestID                   string            `json:"-"`
+	DocumentType                string            `json:"document_type"`
+	Values                      map[string]string `json:"values"`
+	Decisions                   map[string]string `json:"decisions,omitempty"`
+	OriginalValues              map[string]string `json:"original_values,omitempty"`
+	ConfirmedBy                 string            `json:"confirmed_by"`
+	ConfirmedAt                 time.Time         `json:"confirmed_at"`
+	ObjectKey                   string            `json:"-"`
 }
 
 // ReviewDraft is a saved human proposal. It never grants confirmation or approval.

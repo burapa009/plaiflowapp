@@ -17,7 +17,7 @@ export async function sessionGET(path: string) {
   }
 }
 
-export async function sessionPOST(path: string, body: URLSearchParams, redirectMode: RequestRedirect = "follow") {
+export async function sessionPOST(path: string, body: URLSearchParams | string, redirectMode: RequestRedirect = "follow") {
   const cookieStore = await cookies();
   const csrf = cookieStore.get(csrfCookieName)?.value;
   const origin = (await headers()).get("origin");
@@ -27,7 +27,7 @@ export async function sessionPOST(path: string, body: URLSearchParams, redirectM
       method: "POST",
       headers: {
         Cookie: cookieStore.toString(),
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type": typeof body === "string" ? "application/json" : "application/x-www-form-urlencoded",
         Origin: origin,
         "X-CSRF-Token": csrf,
       },

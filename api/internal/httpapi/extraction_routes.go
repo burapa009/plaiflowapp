@@ -26,6 +26,8 @@ const maxReviewBytes = 32 << 10
 var structuredHeader = []string{"document_id", "document_type", "issue_date", "document_number", "seller_name", "seller_tax_id", "buyer_name", "buyer_tax_id", "currency", "subtotal", "vat_amount", "total_amount", "confirmed_at", "confirmed_by", "extraction_schema_version"}
 
 func (s *server) registerExtractionRoutes(m *http.ServeMux) {
+	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/form", s.ocrPilot(s.getDocumentForm))
+	m.HandleFunc("POST /v1/o/{organization}/documents/{document}/form", s.ocrPilot(s.saveDocumentForm))
 	m.HandleFunc("GET /v1/o/{organization}/documents/{document}/extraction", s.ocrPilot(s.getExtraction))
 	if s.config.ClassificationEnabled && s.config.Classification != nil {
 		m.HandleFunc("GET /v1/o/{organization}/documents/{document}/classification", s.ocrPilot(s.getClassification))
@@ -529,8 +531,8 @@ func (s *server) readReview(ctx context.Context, meta extraction.Review) (*extra
 		return nil, err
 	}
 	defer body.Close()
-	data, err := io.ReadAll(io.LimitReader(body, maxReviewBytes+1))
-	if err != nil || len(data) > maxReviewBytes {
+	data, err := io.ReadAll(io.LimitReader(body, (256<<10)+1))
+	if err != nil || len(data) > 256<<10 {
 		return nil, errors.New("review artifact exceeds limit")
 	}
 	var review extraction.Review
