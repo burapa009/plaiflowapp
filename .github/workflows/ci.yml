@@ -35,7 +35,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: |
-          pnpm build -- --webpack
+          pnpm build --webpack
           ! grep -R --fixed-strings "$DASHBOARD_API_TOKEN" .next/static
         env: { API_BASE_URL: "https://api.staging.invalid", DASHBOARD_API_TOKEN: "ci-not-a-secret" }
 
