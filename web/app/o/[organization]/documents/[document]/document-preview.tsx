@@ -28,7 +28,7 @@ export default function DocumentPreview({ src, filename, mime, documentType = ""
   const [ratio, setRatio] = useState(25 / 33);
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
-  const [showFiles, setShowFiles] = useState(true);
+  const [showFiles, setShowFiles] = useState(false);
   const [load, setLoad] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [selectedId, setSelectedId] = useState(document || "original");
@@ -92,8 +92,7 @@ export default function DocumentPreview({ src, filename, mime, documentType = ""
 
   return <aside className="ocr-review-viewer" aria-label="เอกสารต้นฉบับ">
     <div className="ocr-review-viewer-head">
-      <div className="ocr-review-viewer-type"><span>ประเภทเอกสาร</span><span className="ocr-review-ocr-state">{selected.id !== files[0].id ? "เอกสารแนบ" : ocrStatus === "Completed" ? "Plaiflow อ่านแล้ว" : ocrLabels[ocrStatus] ?? "สถานะ OCR ไม่พร้อม"}</span><select aria-label="ประเภทเอกสาร" value={selected.id === files[0].id ? documentType || "ยังระบุไม่ได้" : "หลักฐานประกอบ"} disabled title="ประเภทเอกสารจาก OCR ยังแก้ไขในหน้านี้ไม่ได้"><option>{selected.id === files[0].id ? documentType || "ยังระบุไม่ได้" : "หลักฐานประกอบ"}</option></select></div>
-      <div className="ocr-review-viewer-tags"><span>แท็ก</span><select aria-label="เลือกแท็ก" disabled title="ยังไม่รองรับแท็กเอกสาร"><option>เลือกแท็ก</option></select></div>
+      <div className="ocr-review-viewer-type"><strong>ต้นฉบับ</strong><span className="ocr-review-ocr-state">{selected.id !== files[0].id ? "เอกสารแนบ" : ocrStatus === "Completed" ? "OCR อ่านแล้ว" : ocrLabels[ocrStatus] ?? "สถานะ OCR ไม่พร้อม"}</span><span title="ประเภทที่ OCR อ่านครั้งแรก">{selected.id === files[0].id ? documentType || "ยังระบุไม่ได้" : "หลักฐานประกอบ"}</span></div>
       <span className="ocr-review-file-count">ไฟล์ปัจจุบัน: {files.findIndex((item) => item.id === selected.id) + 1} / {files.length}</span>
     </div>
     <div ref={canvas} className="ocr-review-canvas" aria-busy={!!currentSrc && (image || pdf) && load === "loading"}>

@@ -4,21 +4,23 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import FormRuleHint from "./form-rule-hint";
+import { expenseTypeOptions, expenseDocumentTypes } from "@/lib/document-workflow";
 import { formLayout, fieldVisible, ruleIssues, calculatedAmounts, decimalCents, formatCents, formConfig, sumRows, type CanonicalDocument, type DocumentFormResponse } from "@/lib/document-form";
 import "./document-form.css";
 
 export type DocumentFormState = {error:string;fields:Record<string,string>;saved?:DocumentFormResponse["form"];reviewRevision?:number};
-function Actions({canConfirm,disabled}:{canConfirm:boolean;disabled:boolean}) {
+function Actions({canConfirm,disabled,acknowledged}:{canConfirm:boolean;disabled:boolean;acknowledged:boolean}) {
  const {pending}=useFormStatus();
- return <div className="card-actions"><button className="secondary-button" name="intent" value="draft" type="submit" formNoValidate disabled={pending||disabled}>{pending?"กำลังบันทึก…":"บันทึกร่าง"}</button>{canConfirm&&<button className="button" name="intent" value="confirm" disabled={pending||disabled}>ยืนยันข้อมูลกับต้นฉบับ</button>}</div>;
+ return <div className="card-actions"><button className="secondary-button" name="intent" value="draft" type="submit" formNoValidate disabled={pending||disabled}>{pending?"กำลังบันทึก…":"บันทึกร่าง"}</button>{canConfirm&&<button className="button" name="intent" value="confirm" disabled={pending||disabled||!acknowledged}>ยืนยันข้อมูลกับต้นฉบับ</button>}</div>;
 }
 export default function DocumentFormEditor({initial,action,cancelHref,printHref,readOnly,notice}:{initial:DocumentFormResponse;action:(state:DocumentFormState,form:FormData)=>Promise<DocumentFormState>;cancelHref:string;printHref:string;readOnly:boolean;notice:string}) {
  const [data,setData]=useState<CanonicalDocument>(initial.form.data);
  const [ack,setAck]=useState(false);
+ const [amountAck,setAmountAck]=useState(false);
  const [state,formAction,pending]=useActionState(async (previous:DocumentFormState,form:FormData)=>{
   const result=await action(previous,form);
   if(result.error)return {...result,saved:previous.saved,reviewRevision:previous.reviewRevision};
-  if(result.saved){setData(result.saved.data);setAck(false);}
+  if(result.saved){setData(result.saved.data);setAck(false);setAmountAck(false);}
   return result;
  },{error:"",fields:{}});
  const revision=state.saved?.revision??initial.form.revision;
@@ -29,7 +31,7 @@ export default function DocumentFormEditor({initial,action,cancelHref,printHref,
  const rules=formConfig.rules[data.type]??formConfig.rules.unknown;
  const calculated=calculatedAmounts(data),issues=ruleIssues(data);
  useEffect(()=>{if(state.error){document.dispatchEvent(new CustomEvent("review-focus-field"));errorRef.current?.focus();}if(state.saved&&!state.error)document.dispatchEvent(new CustomEvent("review-saved"));},[state]);
- const change=(next:CanonicalDocument)=>{setData(next);setAck(false);document.dispatchEvent(new CustomEvent("review-dirty"));};
+ const change=(next:CanonicalDocument)=>{setData(next);setAck(false);setAmountAck(false);document.dispatchEvent(new CustomEvent("review-dirty"));};
  const field=(key:string,label?:string)=>{
   const spec=formConfig.fields[key];if(!spec||!fieldVisible(data,key))return null;
   const id="form-"+key;const required=typ.required.includes(key);const error=state.fields[key];
@@ -71,22 +73,22 @@ export default function DocumentFormEditor({initial,action,cancelHref,printHref,
     </section>;
    };
  return <section className="ocr-review-panel document-form-panel">
-  <h2>ข้อมูลเอกสารบัญชี</h2>
-  <p>ตรวจเทียบต้นฉบับก่อนยืนยัน · ข้อมูลไม่ครบยังส่งตรวจได้ · ไม่ใช่การรับรองสิทธิภาษี</p>
   {initial.source_superseded&&<p className="form-error" role="alert">OCR เปลี่ยนหลังการบันทึก กรุณาตรวจทุกส่วนใหม่</p>}
   {notice&&<p role="status">{notice==="confirmed"?"ยืนยันข้อมูลแล้ว":notice==="draft-saved"?"บันทึกร่างแล้ว":""}</p>}
   <form action={formAction} className="ocr-review-form work-form" onReset={e=>e.preventDefault()}>
    <input type="hidden" name="document_data" value={JSON.stringify({version:data.version,type:data.type,fields:data.fields,tables:data.tables})}/><input type="hidden" name="revision" value={revision}/><input type="hidden" name="review_revision" value={reviewRevision}/>
    {state.error&&<div ref={errorRef} role="alert" tabIndex={-1} className="ocr-review-alert"><p>{state.error}</p><ul>{Object.entries(state.fields).map(([key,message])=><li key={key}><button type="button" className="ocr-review-error-link" onClick={()=>{const el=document.getElementById("form-"+key)??document.getElementById("table-"+key.split(".")[0]);let parent=el?.parentElement;while(parent){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}el?.focus();el?.scrollIntoView({block:"center"});}}>{formConfig.fields[key]?.label??formConfig.tables[key]?.label??key}: {message}</button></li>)}</ul></div>}
    {revision>0&&!dirty&&!state.error&&<p role="status">{(state.saved??initial.form).status==="Confirmed"?"ยืนยันเอกสารแล้ว":"บันทึกร่างแล้ว"} · ฉบับ {revision}</p>}
-   <div className="field"><label htmlFor="form-type">ประเภทเอกสาร</label><select id="form-type" value={data.type} disabled={readOnly||pending} onChange={e=>change({...data,type:e.target.value})}>{Object.entries(formConfig.types).map(([key,type])=><option value={key} key={key}>{type.label}</option>)}</select></div>
+   <header className="canonical-heading"><p className="eyebrow">หลัง OCR</p><h2>ตรวจข้อมูลจากเอกสาร</h2><p>ข้อมูลที่อ่านได้ต้องตรวจเทียบกับต้นฉบับก่อนยืนยัน · ไม่ใช่การรับรองสิทธิภาษี</p></header>
+   <section className="canonical-type"><p>หมวดเอกสาร · ค่าใช้จ่าย</p><div className="field"><label htmlFor="form-type">ประเภทเอกสาร</label><select id="form-type" value={data.type} disabled={readOnly||pending} onChange={e=>change({...data,type:e.target.value})}>{expenseTypeOptions(initial.form.data.type).map(key=><option value={key} key={key}>{formConfig.types[key]?.label??key}</option>)}</select></div><p>แบบฟอร์มเปลี่ยนตามประเภทที่เลือก · สลับกลับได้โดยไม่ลบข้อมูลที่กรอก</p>{!expenseDocumentTypes.includes(data.type)&&data.type!=="unknown"&&<p>ประเภทเดิมของเอกสารนี้ยังเปิดดูและแก้ไขได้</p>}</section>
+   <h3 className="canonical-form-title">ข้อมูล{typ.label}</h3>
    {data.type==="bank_slip"&&<p className="notice">ภาพ Slip เป็นหลักฐานประกอบ ยังไม่ใช่ผลตรวจสอบกับธนาคาร</p>}
    {["credit_note","debit_note"].includes(data.type)&&<p className="notice">กรอกยอดปรับเป็นค่าบวก · {data.type==="credit_note"?"ลด":"เพิ่ม"}มูลค่าตามประเภท ไม่แก้ทับเอกสารต้นทาง</p>}
    {(Object.keys(issues.missing).length>0||Object.keys(issues.unresolved).length>0)&&<details className="canonical-evidence"><summary>หลักฐานไม่ครบ / เงื่อนไขต้องตรวจสอบ ({Object.keys(issues.missing).length+Object.keys(issues.unresolved).length})</summary><p>ยังบันทึกและยืนยันข้อมูลกับต้นฉบับได้ โดยไม่รับรองสิทธิภาษี</p><ul>{Object.entries({...issues.missing,...issues.unresolved}).map(([key,message])=><li key={key}>{formConfig.fields[key]?.label??key}: {message}</li>)}</ul></details>}
    {formLayout(data).map(({kind,key})=>kind==="section"?renderSection(key):renderTable(key))}
    {data.assessment&&<details><summary>ผลตรวจที่บันทึก · รุ่น {data.assessment.ruleVersion}</summary><p>{data.assessment.evidenceStatus==="incomplete"?"หลักฐานไม่ครบ / ต้องตรวจสอบ":data.assessment.action==="draft"?"ฉบับร่าง · ยังไม่ประเมินความครบถ้วน":"ตรวจข้อมูลแล้ว"} · ยังไม่ประเมินสิทธิภาษี{dirty?" · มีการแก้ไขที่ยังไม่บันทึก":""}</p>{Object.entries(data.assessment.differences).map(([key,value])=><p key={key}>{formConfig.fields[key]?.label??key}: {value}</p>)}</details>}
    <div className="ocr-review-card"><p>เอกสารนำเข้าเก็บต้นฉบับไว้ · ยังไม่รองรับออกเอกสารทางการประเภทนี้จากฟอร์มนี้</p>{printHref&&revision>0&&<a className="secondary-button" href={printHref} target="_blank" rel="noopener noreferrer">พิมพ์สรุปข้อมูลที่บันทึก</a>}</div>
-   <div className="canonical-actions">{initial.can_confirm&&<label><input id="form-review_ack" name="review_ack" type="checkbox" value="1" checked={ack} onChange={e=>setAck(e.target.checked)} disabled={readOnly||pending} aria-invalid={!!state.fields.review_ack} aria-describedby={state.fields.review_ack?"form-review_ack-error":undefined}/> ฉันตรวจข้อมูลทั้งเอกสารเทียบกับต้นฉบับแล้ว</label>}{state.fields.review_ack&&<p className="form-error" id="form-review_ack-error">{state.fields.review_ack}</p>}<Actions canConfirm={initial.can_confirm} disabled={readOnly}/><Link href={cancelHref} className="secondary-button">กลับรายการ</Link></div>
+   <div className="canonical-actions">{initial.can_confirm&&<><label><input name="amount_ack" type="checkbox" value="1" checked={amountAck} onChange={e=>setAmountAck(e.target.checked)} disabled={readOnly||pending}/> ฉันตรวจยอดเงินและค่าที่ไม่ชัดเจนกับต้นฉบับแล้ว</label><label><input id="form-review_ack" name="review_ack" type="checkbox" value="1" checked={ack} onChange={e=>setAck(e.target.checked)} disabled={readOnly||pending} aria-invalid={!!state.fields.review_ack} aria-describedby={state.fields.review_ack?"form-review_ack-error":undefined}/> ฉันตรวจประเภทเอกสารและข้อมูลทั้งหมดเทียบกับต้นฉบับแล้ว</label></>}{state.fields.review_ack&&<p className="form-error" id="form-review_ack-error">{state.fields.review_ack}</p>}<Actions canConfirm={initial.can_confirm} disabled={readOnly} acknowledged={ack&&amountAck}/><Link href={cancelHref} className="secondary-button">กลับรายการ</Link></div>
   </form>
  </section>;
 }
