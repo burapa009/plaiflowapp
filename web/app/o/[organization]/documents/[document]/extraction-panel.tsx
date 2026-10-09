@@ -41,6 +41,7 @@ export default async function ExtractionPanel({organization,document,data,role,c
   let canonical:CanonicalDocument;
   try{canonical=JSON.parse(raw) as CanonicalDocument;}catch{return {error:"ข้อมูลฟอร์มไม่ถูกต้อง",fields:{}};}
   const confirm=form.get("intent")==="confirm";
+  if(confirm&&(form.get("review_ack")!=="1"||form.get("amount_ack")!=="1"))return {error:"กรุณาตรวจยอดเงินและข้อมูลทั้งเอกสารก่อนยืนยัน",fields:{review_ack:"ต้องตรวจและยืนยันทั้งสองรายการ"}};
   const saved=await sessionPOST(`/v1${path}/form`,JSON.stringify({data:canonical,ocr_job_id:response.form.ocr_job_id,expected_revision:Number(form.get("revision")),expected_review_revision:Number(form.get("review_revision")),expected_legacy_draft_revision:response.legacy_draft_revision??0,confirm,acknowledged:form.get("review_ack")==="1"}));
   if(!saved?.ok){
    const detail=await saved?.json().catch(()=>({})) as {fields?:Record<string,string>}|undefined;

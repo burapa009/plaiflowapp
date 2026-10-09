@@ -26,7 +26,7 @@ test("embedded review guards inbox forms and retains edits when exit is cancelle
     window: { addEventListener() {}, confirm: () => { prompts++; return allowExit; } },
     require: (name: string) => name === "react" ? {
       useRef: (value: unknown) => ({ current: value }), useState: (value: unknown) => [value, () => {}], useEffect: (effect: () => void) => effect(),
-    } : nativeRequire(name),
+    } : name.endsWith(".css") ? {} : nativeRequire(name),
   });
   const workspace = loaded.exports.default({ viewer: null, form: null });
   const submit = (review = false) => listeners.get("submit")!({ target: new Form(review), preventDefault: () => prevented++, stopPropagation: () => stopped++ });

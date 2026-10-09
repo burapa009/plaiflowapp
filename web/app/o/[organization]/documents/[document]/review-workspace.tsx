@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import "./review-workflow.css";
 
-export default function ReviewWorkspace({ viewer, form, support, formLabel = "แก้ไขข้อมูล" }: { viewer: ReactNode; form: ReactNode; support?: ReactNode; formLabel?: string }) {
+export default function ReviewWorkspace({ viewer, form, support, formLabel = "ตรวจข้อมูล" }: { viewer: ReactNode; form: ReactNode; support?: ReactNode; formLabel?: string }) {
   const dirty = useRef(false);
-  const [mobileView, setMobileView] = useState<"document" | "form">("document");
+  const [mobileView, setMobileView] = useState<"document" | "form">("form");
 
   useEffect(() => {
     function beforeUnload(event: BeforeUnloadEvent) {
@@ -39,7 +40,7 @@ export default function ReviewWorkspace({ viewer, form, support, formLabel = "�
 
   return <div className="ocr-review-shell" data-mobile-view={mobileView} onInputCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }} onChangeCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}>
     <div className="ocr-review-mobile-switch" role="group" aria-label="มุมมองตรวจเอกสาร">
-      <button type="button" aria-pressed={mobileView === "document"} onClick={() => setMobileView("document")}>ดูเอกสาร</button>
+      <button type="button" aria-pressed={mobileView === "document"} onClick={() => setMobileView("document")}>ต้นฉบับ</button>
       <button type="button" aria-pressed={mobileView === "form"} onClick={() => setMobileView("form")}>{formLabel}</button>
     </div>
     <div className="ocr-review-workspace">{viewer}<div className="ocr-review-right">{form}{support && <details className="ocr-review-support-drawer"><summary aria-label="หลักฐาน OCR และการจัดหมวด"><span aria-hidden="true">⋯</span><span>หลักฐาน OCR และการจัดหมวด</span></summary>{support}</details>}</div></div>
