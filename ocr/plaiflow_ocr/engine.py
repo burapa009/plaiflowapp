@@ -103,7 +103,16 @@ def _serve(connection: Connection, max_pages: int = 20) -> None:
                 image.thumbnail((1600, 1600))
                 array = np.array(image.convert("RGB"))[:, :, ::-1].copy()
                 image.close()
-                output = next(iter(model.predict(array)))
+                # The line-orientation model can flip small upright Thai text into gibberish.
+                output = next(iter(model.predict(array, use_textline_orientation=False)))
+                def quality(result):
+                    scores = result["rec_scores"]
+                    return sum(float(score) for score in scores) / max(1, len(scores))
+
+                if len(output["rec_scores"]) and quality(output) < 0.8:
+                    rotated = next(iter(model.predict(array, use_textline_orientation=True)))
+                    if quality(rotated) > quality(output):
+                        output = rotated
                 corrected = output["doc_preprocessor_res"]["output_img"]
                 if corrected.shape[:2] != array.shape[:2] or output["doc_preprocessor_res"].get("angle", 0):
                     raise RuntimeError("unexpected_coordinate_transform")

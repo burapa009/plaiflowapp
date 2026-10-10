@@ -129,25 +129,19 @@ func Extract(result ocr.Result) Draft {
 			}
 		}
 	}
-	if draft.DocumentType == "tax_invoice" || draft.DocumentType == "receipt" || draft.DocumentType == "invoice" {
-		for _, key := range []string{"issue_date", "total_amount"} {
-			if draft.Fields[key].Presence != "found" {
-				draft.warn("required_missing", key, "blocker")
-			}
-		}
-		if draft.DocumentType == "tax_invoice" {
-			for _, key := range []string{"document_number", "seller_name", "seller_tax_id"} {
-				if draft.Fields[key].Presence != "found" {
-					draft.warn("required_missing", key, "blocker")
-				}
-			}
-		}
+	if accounting.Document.DocumentType != nil {
+		draft.DocumentType = *accounting.Document.DocumentType
 	}
-	a, aok := cents(draft.Fields["subtotal"].Normalized)
-	b, bok := cents(draft.Fields["vat_amount"].Normalized)
-	c, cok := cents(draft.Fields["total_amount"].Normalized)
-	if aok && bok && cok && (a+b-c > 2 || c-a-b > 2) {
-		draft.warn("amount_mismatch", "total_amount", "blocker")
+	// The stricter parser also recognizes aligned cells and Thai month names; retain its evidence in Accounting.RawText.
+	prefill := func(key, value string) {
+		if draft.Fields[key].Presence != "not_found" || value == "" {
+			return
+		}
+		raw := accounting.RawValue[key]
+		if raw == "" {
+			raw = value
+		}
+		draft.Fields[key] = Field{Presence: "found", Raw: raw, Normalized: value, Confidence: "unrated", Source: "ocr_accounting_rule", Evidence: []Evidence{}}
 	}
 	// Do not prefill legacy review inputs when the stricter accounting parser disagrees.
 	beforeVAT := accounting.Summary.AmountBeforeVAT
@@ -155,6 +149,9 @@ func Extract(result ocr.Result) Draft {
 		beforeVAT = accounting.Summary.Subtotal
 	}
 	for key, value := range map[string]*json.Number{"subtotal": beforeVAT, "vat_amount": accounting.Summary.VATAmount, "total_amount": accounting.Summary.TotalAmount} {
+		if value != nil {
+			prefill(key, value.String())
+		}
 		field := draft.Fields[key]
 		if field.Presence == "found" && (value == nil || field.Normalized != value.String()) {
 			field.Presence, field.Normalized = "ambiguous", ""
@@ -169,12 +166,32 @@ func Extract(result ocr.Result) Draft {
 		"buyer_name":    accounting.Buyer.Name, "buyer_tax_id": accounting.Buyer.TaxID,
 		"currency": accounting.Document.Currency,
 	} {
+		if value != nil {
+			prefill(key, *value)
+		}
 		field := draft.Fields[key]
 		if field.Presence == "found" && (value == nil || field.Normalized != *value) {
 			field.Presence, field.Normalized = "ambiguous", ""
 			draft.Fields[key] = field
 			draft.warn("multiple_candidates", key, "review")
 		}
+	}
+	if draft.DocumentType == "tax_invoice" || draft.DocumentType == "receipt_tax_invoice" || draft.DocumentType == "receipt" || draft.DocumentType == "invoice" {
+		required := []string{"issue_date", "total_amount"}
+		if draft.DocumentType == "tax_invoice" || draft.DocumentType == "receipt_tax_invoice" {
+			required = append(required, "document_number", "seller_name", "seller_tax_id")
+		}
+		for _, key := range required {
+			if draft.Fields[key].Presence != "found" {
+				draft.warn("required_missing", key, "blocker")
+			}
+		}
+	}
+	a, aok := cents(draft.Fields["subtotal"].Normalized)
+	b, bok := cents(draft.Fields["vat_amount"].Normalized)
+	c, cok := cents(draft.Fields["total_amount"].Normalized)
+	if aok && bok && cok && (a+b-c > 2 || c-a-b > 2) {
+		draft.warn("amount_mismatch", "total_amount", "blocker")
 	}
 	return draft
 }

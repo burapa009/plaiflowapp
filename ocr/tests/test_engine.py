@@ -11,8 +11,32 @@ from plaiflow_ocr.engine import Engine, _serve
 
 
 class EngineFailureTest(unittest.TestCase):
+    def test_upright_text_is_not_rotated_and_low_quality_gets_one_orientation_retry(self):
+        for first_score, retry_score, expected_calls in ((0.95, 0.99, 1), (0.4, 0.9, 2), (0.6, 0.4, 2)):
+            with self.subTest(first_score=first_score), tempfile.TemporaryDirectory() as root:
+                path = Path(root) / 'upright.png'
+                Image.new('RGB', (100, 100), 'white').save(path)
+                connection = Mock()
+                connection.recv.side_effect = [str(path), None]
+                model = Mock()
+
+                def predict(array, use_textline_orientation=True):
+                    score = retry_score if use_textline_orientation else first_score
+                    return iter([{'doc_preprocessor_res': {'output_img': array, 'angle': 0},
+                                  'rec_texts': ['rotated' if use_textline_orientation else 'upright'],
+                                  'rec_scores': [score], 'rec_polys': [np.array([[0, 0], [90, 0], [90, 10], [0, 10]])]}])
+
+                model.predict.side_effect = predict
+                with patch('plaiflow_ocr.engine.create_model', return_value=model):
+                    _serve(connection)
+                self.assertFalse(model.predict.call_args_list[0].kwargs.get('use_textline_orientation', True))
+                self.assertEqual(model.predict.call_count, expected_calls)
+                page = next(call.args[0]['page'] for call in connection.send.call_args_list if 'page' in call.args[0])
+                expected = 'rotated' if expected_calls == 2 and retry_score > first_score else 'upright'
+                self.assertEqual(page['lines'][0]['text'], expected)
+
     def test_resize_maps_polygons_back_and_pdf_renders_each_page(self):
-        def predict(array):
+        def predict(array, **options):
             height, width = array.shape[:2]
             return iter([{
                 "doc_preprocessor_res": {"output_img": array, "angle": 0},

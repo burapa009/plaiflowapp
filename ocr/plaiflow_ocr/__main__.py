@@ -40,7 +40,8 @@ def main() -> None:
                 jobs = protocol.claim()
                 if not jobs:
                     stop.wait(delay + random.random())
-                    delay = min(15, delay * 2)
+                    # Idle CPU workers must notice uploads before the 10–20 s user budget expires.
+                    delay = min(1 if provider == "railway" else 15, delay * 2)
                     continue
                 delay = 1
                 claim = jobs[0]
