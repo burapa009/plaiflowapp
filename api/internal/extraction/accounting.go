@@ -369,7 +369,7 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 					a.Document.Currency = accountingPtr("USD")
 				}
 			}
-			if v, ok := accountingLabel(line, `(?i)^(?:เลขที่(?:เอกสาร)?|document\s*(?:no\.?|number)|invoice\s*(?:no\.?|number)|receipt\s*(?:no\.?|number))\s*[:：#]?\s*`, `[A-Za-z0-9][A-Za-z0-9/-]*`); ok && set("document_number", v, l.Confidence) {
+			if v, ok := accountingLabel(line, `(?i)^(?:เลขที[่]?(?:เอกสาร)?|document\s*(?:no\.?|number)|invoice\s*(?:no\.?|number)|receipt\s*(?:no\.?|number))\s*[:：#]?\s*`, `[A-Za-z0-9][A-Za-z0-9/-]*`); ok && set("document_number", v, l.Confidence) {
 				a.Document.DocumentNumber = accountingPtr(v)
 			}
 			if strings.Contains(lower, "due") || strings.Contains(lower, "ครบกำหนด") || strings.Contains(lower, "กำหนดชำระ") {
@@ -422,6 +422,9 @@ func ExtractAccounting(result ocr.Result) AccountingDocument {
 			}
 			if v, ok := accountingLabel(line, `(?i)^(?:สาขา(?:ที่)?|branch(?:\s*(?:no\.?|number))?)\s*[:：]?\s*`, `(?:[0-9๐-๙]{5}|สำนักงานใหญ่|head\s*office)`); ok {
 				v = accountingDigits(v)
+				if v == "สำนักงานใหญ่" || strings.EqualFold(strings.Join(strings.Fields(v), " "), "head office") {
+					v = "00000"
+				}
 				if set(section+"_branch", v, l.Confidence) {
 					if section == "buyer" {
 						a.Buyer.Branch = accountingPtr(v)
