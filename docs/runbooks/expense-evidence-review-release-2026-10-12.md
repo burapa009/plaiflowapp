@@ -19,6 +19,10 @@ Implementation of the first review-workflow slice from the independent PlaiFlow 
 
 ## Release
 
-Pending final push and deployment verification. Build a source-only archive of the committed `web/` tree. Reuse the existing Vercel project link and ignore rules; do not upload local environment files, dependencies or `.next`.
+- Implementation commit: `0d2b06b230dec281b079c72a3f3e8978255422a4`, pushed to `feat/expense-evidence-review`. Draft PR: https://github.com/burapa009/plaiflowapp/pull/5, based on `fix/ocr-form-latency`; no merge.
+- All five CI jobs passed (web, Go, Python, migrations and secrets): https://github.com/burapa009/plaiflowapp/actions/runs/38204856973. Migration tests ran against CI's disposable database, not production.
+- Deployed the exact committed `web/` archive with the existing project link and ignore rules. No local environment files, dependencies or `.next` were uploaded.
+- Deployment `dpl_3oJVEG745vk29s2rFaFGxipck9St` reached READY at https://plaiflowapp-cin5t6wld-burapa009s-projects.vercel.app. Promoted only after CI passed; Vercel inspection confirmed https://plaiflowapp.vercel.app resolves to this deployment.
+- Public smoke: homepage 200; local workflow route 404; review preview contains no mock editor and renders not-found content (streamed HTTP 200). Opening the known synthetic test document in the browser returned to sign-in because no authenticated session was available. Live draft save/reload remains unverified for this release; requested sign-in without blocking deployment.
 
-Rollback: the currently verified production deployment is `dpl_GfsHNW6Cai41zgfnncWnuqciHdhQ`, https://plaiflowapp-fl42raoof-burapa009s-projects.vercel.app. Web-only rollback needs no schema or API changes.
+Rollback: the previously verified production deployment is `dpl_GfsHNW6Cai41zgfnncWnuqciHdhQ`, https://plaiflowapp-fl42raoof-burapa009s-projects.vercel.app. Web-only rollback needs no schema or API changes.
