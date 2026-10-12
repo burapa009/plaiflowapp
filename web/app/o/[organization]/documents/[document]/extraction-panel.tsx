@@ -2,9 +2,10 @@ import { sessionGET, sessionPOST } from "@/lib/session-api";
 import { revalidatePath } from "next/cache";
 import type { AccountingResult } from "./accounting-result";
 import DocumentFormEditor, { type DocumentFormState } from "./document-form-editor";
+import type { OCRFieldEvidence } from "@/lib/document-evidence";
 import { formConfig, type CanonicalDocument, type DocumentFormResponse } from "@/lib/document-form";
 export { documentTypeLabels } from "@/lib/document-types";
-type Field = { presence: string; raw: string; normalized: string; confidence: string; evidence: { page: number; line: number }[] };
+type Field = OCRFieldEvidence;
 type Warning = { code: string; field: string; severity: string };
 export type Extraction = {
   draft: { document_type: string; fields: Record<string, Field>; warnings: Warning[]; accounting?: AccountingResult; classification?: { document_type: string; effective_type: string; confidence: number; requires_review: boolean; candidate_types: { type: string; confidence: number }[]; signals: string[] } };
@@ -26,6 +27,7 @@ export default async function ExtractionPanel({organization,document,data,role,c
  if(preview){
   const canonical:CanonicalDocument={version:1,type:formConfig.types[data.draft.document_type]?data.draft.document_type:"unknown",fields:{},tables:{}};
   for(const [key,f] of Object.entries(data.draft.fields)) canonical.fields[key]=data.confirmed?.values[key]??f.normalized??"";
+  canonical.source={ocr_job_id:data.ocr_job_id,fields:Object.fromEntries(Object.entries(data.draft.fields).map(([key,f])=>[key,f.normalized??""])),tables:{}};
   canonical.tables.items=(data.draft.accounting?.items??[]).map(item=>Object.fromEntries(Object.entries(item).map(([k,v])=>[k,v==null?"":String(v)])));
   response={form:{data:canonical,revision:0,ocr_job_id:data.ocr_job_id,status:"Draft"},review_revision:data.revision,can_edit:true,can_confirm:true,source_superseded:false,references:[]};
  }else{
@@ -51,5 +53,5 @@ export default async function ExtractionPanel({organization,document,data,role,c
   revalidatePath(path);revalidatePath(`/o/${encodeURIComponent(organization)}/documents`);
   return {error:"",fields:{},saved:record,reviewRevision:confirm?Number(form.get("review_revision"))+1:Number(form.get("review_revision"))};
  }
- return <DocumentFormEditor key={data.ocr_job_id} initial={response} action={save} cancelHref={cancelHref} printHref={preview?"":`${path}/print`} readOnly={!response.can_edit||!["Owner","Admin","Member"].includes(role)} notice={result} />;
+ return <DocumentFormEditor key={data.ocr_job_id} initial={response} action={save} cancelHref={cancelHref} printHref={preview?"":`${path}/print`} readOnly={!response.can_edit||!["Owner","Admin","Member"].includes(role)} notice={result} evidence={{jobId:data.ocr_job_id,fields:data.draft.fields}} />;
 }

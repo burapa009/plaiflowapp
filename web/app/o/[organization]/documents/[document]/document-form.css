@@ -27,6 +27,30 @@
 .canonical-actions label { align-items: flex-start; padding-block: 10px; line-height: 1.7; }
 .canonical-actions input { flex-shrink: 0; margin-top: 4px; }
 .canonical-actions .card-actions { flex-wrap: wrap; gap: 12px; }
+.canonical-review-summary { padding: 20px; margin-bottom: 24px; border: 1px solid var(--pf-border-default); border-radius: var(--pf-radius-md); background: var(--pf-bg-soft); }
+.canonical-summary-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.canonical-save-state { color: var(--pf-text-secondary); font-size: 13px; }
+.canonical-review-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-block: 20px; }
+.canonical-review-counts > div { padding: 12px; background: var(--pf-surface); border-radius: var(--pf-radius-sm); }
+.canonical-review-counts dt { color: var(--pf-text-secondary); font-size: 13px; }
+.canonical-review-counts dd { margin: 8px 0 0; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.canonical-review-summary > p,.canonical-review-checklist p { font-size: 14px; line-height: 1.7; color: var(--pf-text-secondary); }
+.canonical-review-checklist { margin-top: 12px; border-top: 1px solid var(--pf-border-default); }
+.canonical-review-checklist summary { font-weight: 600; color: var(--pf-warning-700); }
+.canonical-review-checklist ul { padding: 0; list-style: none; }
+.canonical-review-checklist li { border-bottom: 1px solid var(--pf-border-default); }
+.canonical-review-checklist button { display: grid; width: 100%; text-align: start; gap: 4px; padding: 12px 4px; min-height: 44px; font-size: 14px; }
+.canonical-review-checklist button:hover { background: var(--pf-surface); }
+.canonical-checklist-action { color: var(--pf-primary-700); text-decoration: underline; }
+.field-evidence { margin-top: 8px; border-radius: var(--pf-radius-xs); background: var(--pf-primary-50); font-size: 13px; }
+.field-evidence summary { padding: 10px; color: var(--pf-primary-700); }
+.field-evidence-action { margin-left: 8px; text-decoration: underline; }
+.field-evidence > div { padding: 0 12px 12px; line-height: 1.7; color: var(--pf-text-primary); }
+.field-evidence p + p { margin-top: 8px; }
+.field-evidence[data-uncertain="true"] { background: var(--pf-warning-50); }
+.field-evidence[data-uncertain="true"] summary { color: var(--pf-warning-700); }
+.field-evidence[data-changed="true"] { border-left: 3px solid var(--pf-primary-600); }
+.canonical-review-checklist button:focus-visible,.field-evidence summary:focus-visible { outline: 2px solid var(--pf-border-focus); outline-offset: 2px; }
 @media(max-width:1023px) {
   .document-form-panel { padding: 16px; }
   .document-form-panel input,.document-form-panel select,.document-form-panel textarea { font-size: 16px; }

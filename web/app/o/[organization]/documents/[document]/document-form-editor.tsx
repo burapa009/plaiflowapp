@@ -4,6 +4,8 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import FormRuleHint from "./form-rule-hint";
+import FieldEvidence from "./field-evidence";
+import { fieldEvidence, formFieldLabel, visibleFormFields, type FormEvidence } from "@/lib/document-evidence";
 import { expenseTypeOptions, expenseDocumentTypes } from "@/lib/document-workflow";
 import { formLayout, fieldVisible, ruleIssues, calculatedAmounts, decimalCents, formatCents, formConfig, sumRows, type CanonicalDocument, type DocumentFormResponse } from "@/lib/document-form";
 import "./document-form.css";
@@ -13,7 +15,7 @@ function Actions({canConfirm,disabled,acknowledged}:{canConfirm:boolean;disabled
  const {pending}=useFormStatus();
  return <div className="card-actions"><button className="secondary-button" name="intent" value="draft" type="submit" formNoValidate disabled={pending||disabled}>{pending?"กำลังบันทึก…":"บันทึกร่าง"}</button>{canConfirm&&<button className="button" name="intent" value="confirm" disabled={pending||disabled||!acknowledged}>ยืนยันข้อมูลกับต้นฉบับ</button>}</div>;
 }
-export default function DocumentFormEditor({initial,action,cancelHref,printHref,readOnly,notice}:{initial:DocumentFormResponse;action:(state:DocumentFormState,form:FormData)=>Promise<DocumentFormState>;cancelHref:string;printHref:string;readOnly:boolean;notice:string}) {
+export default function DocumentFormEditor({initial,action,cancelHref,printHref,readOnly,notice,evidence}:{initial:DocumentFormResponse;action:(state:DocumentFormState,form:FormData)=>Promise<DocumentFormState>;cancelHref:string;printHref:string;readOnly:boolean;notice:string;evidence?:FormEvidence}) {
  const [data,setData]=useState<CanonicalDocument>(initial.form.data);
  const [ack,setAck]=useState(false);
  const [amountAck,setAmountAck]=useState(false);
@@ -30,13 +32,25 @@ export default function DocumentFormEditor({initial,action,cancelHref,printHref,
  const typ=formConfig.types[data.type]??formConfig.types.unknown;
  const rules=formConfig.rules[data.type]??formConfig.rules.unknown;
  const calculated=calculatedAmounts(data),issues=ruleIssues(data);
+ const visibleFields=visibleFormFields(data);
+ const reviewIssues={...issues.missing,...issues.unresolved};
+ for(const key of visibleFields)if(fieldEvidence(data,key,evidence).uncertain&&!reviewIssues[key])reviewIssues[key]="ข้อความไม่ชัดเจนหรือพบค่าขัดแย้ง โปรดตรวจต้นฉบับ";
+ const issueEntries=Object.entries(reviewIssues);
+ const readCount=visibleFields.filter(key=>!!fieldEvidence(data,key,evidence).source?.trim()).length;
+ const changedCount=visibleFields.filter(key=>fieldEvidence(data,key,evidence).changed).length;
+ const focusField=(key:string)=>{
+  const el=document.getElementById("form-"+key)??document.getElementById("table-"+key.split(".")[0]);
+  let parent=el?.parentElement;
+  while(parent){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}
+  el?.focus();el?.scrollIntoView({block:"center"});
+ };
  useEffect(()=>{if(state.error){document.dispatchEvent(new CustomEvent("review-focus-field"));errorRef.current?.focus();}if(state.saved&&!state.error)document.dispatchEvent(new CustomEvent("review-saved"));},[state]);
  const change=(next:CanonicalDocument)=>{setData(next);setAck(false);setAmountAck(false);document.dispatchEvent(new CustomEvent("review-dirty"));};
  const field=(key:string,label?:string)=>{
   const spec=formConfig.fields[key];if(!spec||!fieldVisible(data,key))return null;
   const id="form-"+key;const required=typ.required.includes(key);const error=state.fields[key];
   const props={id,value:data.fields[key]??"",onChange:(event:React.ChangeEvent<HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement>)=>change({...data,fields:{...data.fields,[key]:event.target.value}}),disabled:readOnly||pending,"aria-required":required,"aria-invalid":!!error,"aria-describedby":id+"-hint"+(error?" "+id+"-error":"")};
-  return <div className="field" key={key}><label htmlFor={id}>{label??spec.label}{required?" *":""}</label>{spec.options?<select {...props}><option value="">ยังไม่ระบุ</option>{spec.options.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>:key==="price_mode"?<select {...props}><option value="">ไม่ระบุ</option><option value="exclusive">ไม่รวม VAT</option><option value="inclusive">รวม VAT</option></select>:spec.kind==="textarea"?<textarea {...props} rows={3} maxLength={4000}/>:<input {...props} type={["date","time"].includes(spec.kind)?spec.kind:"text"} inputMode={["money","signed_money","decimal"].includes(spec.kind)?"decimal":undefined} maxLength={4000}/>} <FormRuleHint data={data} rule={rules[key]} id={id+"-hint"}/>{error&&<p className="form-error" id={id+"-error"}>{error}</p>}{calculated[key]&&<p className="canonical-calculated">ยอดคำนวณ: {calculated[key]} {data.fields.currency} · ไม่ต้องกรอกซ้ำ{data.fields[key]&&decimalCents(data.fields[key])!==decimalCents(calculated[key])?" · ต่างจากยอดต้นฉบับ ต้องตรวจสอบ":""}</p>}{data.source?.fields[key]!==undefined&&data.source.fields[key]!==data.fields[key]&&<p className="canonical-hint">OCR เดิม: {data.source.fields[key]||"ไม่พบค่า"} · ข้อมูลเพิ่มไม่ถือว่ามีบนต้นฉบับ</p>}</div>;
+  return <div className="field" key={key}><label htmlFor={id}>{label??spec.label}{required?" *":""}</label>{spec.options?<select {...props}><option value="">ยังไม่ระบุ</option>{spec.options.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>:key==="price_mode"?<select {...props}><option value="">ไม่ระบุ</option><option value="exclusive">ไม่รวม VAT</option><option value="inclusive">รวม VAT</option></select>:spec.kind==="textarea"?<textarea {...props} rows={3} maxLength={4000}/>:<input {...props} type={["date","time"].includes(spec.kind)?spec.kind:"text"} inputMode={["money","signed_money","decimal"].includes(spec.kind)?"decimal":undefined} maxLength={4000}/>} <FormRuleHint data={data} rule={rules[key]} id={id+"-hint"}/>{error&&<p className="form-error" id={id+"-error"}>{error}</p>}{calculated[key]&&<p className="canonical-calculated">ยอดคำนวณ: {calculated[key]} {data.fields.currency} · ไม่ต้องกรอกซ้ำ{data.fields[key]&&decimalCents(data.fields[key])!==decimalCents(calculated[key])?" · ต่างจากยอดต้นฉบับ ต้องตรวจสอบ":""}</p>}<FieldEvidence data={data} field={key} evidence={evidence}/></div>;
  };
  function updateRow(table:string,index:number,key:string,value:string){
   const rows=(data.tables[table]??[]).map(row=>({...row}));
@@ -54,7 +68,7 @@ export default function DocumentFormEditor({initial,action,cancelHref,printHref,
   const primary=visible.filter(key=>rules[key].requirement!=="OPTIONAL"||!!formConfig.fields[key].options);
   const optional=visible.filter(key=>!primary.includes(key));
   const render=(key:string)=>field(key,formConfig.fields[key].label.replace("ฝ่ายที่หนึ่ง",typ.roles[0]).replace("ฝ่ายที่สอง",typ.roles[1]));
-  return <section className="ocr-review-card" key={section}><h3>{spec.label}</h3>{primary.length>0&&<div className="canonical-fields">{primary.map(render)}</div>}{optional.length>0&&<details open={optional.some(k=>!!state.fields[k])||undefined}><summary>ข้อมูลเพิ่มเติม</summary><div className="canonical-fields">{optional.map(render)}</div></details>}</section>;
+  return <section className="ocr-review-card" key={section}><h3>{spec.label}</h3>{primary.length>0&&<div className="canonical-fields">{primary.map(render)}</div>}{optional.length>0&&<details open={optional.some(k=>!!state.fields[k]||!!data.fields[k])||undefined}><summary>ข้อมูลเพิ่มเติม</summary><div className="canonical-fields">{optional.map(render)}</div></details>}</section>;
  };
  const renderTable=(table:string)=>{
     const spec=formConfig.tables[table],rows=data.tables[table]??[];
@@ -77,14 +91,19 @@ export default function DocumentFormEditor({initial,action,cancelHref,printHref,
   {notice&&<p role="status">{notice==="confirmed"?"ยืนยันข้อมูลแล้ว":notice==="draft-saved"?"บันทึกร่างแล้ว":""}</p>}
   <form action={formAction} className="ocr-review-form work-form" onReset={e=>e.preventDefault()}>
    <input type="hidden" name="document_data" value={JSON.stringify({version:data.version,type:data.type,fields:data.fields,tables:data.tables})}/><input type="hidden" name="revision" value={revision}/><input type="hidden" name="review_revision" value={reviewRevision}/>
-   {state.error&&<div ref={errorRef} role="alert" tabIndex={-1} className="ocr-review-alert"><p>{state.error}</p><ul>{Object.entries(state.fields).map(([key,message])=><li key={key}><button type="button" className="ocr-review-error-link" onClick={()=>{const el=document.getElementById("form-"+key)??document.getElementById("table-"+key.split(".")[0]);let parent=el?.parentElement;while(parent){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}el?.focus();el?.scrollIntoView({block:"center"});}}>{formConfig.fields[key]?.label??formConfig.tables[key]?.label??key}: {message}</button></li>)}</ul></div>}
+   {state.error&&<div ref={errorRef} role="alert" tabIndex={-1} className="ocr-review-alert"><p>{state.error}</p><ul>{Object.entries(state.fields).map(([key,message])=><li key={key}><button type="button" className="ocr-review-error-link" onClick={()=>focusField(key)}>{formConfig.fields[key]?.label??formConfig.tables[key]?.label??key}: {message}</button></li>)}</ul></div>}
    {revision>0&&!dirty&&!state.error&&<p role="status">{(state.saved??initial.form).status==="Confirmed"?"ยืนยันเอกสารแล้ว":"บันทึกร่างแล้ว"} · ฉบับ {revision}</p>}
    <header className="canonical-heading"><p className="eyebrow">หลัง OCR</p><h2>ตรวจข้อมูลจากเอกสาร</h2><p>ข้อมูลที่อ่านได้ต้องตรวจเทียบกับต้นฉบับก่อนยืนยัน · ไม่ใช่การรับรองสิทธิภาษี</p></header>
    <section className="canonical-type"><p>หมวดเอกสาร · ค่าใช้จ่าย</p><div className="field"><label htmlFor="form-type">ประเภทเอกสาร</label><select id="form-type" value={data.type} disabled={readOnly||pending} onChange={e=>change({...data,type:e.target.value})}>{expenseTypeOptions(initial.form.data.type).map(key=><option value={key} key={key}>{formConfig.types[key]?.label??key}</option>)}</select></div><p>แบบฟอร์มเปลี่ยนตามประเภทที่เลือก · สลับกลับได้โดยไม่ลบข้อมูลที่กรอก</p>{data.type==="unknown"&&<p role="status">ยังอ่านประเภทเอกสารไม่ชัดเจน กรุณาเลือกประเภทด้านบน หากข้อความคลาดเคลื่อน ให้ใช้รูปต้นฉบับที่คมชัดและถ่ายเต็มหน้า · ช่องที่อ่านไม่ได้จะเว้นว่างให้ตรวจเติม</p>}{!expenseDocumentTypes.includes(data.type)&&data.type!=="unknown"&&<p>ประเภทเดิมของเอกสารนี้ยังเปิดดูและแก้ไขได้</p>}</section>
    <h3 className="canonical-form-title">ข้อมูล{typ.label}</h3>
    {data.type==="bank_slip"&&<p className="notice">ภาพ Slip เป็นหลักฐานประกอบ ยังไม่ใช่ผลตรวจสอบกับธนาคาร</p>}
    {["credit_note","debit_note"].includes(data.type)&&<p className="notice">กรอกยอดปรับเป็นค่าบวก · {data.type==="credit_note"?"ลด":"เพิ่ม"}มูลค่าตามประเภท ไม่แก้ทับเอกสารต้นทาง</p>}
-   {(Object.keys(issues.missing).length>0||Object.keys(issues.unresolved).length>0)&&<details className="canonical-evidence"><summary>หลักฐานไม่ครบ / เงื่อนไขต้องตรวจสอบ ({Object.keys(issues.missing).length+Object.keys(issues.unresolved).length})</summary><p>ยังบันทึกและยืนยันข้อมูลกับต้นฉบับได้ โดยไม่รับรองสิทธิภาษี</p><ul>{Object.entries({...issues.missing,...issues.unresolved}).map(([key,message])=><li key={key}>{formConfig.fields[key]?.label??key}: {message}</li>)}</ul></details>}
+   <section className="canonical-review-summary" aria-labelledby="review-summary-heading">
+    <div className="canonical-summary-heading"><div><p className="eyebrow">ตรวจทีละจุด</p><h3 id="review-summary-heading">ข้อมูลพร้อมให้คุณตรวจ</h3></div><span className="canonical-save-state" role="status">{dirty?"มีการแก้ไขที่ยังไม่บันทึก":revision>0?`บันทึกแล้ว · ฉบับ ${revision}`:"ยังไม่ได้บันทึก"}</span></div>
+    <dl className="canonical-review-counts"><div><dt>ช่องที่ OCR เติม</dt><dd>{readCount}</dd></div><div><dt>ต่างจาก OCR</dt><dd>{changedCount}</dd></div><div><dt>จุดที่ต้องตรวจ</dt><dd>{issueEntries.length}</dd></div></dl>
+    <p>กด “ดูที่มา” ใต้ช่องเพื่อเทียบค่าที่อ่านได้กับข้อมูลในแบบฟอร์ม จำนวนช่องไม่ใช่คะแนนความแม่นยำ</p>
+    {issueEntries.length>0?<details className="canonical-review-checklist"><summary>เปิดรายการจุดที่ต้องตรวจ ({issueEntries.length})</summary><p>ช่องว่างอาจไม่มีบนต้นฉบับ ไม่ต้องเดาหรือเติมยอดแทน การยืนยันข้อมูลไม่ใช่การรับรองสิทธิภาษี</p><ul>{issueEntries.map(([key,message])=><li key={key}><button type="button" onClick={()=>focusField(key)}><strong>{formFieldLabel(data,key)}</strong><span>{message}</span><span className="canonical-checklist-action">ไปที่ช่องนี้ →</span></button></li>)}</ul></details>:<p>ยังต้องตรวจข้อมูลทุกส่วนกับต้นฉบับก่อนยืนยัน</p>}
+   </section>
    {formLayout(data).map(({kind,key})=>kind==="section"?renderSection(key):renderTable(key))}
    {data.assessment&&<details><summary>ผลตรวจที่บันทึก · รุ่น {data.assessment.ruleVersion}</summary><p>{data.assessment.evidenceStatus==="incomplete"?"หลักฐานไม่ครบ / ต้องตรวจสอบ":data.assessment.action==="draft"?"ฉบับร่าง · ยังไม่ประเมินความครบถ้วน":"ตรวจข้อมูลแล้ว"} · ยังไม่ประเมินสิทธิภาษี{dirty?" · มีการแก้ไขที่ยังไม่บันทึก":""}</p>{Object.entries(data.assessment.differences).map(([key,value])=><p key={key}>{formConfig.fields[key]?.label??key}: {value}</p>)}</details>}
    <div className="ocr-review-card"><p>เอกสารนำเข้าเก็บต้นฉบับไว้ · ยังไม่รองรับออกเอกสารทางการประเภทนี้จากฟอร์มนี้</p>{printHref&&revision>0&&<a className="secondary-button" href={printHref} target="_blank" rel="noopener noreferrer">พิมพ์สรุปข้อมูลที่บันทึก</a>}</div>
