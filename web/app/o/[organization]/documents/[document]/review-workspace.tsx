@@ -2,9 +2,19 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-export default function ReviewWorkspace({ viewer, form, support }: { viewer: ReactNode; form: ReactNode; support?: ReactNode }) {
+export default function ReviewWorkspace({
+  viewer,
+  form,
+  support,
+  formLabel = "ฟอร์มเต็ม",
+}: {
+  viewer: ReactNode;
+  form: ReactNode;
+  support?: ReactNode;
+  formLabel?: string;
+}) {
   const dirty = useRef(false);
-  const [mobileView, setMobileView] = useState<"document" | "form">("document");
+  const [mobileView, setMobileView] = useState<"split" | "document" | "form">("split");
 
   useEffect(() => {
     function beforeUnload(event: BeforeUnloadEvent) {
@@ -25,17 +35,52 @@ export default function ReviewWorkspace({ viewer, form, support }: { viewer: Rea
       if (window.confirm("มีข้อมูลที่ยังไม่ได้บันทึก ต้องการดำเนินการต่อและละทิ้งการแก้ไขหรือไม่?")) dirty.current = false;
       else { event.preventDefault(); event.stopPropagation(); }
     }
+    const revealForm = () => setMobileView("form");
+    document.addEventListener("review-focus-field", revealForm);
     window.addEventListener("beforeunload", beforeUnload);
     document.addEventListener("click", confirmExit, true);
     document.addEventListener("submit", confirmOtherAction, true);
-    return () => { window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", confirmExit, true); document.removeEventListener("submit", confirmOtherAction, true); };
+    return () => {
+      document.removeEventListener("review-focus-field", revealForm);
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", confirmExit, true);
+      document.removeEventListener("submit", confirmOtherAction, true);
+    };
   }, []);
 
-  return <div className="ocr-review-shell" data-mobile-view={mobileView} onInputCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }} onChangeCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}>
-    <div className="ocr-review-mobile-switch" role="group" aria-label="มุมมองตรวจเอกสาร">
-      <button type="button" aria-pressed={mobileView === "document"} onClick={() => setMobileView("document")}>ดูเอกสาร</button>
-      <button type="button" aria-pressed={mobileView === "form"} onClick={() => setMobileView("form")}>แก้ไขข้อมูล</button>
+  return (
+    <div
+      className="ocr-review-shell"
+      data-mobile-view={mobileView}
+      onInputCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}
+      onChangeCapture={(event) => { if ((event.target as Element).closest(".ocr-review-form")) dirty.current = true; }}
+    >
+      <div className="ocr-review-mobile-switch" role="group" aria-label="มุมมองตรวจเอกสาร">
+        <button type="button" aria-pressed={mobileView === "split"} onClick={() => setMobileView("split")}>
+          ดูพร้อมแก้ (แยกจอ)
+        </button>
+        <button type="button" aria-pressed={mobileView === "document"} onClick={() => setMobileView("document")}>
+          ดูเอกสารเต็ม
+        </button>
+        <button type="button" aria-pressed={mobileView === "form"} onClick={() => setMobileView("form")}>
+          {formLabel}
+        </button>
+      </div>
+      <div className="ocr-review-workspace">
+        {viewer}
+        <div className="ocr-review-right">
+          {form}
+          {support && (
+            <details className="ocr-review-support-drawer">
+              <summary aria-label="หลักฐาน OCR และการจัดหมวด">
+                <span aria-hidden="true">⋯</span>
+                <span>หลักฐาน OCR และการจัดหมวด</span>
+              </summary>
+              {support}
+            </details>
+          )}
+        </div>
+      </div>
     </div>
-    <div className="ocr-review-workspace">{viewer}<div className="ocr-review-right">{form}{support && <details className="ocr-review-support-drawer"><summary aria-label="หลักฐาน OCR และการจัดหมวด"><span aria-hidden="true">⋯</span><span>หลักฐาน OCR และการจัดหมวด</span></summary>{support}</details>}</div></div>
-  </div>;
+  );
 }

@@ -66,15 +66,24 @@ export default async function TasksPage({ params, searchParams }: {
 
   return (
     <section className="workspace-page">
-      <div className="workspace-toolbar"><span>PlaiFlow <span aria-hidden="true">/</span> งานของทีม</span><div><Link href="/organizations">เปลี่ยน Organization</Link><span className="workspace-avatar" aria-hidden="true">P</span></div></div>
+      <div className="workspace-toolbar"><span>PlaiFlow <span aria-hidden="true">/</span> หน้าหลัก</span><div><Link href="/organizations">เปลี่ยน Organization</Link><span className="workspace-avatar" aria-hidden="true">P</span></div></div>
       <div className="work-header">
-        <div><p className="eyebrow">พื้นที่งานของ Organization</p><h1>งานของทีม</h1><p className="intro">เห็นงานที่ต้องติดตาม แล้วมอบหมายงานต่อได้ในหน้าเดียว</p></div>
-        <a className="button inline-button" href="#create-task">+ สร้างงาน</a>
+        <div><p className="eyebrow">พื้นที่งานและภาพรวม</p><h1>หน้าหลักและงานของทีม</h1><p className="intro">ติดตามสถานะงาน แจ้งเตือน และมอบหมายงานในองค์กรได้ในหน้าเดียว</p></div>
+        <div className="flex gap-2">
+          <Link className="secondary-button inline-button" href={`/o/${encodeURIComponent(organization)}/documents`}>📥 กล่องเอกสาร</Link>
+          <a className="button inline-button" href="#create-task">+ สร้างงาน</a>
+        </div>
       </div>
       {query.error && <p className="form-error" role="alert">{errorMessage(query.error)}</p>}
       {query.read && <p className="success-message" role="status">ทำเครื่องหมายว่าอ่านแล้ว</p>}
       {secretaryPilotEnabled(organization) && <Link className="secondary-button" href={`/o/${encodeURIComponent(organization)}/secretary`}>เปิดสรุปงานวันนี้</Link>}
-      <div className="workspace-summary" role="status"><div><strong>{dueTasks.length ? `มี ${dueTasks.length} งานที่ควรติดตามวันนี้` : "งานของทีมพร้อมให้ติดตาม"}</strong><span>{dueTasks.length ? "งานที่ครบกำหนดวันนี้หรือเลยกำหนดแล้วอยู่ในรายการด้านล่าง" : "เริ่มจากรายการงาน หรือสร้างงานใหม่เพื่อมอบหมายให้ทีม"}</span></div><span className="workspace-summary-tag">อัปเดตล่าสุด</span></div>
+      <div className="workspace-summary" role="status">
+        <div>
+          <strong>{dueTasks.length ? `มี ${dueTasks.length} งานที่ควรติดตามวันนี้` : "พร้อมสำหรับการทำงานวันนี้"}</strong>
+          <span>{dueTasks.length ? "งานที่ครบกำหนดวันนี้หรือเลยกำหนดแล้วอยู่ในรายการด้านล่าง" : "ตรวจสอบเอกสารบัญชีใหม่ หรือสร้างงานเพื่อมอบหมายให้สมาชิกในทีม"}</span>
+        </div>
+        <span className="workspace-summary-tag">อัปเดตล่าสุด</span>
+      </div>
       <div className="workspace-metrics" aria-label="สรุปงาน"><div><span>งานทั้งหมด</span><strong>{tasks.length}</strong></div><div><span>กำลังทำ</span><strong>{tasks.filter((task) => task.Status === "InProgress").length}</strong></div><div><span>เสร็จแล้ว</span><strong>{tasks.filter((task) => task.Status === "Done").length}</strong></div></div>
 
       <div className="work-layout">
